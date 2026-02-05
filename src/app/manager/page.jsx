@@ -1,0 +1,182 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
+import Card from '@/components/Card';
+import Loading from '@/components/Loading';
+
+export default function ManagerDashboard() {
+  const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const adminStationId = searchParams.get('stationId');
+  const activeStationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
+  const [station, setStation] = useState(null);
+  const [activeDayShift, setActiveDayShift] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchData();
+  }, [session]);
+
+  const fetchData = async () => {
+    if (!activeStationId) return;
+
+    try {
+      const [stationRes, dayShiftRes] = await Promise.all([
+        fetch(`/api/stations`),
+        fetch(`/api/day-shifts?stationId=${activeStationId}&status=in_progress`),
+      ]);
+
+      const stationData = await stationRes.json();
+      const dayShiftData = await dayShiftRes.json();
+
+      if (stationData.stations?.length > 0) {
+        const found = stationData.stations.find((s) => s._id === activeStationId) || null;
+        setStation(found);
+      }
+
+      if (dayShiftData.dayShifts?.length > 0) {
+        setActiveDayShift(dayShiftData.dayShifts[0]);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!activeStationId) {
+    return (
+      <Card title="Select Station">
+        <p className="text-sm text-gray-600">Choose a station from the Admin Stations page to manage.</p>
+      </Card>
+    );
+  }
+
+  if (loading) return <Loading />;
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gradient-to-r from-white via-ecana-blue-50 to-white rounded-2xl border-2 border-ecana-blue-100 shadow-lg p-6 animate-fade-in">
+        <h1 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-ecana-blue to-ecana-maroon">Manager Dashboard</h1>
+        <p className="text-base text-gray-600 mt-2 font-medium">{station?.name || 'Loading station...'}</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div className="group bg-gradient-to-br from-blue-50 via-white to-blue-100 rounded-2xl border-2 border-blue-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
+          <div className="text-center relative z-10">
+            <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">PMS Stock</p>
+            <p className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-blue-600 to-blue-800">
+              {station?.currentStock?.PMS?.toFixed(2) || '0.00'}L
+            </p>
+            <p className="text-sm text-gray-600 mt-2 font-semibold">
+              ₦{station?.currentPrices?.PMS?.toFixed(2) || '0.00'}/L
+            </p>
+          </div>
+        </div>
+
+        <div className="group bg-gradient-to-br from-green-50 via-white to-green-100 rounded-2xl border-2 border-green-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-green-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
+          <div className="text-center relative z-10">
+            <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">AGO Stock</p>
+            <p className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-green-600 to-green-800">
+              {station?.currentStock?.AGO?.toFixed(2) || '0.00'}L
+            </p>
+            <p className="text-sm text-gray-600 mt-2 font-semibold">
+              ₦{station?.currentPrices?.AGO?.toFixed(2) || '0.00'}/L
+            </p>
+          </div>
+        </div>
+
+        <div className="group bg-gradient-to-br from-purple-50 via-white to-purple-100 rounded-2xl border-2 border-purple-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-purple-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
+          <div className="text-center relative z-10">
+            <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Day Status</p>
+            <p className="text-5xl font-black">
+              {activeDayShift ? '🟢' : '🔴'}
+            </p>
+            <p className="text-sm font-bold mt-2 ${activeDayShift ? 'text-green-700' : 'text-red-700'}">
+              {activeDayShift ? 'Active' : 'Not Started'}
+            </p>
+          </div>
+        </div>
+
+        <div className="group bg-gradient-to-br from-orange-50 via-white to-orange-100 rounded-2xl border-2 border-orange-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
+          <div className="text-center relative z-10">
+            <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Dispensers</p>
+            <p className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-orange-600 to-orange-800">
+              {station?.dispensers?.length || 0}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card title="Station Information" className="border border-gray-200">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+              <span className="text-2xl">🏢</span>
+              <div>
+                <p className="text-xs text-gray-500 font-semibold">Name</p>
+                <p className="font-bold text-gray-900">{station?.name}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+              <span className="text-2xl">🔖</span>
+              <div>
+                <p className="text-xs text-gray-500 font-semibold">Code</p>
+                <p className="font-bold text-gray-900">{station?.code}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+              <span className="text-2xl">📍</span>
+              <div>
+                <p className="text-xs text-gray-500 font-semibold">Location</p>
+                <p className="font-bold text-gray-900">{station?.location}</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Quick Actions" className="border border-gray-200">
+          <div className="space-y-3">
+            {!activeDayShift ? (
+              <a
+                href="/manager/begin-day"
+                className="block p-4 bg-gradient-to-r from-ecana-maroon-50 to-ecana-maroon-100 hover:from-ecana-maroon-100 hover:to-ecana-maroon-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-ecana-maroon-200"
+              >
+                <p className="font-bold text-ecana-maroon text-lg">🚀 Begin Day</p>
+                <p className="text-sm text-gray-600 mt-1">Start operations for today</p>
+              </a>
+            ) : (
+              <a
+                href="/manager/end-day"
+                className="block p-4 bg-gradient-to-r from-red-50 to-red-100 hover:from-red-100 hover:to-red-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-red-200"
+              >
+                <p className="font-bold text-red-700 text-lg">🛑 End Day</p>
+                <p className="text-sm text-gray-600 mt-1">Close operations for today</p>
+              </a>
+            )}
+            <a
+              href="/manager/stock"
+              className="block p-4 bg-gradient-to-r from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-green-200"
+            >
+              <p className="font-bold text-green-700 text-lg">📦 Receive Stock</p>
+              <p className="text-sm text-gray-600 mt-1">Record fuel deliveries</p>
+            </a>
+            <a
+              href="/manager/reports"
+              className="block p-4 bg-gradient-to-r from-ecana-blue-50 to-ecana-blue-100 hover:from-ecana-blue-100 hover:to-ecana-blue-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-ecana-blue-200"
+            >
+              <p className="font-bold text-ecana-blue text-lg">📊 View Reports</p>
+              <p className="text-sm text-gray-600 mt-1">Access daily reports</p>
+            </a>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}

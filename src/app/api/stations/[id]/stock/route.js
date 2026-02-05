@@ -1,0 +1,129 @@
+import { NextResponse } from 'next/server';
+import mongoose from 'mongoose';
+import connectDB from '@/lib/db';
+import Station from '@/models/Station';
+import StockMovement from '@/models/StockMovement';
+import { requireAuth } from '@/lib/auth';
+import { stockReceiptSchema } from '@/lib/validation';
+import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
+import { ROLES } from '@/lib/constants';
+
+// POST /api/stations/[id]/stock - Receive stock
+export async function POST(request, { params }) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const currentUser = await requireAuth();
+    await connectDB();
+
+    // Only managers and admins can receive stock
+    if (![ROLES.ADMIN, ROLES.MANAGER].includes(currentUser.role)) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions' },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const validatedData = stockReceiptSchema.parse(body);
+
+    const station = await Station.findById(params.id).session(session);
+    if (!station) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: 'Station not found' },
+        { status: 404 }
+      );
+    }
+
+    // Managers can only manage their own station
+    if (currentUser.role === ROLES.MANAGER && currentUser.stationId !== params.id) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: 'Access denied to this station' },
+        { status: 403 }
+      );
+    }
+
+    const fuelType = validatedData.fuelType;
+    const previousStock = station.currentStock[fuelType];
+    const newStock = previousStock + validatedData.quantity;
+    const expectedQuantity = validatedData.expectedQuantity;
+    const varianceQuantity = expectedQuantity !== undefined ? validatedData.quantity - expectedQuantity : undefined;
+
+    // Update station stock
+    station.currentStock[fuelType] = newStock;
+    await station.save({ session });
+
+    // Create stock movement record
+    const costPerLiter = validatedData.cost / validatedData.quantity;
+    
+    await StockMovement.create([{
+      stationId: station._id,
+      stationName: station.name,
+      date: new Date(),
+      fuelType,
+      movementType: 'receipt',
+      quantity: validatedData.quantity,
+      expectedQuantity,
+      varianceQuantity,
+      costPerLiter,
+      totalCost: validatedData.cost,
+      supplier: body.supplier || 'N/A',
+      previousStock,
+      newStock,
+      recordedBy: currentUser.id,
+      recordedByName: currentUser.name,
+      notes: body.notes || '',
+    }], { session });
+
+    // Create audit log
+    await createAuditLog({
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: AUDIT_ACTIONS.RECEIVE_STOCK,
+      resource: AUDIT_RESOURCES.STOCK_MOVEMENT,
+      resourceId: station._id.toString(),
+      stationId: station._id,
+      stationName: station.name,
+      details: {
+        fuelType,
+        quantity: validatedData.quantity,
+        cost: validatedData.cost,
+        previousStock,
+        newStock,
+      },
+    });
+
+    await session.commitTransaction();
+
+    return NextResponse.json({ 
+      station,
+      stockUpdate: {
+        fuelType,
+        previousStock,
+        newStock,
+        quantityAdded: validatedData.quantity,
+      }
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('Error receiving stock:', error);
+    
+    if (error.name === 'ZodError') {
+      return NextResponse.json(
+        { error: 'Validation error', details: error.errors },
+        { status: 400 }
+      );
+    }
+    
+    return NextResponse.json(
+      { error: error.message || 'Failed to receive stock' },
+      { status: 500 }
+    );
+  } finally {
+    session.endSession();
+  }
+}
