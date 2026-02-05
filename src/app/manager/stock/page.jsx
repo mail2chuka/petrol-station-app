@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
@@ -9,7 +9,7 @@ import Select from '@/components/Select';
 import Button from '@/components/Button';
 import Loading from '@/components/Loading';
 
-export default function ReceiveStockPage() {
+function ReceiveStockPageContent() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const adminStationId = searchParams.get('stationId');
@@ -254,5 +254,13 @@ export default function ReceiveStockPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function ReceiveStockPage() {
+  return (
+    <Suspense fallback={<Loading /> }>
+      <ReceiveStockPageContent />
+    </Suspense>
   );
 }

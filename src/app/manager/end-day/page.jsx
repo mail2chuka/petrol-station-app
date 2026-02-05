@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
@@ -8,7 +8,7 @@ import Input from '@/components/Input';
 import Button from '@/components/Button';
 import Loading from '@/components/Loading';
 
-export default function EndDayPage() {
+function EndDayPageContent() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -205,5 +205,13 @@ export default function EndDayPage() {
         </form>
       </Card>
     </div>
+  );
+}
+
+export default function EndDayPage() {
+  return (
+    <Suspense fallback={<Loading /> }>
+      <EndDayPageContent />
+    </Suspense>
   );
 }

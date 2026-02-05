@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
@@ -10,7 +10,7 @@ import Button from '@/components/Button';
 import Table from '@/components/Table';
 import Loading from '@/components/Loading';
 
-export default function ManagerReportsPage() {
+function ManagerReportsPageContent() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const adminStationId = searchParams.get('stationId');
@@ -192,5 +192,13 @@ export default function ManagerReportsPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function ManagerReportsPage() {
+  return (
+    <Suspense fallback={<Loading /> }>
+      <ManagerReportsPageContent />
+    </Suspense>
   );
 }

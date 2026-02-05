@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import MobileTabBar from '@/components/MobileTabBar';
@@ -16,7 +16,7 @@ const managerMenuItems = [
   { label: 'Reports', href: '/manager/reports' },
 ];
 
-export default function ManagerLayout({ children }) {
+function ManagerLayoutContent({ children }) {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -69,5 +69,13 @@ export default function ManagerLayout({ children }) {
       </div>
       <MobileTabBar menuItems={menuItems} />
     </div>
+  );
+}
+
+export default function ManagerLayout({ children }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center"><Loading size="large" text="Loading dashboard..." /></div>}>
+      <ManagerLayoutContent>{children}</ManagerLayoutContent>
+    </Suspense>
   );
 }
