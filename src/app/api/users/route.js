@@ -6,6 +6,28 @@ import { requireAdmin } from '@/lib/auth';
 import { userSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 
+function slugifyLoginId(input) {
+  const normalized = String(input || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '.')
+    .replace(/\.+/g, '.')
+    .replace(/^\.|\.$/g, '');
+  return normalized || 'user';
+}
+
+async function generateUniqueLoginId(UserModel, seed) {
+  const base = slugifyLoginId(seed).slice(0, 24);
+  let candidate = base;
+  let counter = 1;
+
+  while (await UserModel.findOne({ loginId: candidate })) {
+    candidate = `${base}${counter}`;
+    counter += 1;
+  }
+
+  return candidate;
+}
+
 // GET /api/users - List all users
 export async function GET(request) {
   try {
@@ -44,6 +66,7 @@ export async function POST(request) {
     const body = await request.json();
     const normalizedBody = {
       ...body,
+      loginId: body.loginId ? body.loginId.toLowerCase().trim() : undefined,
       stationId: body.stationId ? body.stationId : undefined,
     };
     if (normalizedBody.role === 'admin' || normalizedBody.role === 'auditor') {
@@ -53,11 +76,23 @@ export async function POST(request) {
     // Validate input
     const validatedData = userSchema.parse(normalizedBody);
 
-    // Check if email already exists
-    const existingUser = await User.findOne({ email: validatedData.email.toLowerCase() });
+    // Check if email/loginId already exists
+    const existingQuery = [
+      { email: validatedData.email.toLowerCase() },
+    ];
+    if (validatedData.loginId) {
+      existingQuery.push({ loginId: validatedData.loginId.toLowerCase() });
+    }
+
+    const existingUser = await User.findOne({ $or: existingQuery });
     if (existingUser) {
       return NextResponse.json(
-        { error: 'Email already exists' },
+        {
+          error:
+            existingUser.email === validatedData.email.toLowerCase()
+              ? 'Email already exists'
+              : 'Login ID already exists',
+        },
         { status: 400 }
       );
     }
@@ -75,10 +110,15 @@ export async function POST(request) {
       stationName = station.name;
     }
 
+    const finalLoginId = validatedData.loginId
+      ? validatedData.loginId.toLowerCase()
+      : await generateUniqueLoginId(User, validatedData.name || validatedData.email?.split('@')[0]);
+
     // Create user
     const user = await User.create({
       ...validatedData,
       email: validatedData.email.toLowerCase(),
+      loginId: finalLoginId,
       stationName,
       createdBy: currentUser.id,
       createdByName: currentUser.name,
@@ -96,6 +136,7 @@ export async function POST(request) {
       stationName,
       details: {
         email: user.email,
+        loginId: user.loginId,
         role: user.role,
         name: user.name,
       },

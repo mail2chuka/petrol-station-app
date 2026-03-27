@@ -40,11 +40,46 @@ export async function PATCH(request, { params }) {
     await connectDB();
 
     const body = await request.json();
-    const { name, location, code, isActive, tolerancePercent } = body;
+    const {
+      name,
+      location,
+      code,
+      isActive,
+      tolerancePercent,
+      numberOfTanks,
+      numberOfPumps,
+      editReason,
+    } = body;
 
     const station = await Station.findById(params.id);
     if (!station) {
       return NextResponse.json({ error: 'Station not found' }, { status: 404 });
+    }
+
+    if (numberOfTanks !== undefined && (!Number.isFinite(Number(numberOfTanks)) || Number(numberOfTanks) < 0)) {
+      return NextResponse.json(
+        { error: 'Number of tanks must be 0 or more.' },
+        { status: 400 }
+      );
+    }
+
+    if (numberOfPumps !== undefined && (!Number.isFinite(Number(numberOfPumps)) || Number(numberOfPumps) < 0)) {
+      return NextResponse.json(
+        { error: 'Number of pumps must be 0 or more.' },
+        { status: 400 }
+      );
+    }
+
+    const previousNumberOfTanks = station.numberOfTanks;
+    const previousNumberOfPumps = station.numberOfPumps;
+    const tankChange = numberOfTanks !== undefined && Number(numberOfTanks) !== previousNumberOfTanks;
+    const pumpChange = numberOfPumps !== undefined && Number(numberOfPumps) !== previousNumberOfPumps;
+
+    if ((tankChange || pumpChange) && (!editReason || String(editReason).trim().length < 5)) {
+      return NextResponse.json(
+        { error: 'Edit reason is required for tank/pump changes (min 5 characters).' },
+        { status: 400 }
+      );
     }
 
     if (name) station.name = name;
@@ -53,6 +88,12 @@ export async function PATCH(request, { params }) {
     if (isActive !== undefined) station.isActive = isActive;
     if (tolerancePercent !== undefined) {
       station.tolerancePercent = Number(tolerancePercent);
+    }
+    if (numberOfTanks !== undefined) {
+      station.numberOfTanks = Number(numberOfTanks);
+    }
+    if (numberOfPumps !== undefined) {
+      station.numberOfPumps = Number(numberOfPumps);
     }
 
     await station.save();
@@ -66,7 +107,16 @@ export async function PATCH(request, { params }) {
       resourceId: station._id.toString(),
       stationId: station._id,
       stationName: station.name,
-      details: { updates: body },
+      details: {
+        updates: body,
+        tankChange: tankChange
+          ? { before: previousNumberOfTanks, after: Number(numberOfTanks) }
+          : undefined,
+        pumpChange: pumpChange
+          ? { before: previousNumberOfPumps, after: Number(numberOfPumps) }
+          : undefined,
+        editReason: editReason || undefined,
+      },
     });
 
     return NextResponse.json({ station });

@@ -16,6 +16,9 @@ export async function requireAuth() {
   if (!user) {
     throw new Error('Authentication required');
   }
+  if (!user.business) {
+    user.business = 'fuel';
+  }
   return user;
 }
 
@@ -35,6 +38,31 @@ export async function requireAdmin() {
 
 export async function requireManagerOrAdmin() {
   return requireRole([ROLES.ADMIN, ROLES.MANAGER]);
+}
+
+export async function requireBusiness(expectedBusiness) {
+  const user = await requireAuth();
+
+  // During initial rollout, admins can operate across both businesses.
+  if (user.role === ROLES.ADMIN) {
+    return user;
+  }
+
+  if ((user.business || 'fuel') !== expectedBusiness) {
+    throw new Error(`Access denied for this business. Sign in with a ${expectedBusiness} account.`);
+  }
+
+  return user;
+}
+
+export async function requireBusinessRole(expectedBusiness, allowedRoles) {
+  const user = await requireBusiness(expectedBusiness);
+
+  if (!allowedRoles.includes(user.role)) {
+    throw new Error('Insufficient permissions');
+  }
+
+  return user;
 }
 
 export async function requireStationAccess(stationId) {

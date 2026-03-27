@@ -17,6 +17,7 @@ function ReceiveStockPageContent() {
   const [station, setStation] = useState(null);
   const [formData, setFormData] = useState({
     fuelType: 'PMS',
+    tank: '',
     quantity: '',
     expectedQuantity: '',
     cost: '',
@@ -70,6 +71,7 @@ function ReceiveStockPageContent() {
         body: JSON.stringify({
           stationId: activeStationId,
           fuelType: formData.fuelType,
+          tank: formData.tank?.trim() ? formData.tank.trim() : undefined,
           quantity: parseFloat(formData.quantity),
           expectedQuantity: formData.expectedQuantity ? parseFloat(formData.expectedQuantity) : undefined,
           cost: parseFloat(formData.cost),
@@ -84,6 +86,7 @@ function ReceiveStockPageContent() {
         setSuccess(`Stock received successfully! New ${formData.fuelType} stock: ${data.stockUpdate.newStock.toFixed(2)}L`);
         setFormData({
           fuelType: 'PMS',
+          tank: '',
           quantity: '',
           expectedQuantity: '',
           cost: '',
@@ -171,6 +174,14 @@ function ReceiveStockPageContent() {
                 { value: 'AGO', label: 'AGO (Diesel)' },
               ]}
               required
+            />
+
+            <Input
+              label="Tank"
+              name="tank"
+              value={formData.tank}
+              onChange={handleChange}
+              placeholder="e.g., Tank 1"
             />
 
             <Input

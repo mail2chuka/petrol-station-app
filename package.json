@@ -7,24 +7,29 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "seed": "node scripts/seed-admin.mjs"
+    "seed": "node scripts/seed-admin.mjs",
+    "seed:fuel": "node scripts/seed-admin.mjs",
+    "seed:materials": "node scripts/seed-materials.mjs",
+    "backfill:login-ids": "node scripts/backfill-login-ids.mjs"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "date-fns": "^4.1.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
+    "mongoose": "^8.10.0",
     "next": "16.1.6",
+    "next-auth": "^4.24.13",
     "react": "^19",
     "react-dom": "^19",
-    "mongoose": "^8.10.0",
-    "next-auth": "^4.24.13",
-    "bcryptjs": "^2.4.3",
-    "zod": "^3.24.1",
     "swr": "^2.2.5",
-    "date-fns": "^4.1.0"
+    "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.15",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "postcss": "^8",
-    "tailwindcss": "^4.0.15",
-    "@tailwindcss/postcss": "^4.0.15"
+    "tailwindcss": "^4.0.15"
   }
 }

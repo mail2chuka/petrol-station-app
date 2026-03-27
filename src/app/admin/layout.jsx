@@ -2,24 +2,39 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import MobileTabBar from '@/components/MobileTabBar';
 import Loading from '@/components/Loading';
 
-const adminMenuItems = [
+const fuelAdminMenuItems = [
   { label: 'Dashboard', href: '/admin' },
   { label: 'Stations', href: '/admin/stations' },
   { label: 'Users', href: '/admin/users' },
   { label: 'Staff', href: '/admin/staff' },
   { label: 'Reports', href: '/admin/reports' },
   { label: 'Audit Logs', href: '/admin/audit' },
+  { label: 'Switch Business', href: '/select-business' },
+];
+
+const materialsAdminMenuItems = [
+  { label: 'Dashboard', href: '/admin/materials' },
+  { label: 'Customers', href: '/admin/materials/customers' },
+  { label: 'Products', href: '/admin/materials/products' },
+  { label: 'Staff', href: '/admin/materials/staff' },
+  { label: 'Orders', href: '/admin/materials/orders' },
+  { label: 'Switch Business', href: '/select-business' },
 ];
 
 export default function AdminLayout({ children }) {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
+
+  const menuItems =
+    pathname?.startsWith('/admin/materials') ? materialsAdminMenuItems : fuelAdminMenuItems;
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -43,14 +58,14 @@ export default function AdminLayout({ children }) {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       <Navbar />
       <div className="flex">
-        <Sidebar menuItems={adminMenuItems} />
+        <Sidebar menuItems={menuItems} />
         <main className="flex-1 min-h-[calc(100vh-4rem)]">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-24 md:pb-8">
             {children}
           </div>
         </main>
       </div>
-      <MobileTabBar menuItems={adminMenuItems} />
+      <MobileTabBar menuItems={menuItems} />
     </div>
   );
 }

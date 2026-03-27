@@ -68,6 +68,7 @@ export async function POST(request, { params }) {
       quantity: validatedData.quantity,
       expectedQuantity,
       varianceQuantity,
+      tank: validatedData.tank,
       costPerLiter,
       totalCost: validatedData.cost,
       supplier: body.supplier || 'N/A',

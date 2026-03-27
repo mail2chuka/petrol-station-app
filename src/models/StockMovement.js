@@ -40,6 +40,9 @@ const stockMovementSchema = new mongoose.Schema(
     varianceQuantity: {
       type: Number,
     },
+    tank: {
+      type: String,
+    },
     // For receipts
     costPerLiter: {
       type: Number,

@@ -46,6 +46,16 @@ const stationSchema = new mongoose.Schema(
       default: 2.5,
       min: 0,
     },
+    numberOfTanks: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    numberOfPumps: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     dispensers: [
       {
         dispenserId: {

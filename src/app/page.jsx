@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { PageLoader } from '@/components/Loading';
+import { getDefaultRouteForUser } from '@/lib/routing';
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -15,26 +16,7 @@ export default function Home() {
     if (!session) {
       router.push('/login');
     } else {
-      // Redirect to appropriate dashboard based on role
-      switch (session.user.role) {
-        case 'admin':
-          router.push('/admin');
-          break;
-        case 'manager':
-          router.push('/manager');
-          break;
-        case 'accountant':
-          router.push('/accountant');
-          break;
-        case 'attendant':
-          router.push('/attendant');
-          break;
-        case 'auditor':
-          router.push('/auditor');
-          break;
-        default:
-          router.push('/login');
-      }
+      router.push(getDefaultRouteForUser(session.user));
     }
   }, [session, status, router]);
 

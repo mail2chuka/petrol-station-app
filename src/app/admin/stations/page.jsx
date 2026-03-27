@@ -18,11 +18,24 @@ export default function StationsPage() {
   const [selectedStation, setSelectedStation] = useState(null);
   const [priceForm, setPriceForm] = useState({ pms: '', ago: '', reason: '', tolerancePercent: '' });
   const [savingPrices, setSavingPrices] = useState(false);
+  const [editingStation, setEditingStation] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    code: '',
+    location: '',
+    numberOfTanks: '',
+    numberOfPumps: '',
+    editReason: '',
+    confirmCode: '',
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
   const [deactivating, setDeactivating] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     code: '',
     location: '',
+    numberOfTanks: '',
+    numberOfPumps: '',
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -52,6 +65,21 @@ export default function StationsPage() {
       ago: station?.currentPrices?.AGO ?? '',
       reason: '',
       tolerancePercent: station?.tolerancePercent ?? 2.5,
+    });
+  };
+
+  const openEditStation = (station) => {
+    setError('');
+    setSuccess('');
+    setEditingStation(station);
+    setEditForm({
+      name: station?.name || '',
+      code: station?.code || '',
+      location: station?.location || '',
+      numberOfTanks: station?.numberOfTanks ?? 0,
+      numberOfPumps: station?.numberOfPumps ?? 0,
+      editReason: '',
+      confirmCode: '',
     });
   };
 
@@ -163,6 +191,90 @@ export default function StationsPage() {
     }
   };
 
+  const saveEditStation = async () => {
+    if (!editingStation?._id) return;
+
+    const numberOfTanks = Number(editForm.numberOfTanks);
+    const numberOfPumps = Number(editForm.numberOfPumps);
+
+    if (!Number.isFinite(numberOfTanks) || numberOfTanks < 0) {
+      setError('Please enter a valid number of tanks (0 or more).');
+      return;
+    }
+
+    if (!Number.isFinite(numberOfPumps) || numberOfPumps < 0) {
+      setError('Please enter a valid number of pumps (0 or more).');
+      return;
+    }
+
+    if (String(editForm.confirmCode).trim().toUpperCase() !== String(editingStation.code).toUpperCase()) {
+      setError('Confirmation code does not match the station code.');
+      return;
+    }
+
+    const changes = {
+      name: editForm.name?.trim(),
+      code: editForm.code?.trim(),
+      location: editForm.location?.trim(),
+      numberOfTanks,
+      numberOfPumps,
+      editReason: editForm.editReason?.trim(),
+    };
+
+    const hasAnyChange =
+      changes.name !== editingStation.name ||
+      changes.code?.toUpperCase() !== String(editingStation.code).toUpperCase() ||
+      changes.location !== editingStation.location ||
+      Number(changes.numberOfTanks) !== Number(editingStation.numberOfTanks || 0) ||
+      Number(changes.numberOfPumps) !== Number(editingStation.numberOfPumps || 0);
+
+    if (!hasAnyChange) {
+      setSuccess('No changes to save.');
+      setEditingStation(null);
+      return;
+    }
+
+    if (
+      (Number(changes.numberOfTanks) !== Number(editingStation.numberOfTanks || 0) ||
+        Number(changes.numberOfPumps) !== Number(editingStation.numberOfPumps || 0)) &&
+      (!changes.editReason || changes.editReason.length < 5)
+    ) {
+      setError('Please provide a reason (min 5 characters) for tank/pump changes.');
+      return;
+    }
+
+    const ok = window.confirm(
+      'This will update core station details, including tanks/pumps. Confirm to proceed.'
+    );
+    if (!ok) return;
+
+    setSavingEdit(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const res = await fetch(`/api/stations/${editingStation._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(changes),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || 'Failed to update station');
+        return;
+      }
+
+      setSuccess('Station updated successfully.');
+      setEditingStation(null);
+      await fetchStations();
+    } catch (e) {
+      setError('An error occurred while updating the station.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -176,17 +288,35 @@ export default function StationsPage() {
     setSuccess('');
 
     try {
+      const payload = {
+        name: formData.name?.trim(),
+        code: formData.code?.trim(),
+        location: formData.location?.trim(),
+        numberOfTanks: Number(formData.numberOfTanks),
+        numberOfPumps: Number(formData.numberOfPumps),
+      };
+
+      if (!Number.isFinite(payload.numberOfTanks) || payload.numberOfTanks < 0) {
+        setError('Please enter a valid number of tanks (0 or more).');
+        return;
+      }
+
+      if (!Number.isFinite(payload.numberOfPumps) || payload.numberOfPumps < 0) {
+        setError('Please enter a valid number of pumps (0 or more).');
+        return;
+      }
+
       const res = await fetch('/api/stations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
 
       if (res.ok) {
         setSuccess('Station created successfully!');
-        setFormData({ name: '', code: '', location: '' });
+        setFormData({ name: '', code: '', location: '', numberOfTanks: '', numberOfPumps: '' });
         setShowForm(false);
         fetchStations();
       } else {
@@ -221,6 +351,14 @@ export default function StationsPage() {
       render: (row) => `${row.currentStock?.AGO?.toFixed(2) || '0.00'}L`
     },
     {
+      header: 'Tanks',
+      render: (row) => Number.isFinite(row.numberOfTanks) ? row.numberOfTanks : '-'
+    },
+    {
+      header: 'Pumps',
+      render: (row) => Number.isFinite(row.numberOfPumps) ? row.numberOfPumps : '-'
+    },
+    {
       header: 'Actions',
       render: (row) => (
         <div className="flex gap-2">
@@ -232,6 +370,9 @@ export default function StationsPage() {
           </Link>
           <Button size="sm" variant="outline" onClick={() => openPriceEditor(row)}>
             Set Prices
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => openEditStation(row)}>
+            Edit Details
           </Button>
           <Button
             size="sm"
@@ -373,6 +514,108 @@ export default function StationsPage() {
         </div>
       )}
 
+      {editingStation && (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close station editor"
+            onClick={() => setEditingStation(null)}
+          />
+          <div className="absolute left-0 right-0 bottom-0 sm:bottom-auto sm:top-24 sm:left-1/2 sm:-translate-x-1/2 sm:w-[560px] rounded-t-2xl sm:rounded-2xl bg-white shadow-xl">
+            <div className="p-4 sm:p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm text-gray-600">Edit station details</p>
+                  <p className="text-lg font-bold text-gray-900">{editingStation.name}</p>
+                </div>
+                <Button variant="secondary" onClick={() => setEditingStation(null)}>
+                  Close
+                </Button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input
+                  label="Station Name"
+                  name="name"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
+                  required
+                />
+                <Input
+                  label="Station Code"
+                  name="code"
+                  value={editForm.code}
+                  onChange={(e) => setEditForm((p) => ({ ...p, code: e.target.value }))}
+                  required
+                />
+                <Input
+                  label="Location"
+                  name="location"
+                  value={editForm.location}
+                  onChange={(e) => setEditForm((p) => ({ ...p, location: e.target.value }))}
+                  required
+                />
+                <Input
+                  label="Number of Tanks"
+                  type="number"
+                  name="numberOfTanks"
+                  value={editForm.numberOfTanks}
+                  onChange={(e) => setEditForm((p) => ({ ...p, numberOfTanks: e.target.value }))}
+                  min="0"
+                  step="1"
+                  required
+                />
+                <Input
+                  label="Number of Pumps"
+                  type="number"
+                  name="numberOfPumps"
+                  value={editForm.numberOfPumps}
+                  onChange={(e) => setEditForm((p) => ({ ...p, numberOfPumps: e.target.value }))}
+                  min="0"
+                  step="1"
+                  required
+                />
+              </div>
+
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs text-amber-800">
+                  Changes to tanks/pumps are audited and require a reason and confirmation.
+                </p>
+              </div>
+
+              <Input
+                label="Reason for change"
+                name="editReason"
+                value={editForm.editReason}
+                onChange={(e) => setEditForm((p) => ({ ...p, editReason: e.target.value }))}
+                placeholder="Explain why these details are changing"
+              />
+
+              <Input
+                label={`Type station code to confirm (${editingStation.code})`}
+                name="confirmCode"
+                value={editForm.confirmCode}
+                onChange={(e) => setEditForm((p) => ({ ...p, confirmCode: e.target.value }))}
+                placeholder="Enter station code"
+              />
+
+              <div className="mt-2 flex gap-2">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  disabled={savingEdit}
+                  onClick={saveEditStation}
+                >
+                  {savingEdit ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <Card title="Create New Station" className="mb-6">
           <form onSubmit={handleSubmit}>
@@ -398,6 +641,28 @@ export default function StationsPage() {
               value={formData.location}
               onChange={handleChange}
               placeholder="e.g., 123 Main Street, Lagos"
+              required
+            />
+            <Input
+              label="Number of Tanks"
+              type="number"
+              name="numberOfTanks"
+              value={formData.numberOfTanks}
+              onChange={handleChange}
+              placeholder="e.g., 4"
+              min="0"
+              step="1"
+              required
+            />
+            <Input
+              label="Number of Pumps"
+              type="number"
+              name="numberOfPumps"
+              value={formData.numberOfPumps}
+              onChange={handleChange}
+              placeholder="e.g., 6"
+              min="0"
+              step="1"
               required
             />
             <Button type="submit" variant="primary" fullWidth size="lg">

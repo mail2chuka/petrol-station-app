@@ -88,6 +88,8 @@ export async function POST(request) {
       details: {
         code: station.code,
         location: station.location,
+        numberOfTanks: station.numberOfTanks,
+        numberOfPumps: station.numberOfPumps,
       },
     });
 

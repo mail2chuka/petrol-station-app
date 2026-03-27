@@ -9,7 +9,7 @@ import Input from '@/components/Input';
 export default function LoginPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({
-    email: '',
+    identifier: '',
     password: '',
   });
   const [error, setError] = useState('');
@@ -31,7 +31,7 @@ export default function LoginPage() {
     try {
       const result = await signIn('credentials', {
         redirect: false,
-        email: formData.email,
+        identifier: formData.identifier,
         password: formData.password,
       });
 
@@ -72,23 +72,23 @@ export default function LoginPage() {
 
             {/* Headline */}
             <h1 className="text-4xl xl:text-5xl font-bold text-white mb-6 leading-tight">
-              Fuel Station
+              Ecana Group
               <br />
-              <span className="text-white/90">Management System</span>
+              <span className="text-white/90">Online Portal</span>
             </h1>
 
             {/* Description */}
             <p className="text-lg text-white/70 mb-10 leading-relaxed">
-              Streamline your operations with real-time tracking, comprehensive reporting, and seamless team coordination.
+              Your unified platform for managing all Ecana Group businesses — fuel stations, materials supply, and more.
             </p>
 
             {/* Features */}
             <div className="space-y-4">
               {[
-                { icon: '📊', text: 'Real-time sales tracking' },
-                { icon: '⛽', text: 'Stock management & alerts' },
-                { icon: '👥', text: 'Multi-role access control' },
-                { icon: '📱', text: 'Mobile-friendly interface' },
+                { icon: '⛽', text: 'Fuel station operations & sales' },
+                { icon: '🏪', text: 'Materials & supplies management' },
+                { icon: '📊', text: 'Real-time reports & analytics' },
+                { icon: '👥', text: 'Multi-role access across all units' },
               ].map((feature, index) => (
                 <div
                   key={index}
@@ -106,7 +106,7 @@ export default function LoginPage() {
         {/* Decorative elements */}
         <div className="absolute bottom-8 left-12 xl:left-20">
           <p className="text-sm text-white/40">
-            &copy; {new Date().getFullYear()} Ecana Energy. All rights reserved.
+            &copy; {new Date().getFullYear()} Ecana Group. All rights reserved.
           </p>
         </div>
       </div>
@@ -121,7 +121,7 @@ export default function LoginPage() {
               alt="Ecana Energy"
               className="h-12 w-auto mx-auto mb-4"
             />
-            <h2 className="text-xl font-semibold text-slate-900">Fuel Station Management</h2>
+            <h2 className="text-xl font-semibold text-slate-900">Ecana Group Portal</h2>
           </div>
 
           {/* Welcome text */}
@@ -144,7 +144,7 @@ export default function LoginPage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-red-800">{error}</p>
-                <p className="text-xs text-red-600 mt-0.5">Please check your credentials and try again.</p>
+                <p className="text-xs text-red-600 mt-0.5">Please check your email/login ID and password, then try again.</p>
               </div>
             </div>
           )}
@@ -152,14 +152,14 @@ export default function LoginPage() {
           {/* Login form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             <Input
-              label="Email Address"
-              type="email"
-              name="email"
-              value={formData.email}
+              label="Email or Login ID"
+              type="text"
+              name="identifier"
+              value={formData.identifier}
               onChange={handleChange}
-              placeholder="you@example.com"
+              placeholder="e.g., admin01 or you@example.com"
               required
-              autoComplete="email"
+              autoComplete="username"
             />
 
             <Input
@@ -195,7 +195,7 @@ export default function LoginPage() {
           {/* Mobile copyright */}
           <div className="lg:hidden mt-10 text-center">
             <p className="text-xs text-slate-400">
-              &copy; {new Date().getFullYear()} Ecana Energy. All rights reserved.
+              &copy; {new Date().getFullYear()} Ecana Group. All rights reserved.
             </p>
           </div>
         </div>

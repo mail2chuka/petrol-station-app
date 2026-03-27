@@ -42,6 +42,7 @@ export const AUDIT_ACTIONS = {
   END_DAY: 'end_day',
   RECORD_SALE: 'record_sale',
   RECORD_PAYMENT: 'record_payment',
+  CHANGE_PASSWORD: 'change_password',
   ADJUST_PRICE: 'adjust_price',
   RECEIVE_STOCK: 'receive_stock',
 };

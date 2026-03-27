@@ -8,6 +8,7 @@ import Input from '@/components/Input';
 import Select from '@/components/Select';
 import Loading from '@/components/Loading';
 import { useSession } from 'next-auth/react';
+import PasswordResetModal from '@/components/PasswordResetModal';
 
 export default function UsersPage() {
   const { data: session } = useSession();
@@ -28,9 +29,13 @@ export default function UsersPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [hardDeletingId, setHardDeletingId] = useState(null);
+  const [generatingIds, setGeneratingIds] = useState(false);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resettingPassword, setResettingPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    loginId: '',
     password: '',
     role: '',
     stationId: '',
@@ -84,7 +89,7 @@ export default function UsersPage() {
 
       if (res.ok) {
         setSuccess('User created successfully!');
-        setFormData({ name: '', email: '', password: '', role: '', stationId: '' });
+        setFormData({ name: '', email: '', loginId: '', password: '', role: '', stationId: '' });
         setShowForm(false);
         fetchData();
       } else {
@@ -223,11 +228,57 @@ export default function UsersPage() {
     }
   };
 
+  const resetPassword = async (newPassword) => {
+    if (!resetTarget?._id) return;
+    setResettingPassword(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetch(`/api/users/${resetTarget._id}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || 'Failed to reset password');
+        return;
+      }
+      setSuccess(`Password reset for ${resetTarget.name}.`);
+      setResetTarget(null);
+    } catch (e) {
+      setError('An error occurred while resetting password.');
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
+  const generateMissingLoginIds = async () => {
+    setGeneratingIds(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetch('/api/users/generate-login-ids', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to generate login IDs');
+        return;
+      }
+      setSuccess(`Generated login IDs for ${data.updated || 0} user(s).`);
+      await fetchData();
+    } catch (e) {
+      setError('An error occurred while generating login IDs.');
+    } finally {
+      setGeneratingIds(false);
+    }
+  };
+
   const columns = [
     { header: 'User', render: (row) => (
       <div>
         <p className="font-semibold text-gray-900">{row.name}</p>
         <p className="text-xs text-gray-500">{row.email}</p>
+        {row.loginId && <p className="text-xs text-gray-500">ID: {row.loginId}</p>}
       </div>
     )},
     { 
@@ -249,6 +300,13 @@ export default function UsersPage() {
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => openEdit(row)}>
             Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setResetTarget(row)}
+          >
+            Reset Password
           </Button>
           <Button
             size="sm"
@@ -281,6 +339,9 @@ export default function UsersPage() {
           <p className="text-sm text-gray-600 mt-1">Create, edit, and deactivate users.</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="secondary" onClick={generateMissingLoginIds} disabled={generatingIds}>
+            {generatingIds ? 'Generating IDs...' : 'Generate Missing User IDs'}
+          </Button>
           <Button variant={showForm ? 'secondary' : 'primary'} onClick={() => setShowForm(!showForm)}>
             {showForm ? 'Close' : 'Create User'}
           </Button>
@@ -431,6 +492,13 @@ export default function UsersPage() {
               required
             />
             <Input
+              label="Login ID (optional)"
+              name="loginId"
+              value={formData.loginId}
+              onChange={handleChange}
+              placeholder="e.g., john.ops"
+            />
+            <Input
               label="Password"
               type="password"
               name="password"
@@ -472,11 +540,20 @@ export default function UsersPage() {
             const q = query.toLowerCase();
             return (
               String(u.name || '').toLowerCase().includes(q) ||
-              String(u.email || '').toLowerCase().includes(q)
+              String(u.email || '').toLowerCase().includes(q) ||
+              String(u.loginId || '').toLowerCase().includes(q)
             );
           })}
         />
       </Card>
+
+      <PasswordResetModal
+        isOpen={Boolean(resetTarget)}
+        targetName={resetTarget?.name}
+        onClose={() => setResetTarget(null)}
+        onSubmit={resetPassword}
+        isLoading={resettingPassword}
+      />
     </div>
   );
 }

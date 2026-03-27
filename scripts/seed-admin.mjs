@@ -14,6 +14,7 @@ dotenv.config({ path: join(__dirname, '../.env.local') });
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true, lowercase: true },
+  loginId: { type: String, unique: true, sparse: true, lowercase: true },
   password: { type: String, required: true },
   role: { type: String, required: true },
   isActive: { type: Boolean, default: true },
@@ -31,10 +32,11 @@ async function run() {
   await mongoose.connect(uri);
 
   const email = 'admin@example.com';
+  const loginId = 'fuel.admin';
   const password = 'admin123';
   const name = 'System Administrator';
 
-  const exists = await User.findOne({ email });
+  const exists = await User.findOne({ $or: [{ email }, { loginId }] });
   if (exists) {
     console.log('Admin already exists:', email);
     await mongoose.connection.close();
@@ -47,6 +49,7 @@ async function run() {
   await User.create({
     name,
     email,
+    loginId,
     password: hashedPassword,
     role: 'admin',
     isActive: true,
@@ -54,6 +57,7 @@ async function run() {
 
   console.log('✅ Admin user created successfully!');
   console.log('Email:', email);
+  console.log('Login ID:', loginId);
   console.log('Password:', password);
   console.log('\n⚠️  IMPORTANT: Change this password immediately after first login!\n');
 

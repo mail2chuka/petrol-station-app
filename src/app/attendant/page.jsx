@@ -83,7 +83,7 @@ export default function AttendantDashboard() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Dashboard</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Today's summary and quick actions
+            Today&apos;s summary and quick actions
           </p>
         </div>
         <div className="text-right">
