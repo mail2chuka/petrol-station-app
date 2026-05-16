@@ -12,6 +12,7 @@ import Loading from '@/components/Loading';
 const fuelAdminMenuItems = [
   { label: 'Dashboard', href: '/admin' },
   { label: 'Stations', href: '/admin/stations' },
+  { label: 'Price Approvals', href: '/admin/price-approvals' },
   { label: 'Users', href: '/admin/users' },
   { label: 'Staff', href: '/admin/staff' },
   { label: 'Reports', href: '/admin/reports' },

@@ -10,6 +10,61 @@ import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
+// GET /api/stations/[id]/prices - List price change history / requests
+export async function GET(request, { params }) {
+  try {
+    const currentUser = await requireAuth();
+    await connectDB();
+
+    const station = await Station.findById(params.id);
+    if (!station) {
+      return NextResponse.json(
+        { error: 'Station not found' },
+        { status: 404 }
+      );
+    }
+
+    if (currentUser.role !== ROLES.ADMIN) {
+      if (!currentUser.stationId || currentUser.stationId !== station._id.toString()) {
+        return NextResponse.json(
+          { error: 'Access denied to this station' },
+          { status: 403 }
+        );
+      }
+    }
+
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status');
+    const limit = Math.min(Number(searchParams.get('limit') || 50), 200);
+
+    const query = { stationId: station._id };
+    if (status) {
+      query.approvalStatus = status;
+    }
+
+    const priceRequests = await PriceHistory.find(query)
+      .sort({ createdAt: -1, effectiveDate: -1 })
+      .limit(Number.isFinite(limit) ? limit : 50)
+      .lean();
+
+    return NextResponse.json({
+      station: {
+        _id: station._id,
+        name: station.name,
+        code: station.code,
+        currentPrices: station.currentPrices,
+      },
+      priceRequests,
+    });
+  } catch (error) {
+    console.error('Error fetching price requests:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch price requests' },
+      { status: error.message === 'Authentication required' ? 401 : 500 }
+    );
+  }
+}
+
 // POST /api/stations/[id]/prices - Adjust fuel prices
 export async function POST(request, { params }) {
   const session = await mongoose.startSession();

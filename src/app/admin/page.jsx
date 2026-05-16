@@ -216,6 +216,10 @@ export default function AdminDashboard() {
               <p className="text-sm font-bold text-ecana-maroon-900">Stations</p>
               <p className="text-xs text-gray-600 mt-1">Create stations, set prices, and deactivate.</p>
             </a>
+            <a href="/admin/price-approvals" className="rounded-xl border-2 border-amber-200 bg-amber-50 p-4 hover:bg-amber-100 hover:border-amber-300 transition-all shadow-sm hover:shadow-md">
+              <p className="text-sm font-bold text-amber-900">Price Approvals</p>
+              <p className="text-xs text-gray-600 mt-1">Review pending manager requests for mid-day price changes.</p>
+            </a>
             <a href="/admin/users" className="rounded-xl border-2 border-green-200 bg-green-50 p-4 hover:bg-green-100 hover:border-green-300 transition-all shadow-sm hover:shadow-md">
               <p className="text-sm font-bold text-green-900">Users</p>
               <p className="text-xs text-gray-600 mt-1">Create, edit and deactivate users.</p>

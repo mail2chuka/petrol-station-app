@@ -168,6 +168,13 @@ function ManagerDashboardContent() {
               </a>
             )}
             <a
+              href={buildManagerHref('/manager/price-changes')}
+              className="block p-4 bg-gradient-to-r from-yellow-50 to-amber-100 hover:from-yellow-100 hover:to-amber-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-amber-200"
+            >
+              <p className="font-bold text-amber-800 text-lg">💸 Mid-Day Price Change</p>
+              <p className="text-sm text-gray-600 mt-1">Request a new PMS or AGO price during an active day</p>
+            </a>
+            <a
               href={buildManagerHref('/manager/open-pumps')}
               className="block p-4 bg-gradient-to-r from-cyan-50 to-cyan-100 hover:from-cyan-100 hover:to-cyan-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-cyan-200"
             >
