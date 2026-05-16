@@ -1,153 +1,147 @@
 # Petrol Station Manager App
 
-A comprehensive fuel station management system built with Next.js, MongoDB, and Tailwind CSS.
+Petrol Station Manager App is a role-based fuel station operations system built with Next.js, MongoDB, and Tailwind CSS. It is designed to help a station team run daily fuel operations from a single dashboard-driven interface, with permissions and workflows tailored to each role.
 
-## Features
+## Overview
 
-### Admin/Owner Features
-- Create and manage multiple fuel stations
-- Create users (managers, accountants, attendants)
-- Adjust fuel prices (PMS and AGO)
-- View comprehensive reports across all stations
-- Access audit logs for all operations
-- Monitor all daily operations in real-time
+The app covers the full fuel-station workflow: setting up stations, managing users, starting and ending daily shifts, assigning attendants to dispensers, recording fuel sales, collecting payments, tracking stock movements, and reviewing reports and audit logs. Admin users can move between stations and manage network-wide settings, while station staff work inside their assigned station context.
 
-### Station Manager Features
-- Begin and end daily operations
-- Assign attendants to dispensers with initial readings
-- Receive and record fuel stock
-- Record final dispenser readings at end of day
-- View station-specific reports
-- Manage daily shift operations
+## Roles
 
-### Station Accountant Features
-- Record cash and POS payments from attendants
-- View payment records
-- Track daily collections
-- Monitor discrepancies
+### Admin
+- Create and manage stations
+- Create and manage users
+- Update fuel prices
+- Review station-wide reports
+- View audit logs and operational history
+- Switch between stations through the admin dashboard
 
-### Station Attendant Features
-- Record sales (liters sold)
-- Enter cash and POS payments received
-- View personal sales history
-- Track daily performance
+### Manager
+- Begin and end the day
+- Assign attendants to dispensers
+- Record dispenser readings
+- Receive and track fuel stock
+- Monitor active shifts and station status
+- View station-level reports
+
+### Accountant
+- Record cash and POS collections from attendants
+- Review payment history
+- Track daily receipts
+- Monitor collection discrepancies
+
+### Attendant
+- Record fuel sales in liters
+- Capture cash and POS payments received
+- Review personal sales history
+- Track daily performance against assignment
+
+### Auditor
+- Review station reports
+- Compare expected and actual totals
+- Leave audit comments for review
+
+## Key Features
+
+- Multi-role authentication with NextAuth
+- Fuel-specific MongoDB connection and models
+- Daily shift tracking with dispenser assignments
+- Station stock and price management
+- Sales and payment recording
+- Daily and summary reporting
+- Audit trail for sensitive actions
+- Mobile-friendly dashboards for each role
 
 ## Tech Stack
 
-- **Frontend**: Next.js 14, React 19, Tailwind CSS
-- **Backend**: Next.js API Routes
+- **Frontend**: Next.js 16, React 19, Tailwind CSS
+- **Backend**: Next.js API routes
 - **Database**: MongoDB with Mongoose
 - **Authentication**: NextAuth.js
 - **Validation**: Zod
 
-## Database Design
+## Core Data Model
 
-The system uses MongoDB with the following collections:
+- **Users**: Accounts for admins, managers, accountants, attendants, and auditors
+- **Stations**: Fuel station details, prices, stock levels, and dispensers
+- **DayShifts**: Daily station operations and dispenser assignments
+- **SalesEntries**: Fuel sales recorded by attendants
+- **PaymentRecords**: Cash and POS collections
+- **StockMovements**: Fuel receipts and adjustments
+- **PriceHistory**: Historical fuel price changes
+- **AuditLogs**: Immutable audit trail of system activity
 
-- **Users**: Stores all user accounts (admin, manager, accountant, attendant)
-- **Stations**: Fuel station information, prices, stock levels, and dispensers
-- **DayShifts**: Daily operational records with dispenser assignments
-- **SalesEntries**: Individual sales transactions
-- **PaymentRecords**: Payment collections from attendants
-- **StockMovements**: Fuel stock receipts and adjustments
-- **PriceHistory**: Historical price changes
-- **AuditLogs**: Complete audit trail of all operations
+## Workflow
 
-## Key Features
+1. The admin creates stations and users, then sets up the operating structure.
+2. The manager begins the day, assigns attendants to dispensers, and records initial readings.
+3. Attendants record fuel sales and the payments they receive during the shift.
+4. The accountant records the cash and POS actually collected from attendants.
+5. The manager ends the day, captures final readings, and the system calculates totals and discrepancies.
+6. The admin and auditor review reports, history, and audit logs.
 
-### Transaction Safety
-- All financial operations use MongoDB transactions
-- Atomic updates for stock and payment records
-- Rollback on errors
+## Setup
 
-### Data Validation
-- Frontend validation with Zod schemas
-- Backend validation for all API endpoints
-- Type-safe data handling
-
-### Performance Optimization
-- Denormalized data for frequently accessed fields
-- Proper indexing on all collections
-- Compound indexes for complex queries
-- Aggregation pipeline for reports
-
-### Audit Trail
-- Complete audit logging for all operations
-- Soft deletes (users marked as inactive, never deleted)
-- Immutable transaction records
-
-## Setup Instructions
-
-1. **Clone the repository**
-   ```bash
-   cd petrol-station-app
-   ```
-
-2. **Install dependencies**
+1. Install dependencies.
    ```bash
    npm install
    ```
 
-3. **Set up environment variables**
-   - Copy `.env.local.example` to `.env.local`
-   - Update the MongoDB connection string
-   - Set a secure NEXTAUTH_SECRET
+2. Configure environment variables in `.env.local`.
+   - Set `MONGODB_URI` for the fuel database
+   - Set `NEXTAUTH_SECRET`
+   - Set `NEXTAUTH_URL`
 
+3. Start MongoDB.
+
+4. Seed an admin user if needed.
    ```bash
-   cp .env.local.example .env.local
+   npm run seed
    ```
 
-4. **Start MongoDB**
-   Make sure MongoDB is running on your system.
-
-5. **Seed an admin user (optional)**
-   ```bash
-   node scripts/seed-admin.mjs
-   ```
-
-6. **Run the development server**
+5. Start the development server.
    ```bash
    npm run dev
    ```
 
-7. **Open the application**
-   Navigate to [http://localhost:3000](http://localhost:3000)
+6. Open the app at [http://localhost:3000](http://localhost:3000)
 
 ## Default Admin Credentials
 
-After running the seed script:
+After seeding:
 - **Email**: admin@example.com
 - **Password**: admin123
 
-**Important**: Change these credentials immediately in production!
+Change these credentials before production use.
 
 ## Project Structure
 
 ```
 src/
-├── app/                      # Next.js app directory
-│   ├── api/                  # API routes
-│   │   ├── auth/            # Authentication
-│   │   ├── users/           # User management
-│   │   ├── stations/        # Station management
-│   │   ├── day-shifts/      # Daily operations
-│   │   ├── sales/           # Sales entries
-│   │   ├── payments/        # Payment records
-│   │   ├── reports/         # Reporting endpoints
-│   │   └── audit/           # Audit logs
-│   ├── admin/               # Admin dashboard
-│   ├── manager/             # Manager dashboard
-│   ├── accountant/          # Accountant dashboard
-│   ├── attendant/           # Attendant dashboard
-│   └── login/               # Login page
-├── components/              # Reusable React components
-├── lib/                     # Utility functions
-│   ├── db.js               # Database connection
-│   ├── auth.js             # Authentication helpers
-│   ├── audit.js            # Audit logging
-│   ├── constants.js        # Constants and enums
-│   └── validation.js       # Validation schemas
-└── models/                  # MongoDB/Mongoose models
+├── app/
+│   ├── api/
+│   │   ├── auth/
+│   │   ├── users/
+│   │   ├── stations/
+│   │   ├── day-shifts/
+│   │   ├── sales/
+│   │   ├── payments/
+│   │   ├── reports/
+│   │   └── audit/
+│   ├── admin/
+│   ├── manager/
+│   ├── accountant/
+│   ├── attendant/
+│   ├── auditor/
+│   └── login/
+├── components/
+├── lib/
+│   ├── db-fuel.js
+│   ├── auth.js
+│   ├── audit.js
+│   ├── constants.js
+│   └── validation.js
+└── models/
     ├── User.js
     ├── Station.js
     ├── DayShift.js
@@ -157,67 +151,6 @@ src/
     ├── PriceHistory.js
     └── AuditLog.js
 ```
-
-## Workflow
-
-### Daily Operations Flow
-
-1. **Manager begins the day**
-   - Assigns attendants to dispensers
-   - Records initial dispenser readings
-   - System captures current fuel prices
-
-2. **Attendants record sales**
-   - Enter liters sold
-   - Record cash and POS payments
-
-3. **Accountant collects payments**
-   - Records actual cash and POS received from attendants
-
-4. **Manager ends the day**
-   - Records final dispenser readings
-   - System calculates totals and discrepancies
-   - Updates station stock levels
-
-5. **Admin views reports**
-   - Access comprehensive daily reports
-   - View individual attendant performance
-   - Monitor discrepancies and audit trail
-
-## API Routes
-
-### Authentication
-- `POST /api/auth/[...nextauth]` - Authentication endpoints
-
-### Users
-- `GET /api/users` - List all users
-- `POST /api/users` - Create new user
-- `GET /api/users/[id]` - Get user by ID
-- `PATCH /api/users/[id]` - Update user
-- `DELETE /api/users/[id]` - Deactivate user
-
-### Stations
-- `GET /api/stations` - List all stations
-- `POST /api/stations` - Create new station
-- `POST /api/stations/[id]/prices` - Adjust fuel prices
-- `POST /api/stations/[id]/stock` - Receive fuel stock
-- `GET /api/stations/[id]/dispensers` - List dispensers
-- `POST /api/stations/[id]/dispensers` - Add dispenser
-
-### Daily Operations
-- `POST /api/day-shifts/begin` - Begin a new day
-- `POST /api/day-shifts/[id]/end` - End the day
-- `GET /api/day-shifts` - Get day shifts
-- `GET /api/day-shifts/[id]` - Get specific day shift
-
-### Sales & Payments
-- `POST /api/sales` - Record sales entry
-- `GET /api/sales` - Get sales entries
-- `POST /api/payments` - Record payment
-- `GET /api/payments` - Get payment records
-
-### Reports & Audit
-- `GET /api/reports/daily` - Get daily report
 - `GET /api/reports/summary` - Get summary report
 - `GET /api/audit` - Get audit logs
 

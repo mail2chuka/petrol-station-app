@@ -28,10 +28,12 @@ export function getDefaultRouteForUser(user) {
       return '/manager';
     case 'accountant':
       return '/accountant';
-    case 'attendant':
-      return '/attendant';
-    case 'auditor':
-      return '/auditor';
+    case 'supervisor':
+      return '/supervisor';
+    case 'daily_auditor':
+      return '/daily-auditor';
+    case 'external_auditor':
+      return '/external-auditor';
     default:
       return '/login';
   }

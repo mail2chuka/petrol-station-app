@@ -75,11 +75,11 @@ export async function POST(request) {
         );
       }
 
-      const attendant = await User.findById(assignment.attendantId).session(session);
-      if (!attendant || attendant.role !== ROLES.ATTENDANT || !attendant.isActive) {
+      const supervisor = await User.findById(assignment.attendantId).session(session);
+      if (!supervisor || supervisor.role !== ROLES.SUPERVISOR || !supervisor.isActive) {
         await session.abortTransaction();
         return NextResponse.json(
-          { error: `Invalid attendant for dispenser ${assignment.dispenserId}` },
+          { error: `Invalid supervisor for dispenser ${assignment.dispenserId}` },
           { status: 400 }
         );
       }
@@ -89,7 +89,7 @@ export async function POST(request) {
         dispenserName: dispenser.name,
         fuelType: dispenser.fuelType,
         attendantId: assignment.attendantId,
-        attendantName: attendant.name,
+        attendantName: supervisor.name,
         initialReading: assignment.initialReading,
         totalLiters: 0,
       });

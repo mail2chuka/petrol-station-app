@@ -47,6 +47,20 @@ const paymentRecordSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+      method: {
+        type: String,
+        enum: ['cash', 'pos'],
+        default: null, // Optional for backward compatibility with mixed cash/POS records
+      },
+      posTerminalId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'POSTerminal',
+        default: null, // Only filled if method is 'pos'
+      },
+      posTerminalLabel: {
+        type: String,
+        default: null, // Denormalized POS terminal label
+      },
     recordedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

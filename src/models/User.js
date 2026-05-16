@@ -2,6 +2,16 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { ROLES } from '@/lib/constants';
 
+// Allowed roles (sync with ROLES constants)
+const ALLOWED_ROLES = [
+  ROLES.ADMIN,
+  ROLES.EXTERNAL_AUDITOR,
+  ROLES.DAILY_AUDITOR,
+  ROLES.MANAGER,
+  ROLES.SUPERVISOR,
+  ROLES.ACCOUNTANT,
+];
+
 const userSchema = new mongoose.Schema(
   {
     name: {

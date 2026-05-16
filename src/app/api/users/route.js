@@ -69,7 +69,7 @@ export async function POST(request) {
       loginId: body.loginId ? body.loginId.toLowerCase().trim() : undefined,
       stationId: body.stationId ? body.stationId : undefined,
     };
-    if (normalizedBody.role === 'admin' || normalizedBody.role === 'auditor') {
+    if (normalizedBody.role === 'admin') {
       normalizedBody.stationId = undefined;
     }
     

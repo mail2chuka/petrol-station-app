@@ -1,10 +1,11 @@
 // User Roles
 export const ROLES = {
   ADMIN: 'admin',
+  EXTERNAL_AUDITOR: 'external_auditor',
+  DAILY_AUDITOR: 'daily_auditor',
   MANAGER: 'manager',
+  SUPERVISOR: 'supervisor',
   ACCOUNTANT: 'accountant',
-  ATTENDANT: 'attendant',
-  AUDITOR: 'auditor',
 };
 
 // Fuel Types

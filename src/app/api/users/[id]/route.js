@@ -40,7 +40,7 @@ export async function PATCH(request, { params }) {
     const body = await request.json();
     const normalizedStationId = body.stationId ? body.stationId : undefined;
     const role = body.role;
-    const stationId = role === 'admin' || role === 'auditor' ? undefined : normalizedStationId;
+    const stationId = role === 'admin' ? undefined : normalizedStationId;
     const { name, email, isActive } = body;
 
     const { id } = await params;

@@ -101,10 +101,12 @@ export default function UsersPage() {
   };
 
   const roleOptions = [
+    { value: 'admin', label: 'Admin' },
     { value: 'manager', label: 'Manager' },
     { value: 'accountant', label: 'Accountant' },
-    { value: 'attendant', label: 'Attendant' },
-    { value: 'auditor', label: 'Auditor' },
+    { value: 'supervisor', label: 'Supervisor' },
+    { value: 'daily_auditor', label: 'Daily Auditor' },
+    { value: 'external_auditor', label: 'External Auditor' },
   ];
 
   const stationOptions = stations.map(s => ({
@@ -137,7 +139,7 @@ export default function UsersPage() {
         name: editForm.name,
         email: editForm.email,
         role: editForm.role,
-        stationId: editForm.role === 'admin' || editForm.role === 'auditor' ? null : editForm.stationId,
+        stationId: editForm.role === 'admin' ? null : editForm.stationId,
         isActive: editForm.isActive,
       };
 
@@ -424,14 +426,11 @@ export default function UsersPage() {
                   name="role"
                   value={editForm.role}
                   onChange={(e) => setEditForm((p) => ({ ...p, role: e.target.value }))}
-                  options={[
-                    { value: 'admin', label: 'Admin' },
-                    ...roleOptions,
-                  ]}
+                  options={roleOptions}
                   required
                 />
 
-                {editForm.role && !['admin', 'auditor'].includes(editForm.role) && (
+                {editForm.role && !['admin'].includes(editForm.role) && (
                   <Select
                     label="Station"
                     name="stationId"
@@ -515,7 +514,7 @@ export default function UsersPage() {
               options={roleOptions}
               required
             />
-            {formData.role && !['admin', 'auditor'].includes(formData.role) && (
+            {formData.role && !['admin'].includes(formData.role) && (
               <Select
                 label="Station"
                 name="stationId"

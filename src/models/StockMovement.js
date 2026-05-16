@@ -34,6 +34,11 @@ const stockMovementSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+      totalReceived: {
+        type: Number,
+        default: null,
+        // Total litres received before distribution; mainly for receipts
+      },
     expectedQuantity: {
       type: Number,
     },
@@ -43,6 +48,19 @@ const stockMovementSchema = new mongoose.Schema(
     tank: {
       type: String,
     },
+      distribution: [
+        {
+          tankId: {
+            type: String,
+            required: true,
+          },
+          litres: {
+            type: Number,
+            required: true,
+            min: 0,
+          },
+        },
+      ],
     // For receipts
     costPerLiter: {
       type: Number,

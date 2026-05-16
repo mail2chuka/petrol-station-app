@@ -3,10 +3,11 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import Station from '@/models/Station';
 import PriceHistory from '@/models/PriceHistory';
+import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { priceAdjustmentSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
-import { ROLES } from '@/lib/constants';
+import { ROLES, DAY_STATUS } from '@/lib/constants';
 
 // POST /api/stations/[id]/prices - Adjust fuel prices
 export async function POST(request, { params }) {
@@ -17,10 +18,12 @@ export async function POST(request, { params }) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    // Only admin can adjust prices
-    if (currentUser.role !== ROLES.ADMIN) {
+    const canAdjustDirectly = currentUser.role === ROLES.ADMIN;
+    const canRequestAdjustment = currentUser.role === ROLES.MANAGER;
+
+    if (!canAdjustDirectly && !canRequestAdjustment) {
       return NextResponse.json(
-        { error: 'Only administrators can adjust prices' },
+        { error: 'Only administrators or managers can submit price changes' },
         { status: 403 }
       );
     }
@@ -40,16 +43,101 @@ export async function POST(request, { params }) {
     const fuelType = validatedData.fuelType;
     const previousPrice = station.currentPrices[fuelType];
     const newPrice = validatedData.price;
+    const changeAmount = newPrice - previousPrice;
+    const changePercentage = previousPrice > 0
+      ? ((changeAmount / previousPrice) * 100)
+      : 100;
+
+    if (newPrice === previousPrice) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: 'New price must be different from current price' },
+        { status: 400 }
+      );
+    }
+
+    // Managers can request price changes only for their own station and only during an active day.
+    if (canRequestAdjustment) {
+      if (!currentUser.stationId || currentUser.stationId !== station._id.toString()) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          { error: 'Managers can only request changes for their own station' },
+          { status: 403 }
+        );
+      }
+
+      const activeDay = await DayShift.findOne({
+        stationId: station._id,
+        status: DAY_STATUS.IN_PROGRESS,
+      }).session(session);
+
+      if (!activeDay) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          { error: 'Manager price changes can only be requested during active day operations' },
+          { status: 400 }
+        );
+      }
+
+      if (!body.reason || !String(body.reason).trim()) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          { error: 'Reason is required for manager price change requests' },
+          { status: 400 }
+        );
+      }
+
+      const [pendingRequest] = await PriceHistory.create([{
+        stationId: station._id,
+        stationName: station.name,
+        fuelType,
+        previousPrice,
+        newPrice,
+        changeAmount,
+        changePercentage,
+        effectiveDate: new Date(),
+        changedBy: currentUser.id,
+        changedByName: currentUser.name,
+        reason: String(body.reason).trim(),
+        approvalStatus: 'pending',
+      }], { session });
+
+      await createAuditLog({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: AUDIT_ACTIONS.ADJUST_PRICE,
+        resource: AUDIT_RESOURCES.PRICE,
+        resourceId: pendingRequest._id.toString(),
+        stationId: station._id,
+        stationName: station.name,
+        details: {
+          fuelType,
+          previousPrice,
+          requestedPrice: newPrice,
+          changeAmount,
+          changePercentage,
+          approvalStatus: 'pending',
+          requestType: 'manager_intra_day',
+        },
+      });
+
+      await session.commitTransaction();
+
+      return NextResponse.json(
+        {
+          message: 'Price change request submitted for admin approval',
+          priceRequest: pendingRequest,
+        },
+        { status: 202 }
+      );
+    }
 
     // Update station price
     station.currentPrices[fuelType] = newPrice;
     await station.save({ session });
 
-    // Create price history record
-    const changeAmount = newPrice - previousPrice;
-    const changePercentage = previousPrice > 0 
-      ? ((changeAmount / previousPrice) * 100) 
-      : 100;
+    // Create approved price history record for direct admin adjustments
 
     await PriceHistory.create([{
       stationId: station._id,
@@ -63,6 +151,10 @@ export async function POST(request, { params }) {
       changedBy: currentUser.id,
       changedByName: currentUser.name,
       reason: body.reason || 'Price adjustment',
+      approvalStatus: 'approved',
+      approvedBy: currentUser.id,
+      approvedByName: currentUser.name,
+      approvedAt: new Date(),
     }], { session });
 
     // Create audit log

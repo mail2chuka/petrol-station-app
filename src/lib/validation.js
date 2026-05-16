@@ -11,7 +11,14 @@ export const userSchema = z.object({
     .regex(/^[a-zA-Z0-9._-]+$/, 'Login ID can only contain letters, numbers, dot, underscore, and hyphen')
     .optional(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum([ROLES.ADMIN, ROLES.MANAGER, ROLES.ACCOUNTANT, ROLES.ATTENDANT, ROLES.AUDITOR]),
+  role: z.enum([
+    ROLES.ADMIN,
+    ROLES.EXTERNAL_AUDITOR,
+    ROLES.DAILY_AUDITOR,
+    ROLES.MANAGER,
+    ROLES.SUPERVISOR,
+    ROLES.ACCOUNTANT,
+  ]),
   stationId: z.string().optional(),
 });
 

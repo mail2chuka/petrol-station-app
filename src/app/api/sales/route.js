@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import SalesEntry from '@/models/SalesEntry';
 import DayShift from '@/models/DayShift';
+import PriceHistory from '@/models/PriceHistory';
 import { requireAuth } from '@/lib/auth';
 import { salesEntrySchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
@@ -17,10 +18,10 @@ export async function POST(request) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    // Only attendants can record sales
-    if (currentUser.role !== ROLES.ATTENDANT) {
+    // Only supervisors can record sales
+    if (currentUser.role !== ROLES.SUPERVISOR) {
       return NextResponse.json(
-        { error: 'Only attendants can record sales' },
+        { error: 'Only supervisors can record sales' },
         { status: 403 }
       );
     }
@@ -67,8 +68,18 @@ export async function POST(request) {
       );
     }
 
-    // Calculate expected amount
-    const pricePerLiter = dayShift.pricesAtStart[assignment.fuelType];
+    // Resolve effective price at transaction time.
+    // Fallback to day-start price for backward compatibility when no approved change exists.
+    const effectiveApprovedPrice = await PriceHistory.findOne({
+      stationId: dayShift.stationId,
+      fuelType: assignment.fuelType,
+      approvalStatus: 'approved',
+      effectiveDate: { $lte: new Date() },
+    })
+      .sort({ effectiveDate: -1, createdAt: -1 })
+      .session(session);
+
+    const pricePerLiter = effectiveApprovedPrice?.newPrice ?? dayShift.pricesAtStart[assignment.fuelType];
     const expectedAmount = validatedData.liters * pricePerLiter;
     const totalAmount = validatedData.cashAmount + validatedData.posAmount;
     const discrepancy = totalAmount - expectedAmount;
@@ -163,8 +174,8 @@ export async function GET(request) {
       query.attendantId = attendantId;
     }
 
-    // Attendants can only see their own sales
-    if (currentUser.role === ROLES.ATTENDANT) {
+    // Supervisors can only see their own sales
+    if (currentUser.role === ROLES.SUPERVISOR) {
       query.attendantId = currentUser.id;
     }
 

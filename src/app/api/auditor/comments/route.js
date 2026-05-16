@@ -33,13 +33,13 @@ export async function GET(request) {
   }
 }
 
-// POST /api/auditor/comments - Auditors submit comment
+// POST /api/auditor/comments - Auditors (daily or external) submit comment
 export async function POST(request) {
   try {
     const currentUser = await requireAuth();
     await connectDB();
 
-    if (currentUser.role !== ROLES.AUDITOR) {
+    if (![ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR].includes(currentUser.role)) {
       return NextResponse.json(
         { error: 'Only auditors can submit comments' },
         { status: 403 }

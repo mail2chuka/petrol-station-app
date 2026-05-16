@@ -41,7 +41,34 @@ const stationSchema = new mongoose.Schema(
         default: 0,
       },
     },
-    tolerancePercent: {
+      tanks: [
+        {
+          _id: {
+            type: String,
+            required: true, // Unique tank identifier (e.g., "PMS-1", "AGO-1")
+          },
+          label: {
+            type: String,
+            required: true, // Display name (e.g., "Premium Motor Spirit Tank 1")
+          },
+          product: {
+            type: String,
+            enum: ['PMS', 'AGO'],
+            required: true,
+          },
+          capacity: {
+            type: Number,
+            required: true,
+            min: 1,
+            // Capacity in litres
+          },
+          isActive: {
+            type: Boolean,
+            default: true,
+          },
+        },
+      ],
+      tolerancePercent: {
       type: Number,
       default: 2.5,
       min: 0,
@@ -66,6 +93,10 @@ const stationSchema = new mongoose.Schema(
           type: String,
           required: true,
         },
+          tankId: {
+            type: String, // Reference to tanks[*]._id
+            default: null,
+          },
         fuelType: {
           type: String,
           enum: Object.values(FUEL_TYPES),

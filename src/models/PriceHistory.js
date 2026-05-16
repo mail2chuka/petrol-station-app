@@ -52,6 +52,29 @@ const priceHistorySchema = new mongoose.Schema(
     reason: {
       type: String,
     },
+    approvalStatus: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'approved',
+      index: true,
+    },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    approvedByName: {
+      type: String,
+      default: null,
+    },
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+    adminNote: {
+      type: String,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -60,5 +83,6 @@ const priceHistorySchema = new mongoose.Schema(
 
 // Compound indexes
 priceHistorySchema.index({ stationId: 1, fuelType: 1, effectiveDate: -1 });
+priceHistorySchema.index({ stationId: 1, approvalStatus: 1, createdAt: -1 });
 
 export default mongoose.models.PriceHistory || mongoose.model('PriceHistory', priceHistorySchema);

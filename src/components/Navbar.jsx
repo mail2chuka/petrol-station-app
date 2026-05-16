@@ -20,7 +20,9 @@ export default function Navbar() {
       admin: 'bg-ecana-maroon/10 text-ecana-maroon',
       manager: 'bg-ecana-blue/10 text-ecana-blue',
       accountant: 'bg-emerald-100 text-emerald-700',
-      attendant: 'bg-amber-100 text-amber-700',
+      supervisor: 'bg-amber-100 text-amber-700',
+      daily_auditor: 'bg-purple-100 text-purple-700',
+      external_auditor: 'bg-indigo-100 text-indigo-700',
     };
     return colors[role] || 'bg-slate-100 text-slate-700';
   };
