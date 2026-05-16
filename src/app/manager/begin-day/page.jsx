@@ -16,7 +16,7 @@ function BeginDayPageContent() {
   const adminStationId = searchParams.get('stationId');
   const activeStationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
   const [dispensers, setDispensers] = useState([]);
-  const [attendants, setAttendants] = useState([]);
+  const [supervisors, setSupervisors] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -32,7 +32,7 @@ function BeginDayPageContent() {
     try {
       const [dispensersRes, usersRes] = await Promise.all([
         fetch(`/api/stations/${activeStationId}/dispensers`),
-        fetch(`/api/users?role=attendant&stationId=${activeStationId}`),
+        fetch(`/api/users?role=supervisor&stationId=${activeStationId}`),
       ]);
 
       const dispensersData = await dispensersRes.json();
@@ -40,7 +40,7 @@ function BeginDayPageContent() {
 
       const activeDispensers = dispensersData.dispensers?.filter(d => d.isActive) || [];
       setDispensers(activeDispensers);
-      setAttendants(usersData.users || []);
+      setSupervisors(usersData.users || []);
 
       // Initialize assignments
       setAssignments(
@@ -73,7 +73,7 @@ function BeginDayPageContent() {
 
     // Validate all assignments
     for (const assignment of assignments) {
-      if (!assignment.attendantId || !assignment.initialReading) {
+      if (!assignment.attendantId || assignment.initialReading === '') {
         setError('Please fill in all fields for each dispenser');
         setSubmitting(false);
         return;
@@ -89,6 +89,7 @@ function BeginDayPageContent() {
           date: new Date().toISOString().split('T')[0],
           dispensers: assignments.map(a => ({
             dispenserId: a.dispenserId,
+            fuelType: a.fuelType,
             attendantId: a.attendantId,
             initialReading: parseFloat(a.initialReading),
           })),
@@ -141,13 +142,13 @@ function BeginDayPageContent() {
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Select
-                    label="Attendant"
+                    label="Supervisor"
                     name={`attendant-${index}`}
                     value={assignment.attendantId}
                     onChange={(e) => handleAssignmentChange(index, 'attendantId', e.target.value)}
-                    options={attendants.map(a => ({
-                      value: a._id,
-                      label: a.name,
+                    options={supervisors.map(supervisor => ({
+                      value: supervisor._id,
+                      label: supervisor.name,
                     }))}
                     required
                   />
