@@ -8,6 +8,7 @@ import { requireAuth } from '@/lib/auth';
 import { paymentRecordSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
+import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
 // POST /api/payments - Create a payment record
 export async function POST(request) {
@@ -29,7 +30,7 @@ export async function POST(request) {
     const body = await request.json();
     const validatedData = paymentRecordSchema.parse(body);
 
-    const dayShift = await DayShift.findById(validatedData.dayShiftId).session(session);
+    let dayShift = await DayShift.findById(validatedData.dayShiftId).session(session);
     if (!dayShift) {
       await session.abortTransaction();
       return NextResponse.json(
@@ -37,6 +38,9 @@ export async function POST(request) {
         { status: 404 }
       );
     }
+
+    await autoCloseExpiredInProgressShifts({ stationId: dayShift.stationId, session });
+    dayShift = await DayShift.findById(validatedData.dayShiftId).session(session);
 
     if (dayShift.status !== DAY_STATUS.IN_PROGRESS) {
       await session.abortTransaction();

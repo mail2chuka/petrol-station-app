@@ -52,6 +52,29 @@ export async function POST(request, { params }) {
     const expectedQuantity = validatedData.expectedQuantity;
     const varianceQuantity = expectedQuantity !== undefined ? validatedData.quantity - expectedQuantity : undefined;
 
+    if (validatedData.distribution?.length) {
+      const distributionTotal = validatedData.distribution.reduce((sum, item) => sum + item.litres, 0);
+      const difference = Math.abs(distributionTotal - validatedData.quantity);
+
+      if (difference > 0.001) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          { error: 'Tank distribution total must equal quantity delivered' },
+          { status: 400 }
+        );
+      }
+
+      const tankIds = new Set((station.tanks || []).map(t => t._id));
+      const invalidTank = validatedData.distribution.find(item => !tankIds.has(item.tankId));
+      if (invalidTank) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          { error: `Invalid tank in distribution: ${invalidTank.tankId}` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Update station stock
     station.currentStock[fuelType] = newStock;
     await station.save({ session });
@@ -66,9 +89,11 @@ export async function POST(request, { params }) {
       fuelType,
       movementType: 'receipt',
       quantity: validatedData.quantity,
+      totalReceived: validatedData.quantity,
       expectedQuantity,
       varianceQuantity,
       tank: validatedData.tank,
+      distribution: validatedData.distribution || [],
       costPerLiter,
       totalCost: validatedData.cost,
       supplier: body.supplier || 'N/A',

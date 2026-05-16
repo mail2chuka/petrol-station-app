@@ -8,6 +8,7 @@ import { requireAuth } from '@/lib/auth';
 import { priceAdjustmentSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
+import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
 // POST /api/stations/[id]/prices - Adjust fuel prices
 export async function POST(request, { params }) {
@@ -40,6 +41,8 @@ export async function POST(request, { params }) {
       );
     }
 
+    await autoCloseExpiredInProgressShifts({ stationId: station._id, session });
+
     const fuelType = validatedData.fuelType;
     const previousPrice = station.currentPrices[fuelType];
     const newPrice = validatedData.price;
@@ -56,26 +59,27 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Managers can request price changes only for their own station and only during an active day.
+    // A shift must be started before any price change request/update can be processed.
+    const activeDay = await DayShift.findOne({
+      stationId: station._id,
+      status: DAY_STATUS.IN_PROGRESS,
+    }).session(session);
+
+    if (!activeDay) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: 'A day shift must be started before price changes can be submitted or applied' },
+        { status: 400 }
+      );
+    }
+
+    // Managers can request price changes only for their own station during an active day.
     if (canRequestAdjustment) {
       if (!currentUser.stationId || currentUser.stationId !== station._id.toString()) {
         await session.abortTransaction();
         return NextResponse.json(
           { error: 'Managers can only request changes for their own station' },
           { status: 403 }
-        );
-      }
-
-      const activeDay = await DayShift.findOne({
-        stationId: station._id,
-        status: DAY_STATUS.IN_PROGRESS,
-      }).session(session);
-
-      if (!activeDay) {
-        await session.abortTransaction();
-        return NextResponse.json(
-          { error: 'Manager price changes can only be requested during active day operations' },
-          { status: 400 }
         );
       }
 

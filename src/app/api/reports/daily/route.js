@@ -24,7 +24,12 @@ export async function GET(request) {
     }
 
     // Check access
-    if (currentUser.role !== ROLES.ADMIN && currentUser.role !== ROLES.AUDITOR && currentUser.stationId !== stationId) {
+    if (
+      currentUser.role !== ROLES.ADMIN &&
+      currentUser.role !== ROLES.DAILY_AUDITOR &&
+      currentUser.role !== ROLES.EXTERNAL_AUDITOR &&
+      currentUser.stationId !== stationId
+    ) {
       return NextResponse.json(
         { error: 'Access denied to this station' },
         { status: 403 }

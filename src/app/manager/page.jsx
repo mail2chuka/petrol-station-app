@@ -97,7 +97,7 @@ function ManagerDashboardContent() {
             <p className="text-5xl font-black">
               {activeDayShift ? '🟢' : '🔴'}
             </p>
-            <p className="text-sm font-bold mt-2 ${activeDayShift ? 'text-green-700' : 'text-red-700'}">
+            <p className={`text-sm font-bold mt-2 ${activeDayShift ? 'text-green-700' : 'text-red-700'}`}>
               {activeDayShift ? 'Active' : 'Not Started'}
             </p>
           </div>
@@ -161,11 +161,39 @@ function ManagerDashboardContent() {
               </a>
             )}
             <a
+              href="/manager/open-pumps"
+              className="block p-4 bg-gradient-to-r from-cyan-50 to-cyan-100 hover:from-cyan-100 hover:to-cyan-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-cyan-200"
+            >
+              <p className="font-bold text-cyan-700 text-lg">⛽ Open Pumps</p>
+              <p className="text-sm text-gray-600 mt-1">Select pumps available for today's operations</p>
+            </a>
+            <a
+              href="/manager/supervisor-entries"
+              className="block p-4 bg-gradient-to-r from-amber-50 to-amber-100 hover:from-amber-100 hover:to-amber-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-amber-200"
+            >
+              <p className="font-bold text-amber-700 text-lg">🧾 Supervisor Entries</p>
+              <p className="text-sm text-gray-600 mt-1">Approve or query meter and RTT submissions</p>
+            </a>
+            <a
               href="/manager/stock"
               className="block p-4 bg-gradient-to-r from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-green-200"
             >
-              <p className="font-bold text-green-700 text-lg">📦 Receive Stock</p>
-              <p className="text-sm text-gray-600 mt-1">Record fuel deliveries</p>
+              <p className="font-bold text-green-700 text-lg">📦 Stock In</p>
+              <p className="text-sm text-gray-600 mt-1">Record received litres and split by tank</p>
+            </a>
+            <a
+              href="/manager/closing-stock"
+              className="block p-4 bg-gradient-to-r from-fuchsia-50 to-fuchsia-100 hover:from-fuchsia-100 hover:to-fuchsia-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-fuchsia-200"
+            >
+              <p className="font-bold text-fuchsia-700 text-lg">🛢️ Closing Stock</p>
+              <p className="text-sm text-gray-600 mt-1">Confirm per-tank closing stock values</p>
+            </a>
+            <a
+              href="/manager/summary-book"
+              className="block p-4 bg-gradient-to-r from-indigo-50 to-indigo-100 hover:from-indigo-100 hover:to-indigo-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-indigo-200"
+            >
+              <p className="font-bold text-indigo-700 text-lg">📘 Summary Book</p>
+              <p className="text-sm text-gray-600 mt-1">View daily summary by tank and export PDF/Excel</p>
             </a>
             <a
               href="/manager/reports"

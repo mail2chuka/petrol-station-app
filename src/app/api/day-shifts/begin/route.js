@@ -8,6 +8,7 @@ import { requireAuth } from '@/lib/auth';
 import { beginDaySchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
+import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
 // POST /api/day-shifts/begin - Begin a new day
 export async function POST(request) {
@@ -45,6 +46,8 @@ export async function POST(request) {
         { status: 404 }
       );
     }
+
+    await autoCloseExpiredInProgressShifts({ stationId: validatedData.stationId, session });
 
     // Check if there's already an active day
     const existingActiveDay = await DayShift.findOne({

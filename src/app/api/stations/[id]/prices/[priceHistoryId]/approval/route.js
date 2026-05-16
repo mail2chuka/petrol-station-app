@@ -4,9 +4,11 @@ import { z } from 'zod';
 import connectDB from '@/lib/db';
 import Station from '@/models/Station';
 import PriceHistory from '@/models/PriceHistory';
+import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
-import { ROLES } from '@/lib/constants';
+import { ROLES, DAY_STATUS } from '@/lib/constants';
+import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
 const approvalSchema = z.object({
   status: z.enum(['approved', 'rejected']),
@@ -38,6 +40,21 @@ export async function PATCH(request, { params }) {
       return NextResponse.json(
         { error: 'Station not found' },
         { status: 404 }
+      );
+    }
+
+    await autoCloseExpiredInProgressShifts({ stationId: station._id, session });
+
+    const activeDay = await DayShift.findOne({
+      stationId: station._id,
+      status: DAY_STATUS.IN_PROGRESS,
+    }).session(session);
+
+    if (!activeDay) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: 'A day shift must be started before price changes can be approved or rejected' },
+        { status: 400 }
       );
     }
 

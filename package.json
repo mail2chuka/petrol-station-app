@@ -13,8 +13,10 @@
     "backfill:login-ids": "node scripts/backfill-login-ids.mjs"
   },
   "dependencies": {
+    "@react-pdf/renderer": "^4.5.1",
     "bcryptjs": "^2.4.3",
     "date-fns": "^4.1.0",
+    "exceljs": "^4.4.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "mongoose": "^8.10.0",

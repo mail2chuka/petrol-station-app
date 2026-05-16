@@ -24,6 +24,7 @@ function ReceiveStockPageContent() {
     supplier: '',
     notes: '',
   });
+  const [distribution, setDistribution] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -62,6 +63,16 @@ function ReceiveStockPageContent() {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    const distributionTotal = distribution.reduce((sum, item) => sum + (Number(item.litres) || 0), 0);
+    const quantityValue = Number(formData.quantity || 0);
+    const distributionDifference = Math.abs(distributionTotal - quantityValue);
+
+    if (distribution.length > 0 && distributionDifference > 0.001) {
+      setError('Tank distribution total must equal quantity delivered');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -77,6 +88,9 @@ function ReceiveStockPageContent() {
           cost: parseFloat(formData.cost),
           supplier: formData.supplier,
           notes: formData.notes,
+          distribution: distribution
+            .filter((d) => d.tankId && d.litres !== '')
+            .map((d) => ({ tankId: d.tankId, litres: parseFloat(d.litres) })),
         }),
       });
 
@@ -93,6 +107,7 @@ function ReceiveStockPageContent() {
           supplier: '',
           notes: '',
         });
+        setDistribution([]);
         fetchStation(); // Refresh station data
       } else {
         setError(data.error || 'Failed to receive stock');
@@ -121,6 +136,10 @@ function ReceiveStockPageContent() {
   const variance = formData.expectedQuantity && formData.quantity
     ? (parseFloat(formData.quantity) - parseFloat(formData.expectedQuantity)).toFixed(2)
     : null;
+
+  const distributionTotal = distribution.reduce((sum, item) => sum + (Number(item.litres) || 0), 0);
+  const quantityValue = Number(formData.quantity || 0);
+  const distributionDifference = Math.abs(distributionTotal - quantityValue);
 
   return (
     <div>
@@ -216,6 +235,56 @@ function ReceiveStockPageContent() {
               min="0.01"
               required
             />
+
+            <div className="mb-4 p-3 border rounded-lg bg-slate-50">
+              <p className="text-sm font-semibold text-slate-800 mb-2">Tank Distribution</p>
+              <p className="text-xs text-slate-500 mb-3">Split received volume across one or more tanks. Total must equal delivered quantity.</p>
+              <div className="space-y-2">
+                {distribution.map((item, index) => (
+                  <div key={`${item.tankId}-${index}`} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                    <Select
+                      label="Tank"
+                      name={`tank-${index}`}
+                      value={item.tankId}
+                      onChange={(e) => {
+                        const next = [...distribution];
+                        next[index].tankId = e.target.value;
+                        setDistribution(next);
+                      }}
+                      options={(station?.tanks || []).map((t) => ({ value: t._id, label: `${t.label} (${t.product})` }))}
+                    />
+                    <Input
+                      label="Litres"
+                      type="number"
+                      value={item.litres}
+                      min="0"
+                      step="0.01"
+                      onChange={(e) => {
+                        const next = [...distribution];
+                        next[index].litres = e.target.value;
+                        setDistribution(next);
+                      }}
+                    />
+                    <Button type="button" variant="danger" onClick={() => setDistribution(distribution.filter((_, i) => i !== index))}>Remove</Button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setDistribution([...distribution, { tankId: '', litres: '' }])}
+                >
+                  Add Tank Split
+                </Button>
+                <div className="text-xs text-slate-600 self-center">
+                  Total Split: {distributionTotal.toFixed(2)}L
+                </div>
+              </div>
+              {formData.quantity && distribution.length > 0 && distributionDifference > 0.001 && (
+                <p className="text-xs text-red-600 mt-2">Distribution total must equal quantity delivered.</p>
+              )}
+            </div>
 
             <Input
               label="Total Cost (₦)"

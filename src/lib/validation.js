@@ -46,6 +46,14 @@ export const stockReceiptSchema = z.object({
   quantity: z.number().positive('Quantity must be positive'),
   expectedQuantity: z.number().positive('Expected quantity must be positive'),
   cost: z.number().positive('Cost must be positive'),
+  distribution: z
+    .array(
+      z.object({
+        tankId: z.string().min(1, 'Tank is required'),
+        litres: z.number().positive('Tank litres must be positive'),
+      })
+    )
+    .optional(),
 });
 
 // Begin Day Schema

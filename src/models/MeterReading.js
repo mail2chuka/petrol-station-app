@@ -59,6 +59,29 @@ const meterReadingSchema = new mongoose.Schema(
       type: String, // Required when supervisor edits opening field
       default: null,
     },
+    managerReviewStatus: {
+      type: String,
+      enum: ['pending', 'approved', 'query'],
+      default: 'pending',
+      index: true,
+    },
+    managerReviewNote: {
+      type: String,
+      default: null,
+    },
+    reviewedByManagerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    reviewedByManagerName: {
+      type: String,
+      default: null,
+    },
+    reviewedAt: {
+      type: Date,
+      default: null,
+    },
     editedByAdminId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User', // Admin who last edited this reading

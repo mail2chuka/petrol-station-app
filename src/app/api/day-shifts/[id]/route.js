@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import DayShift from '@/models/DayShift';
 import { requireAuth, requireStationAccess } from '@/lib/auth';
+import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
 // GET /api/day-shifts/[id] - Get a specific day shift
 export async function GET(request, { params }) {
@@ -21,7 +22,11 @@ export async function GET(request, { params }) {
     // Check access
     await requireStationAccess(dayShift.stationId.toString());
 
-    return NextResponse.json({ dayShift });
+    await autoCloseExpiredInProgressShifts({ stationId: dayShift.stationId });
+
+    const refreshedDayShift = await DayShift.findById(params.id);
+
+    return NextResponse.json({ dayShift: refreshedDayShift });
   } catch (error) {
     console.error('Error fetching day shift:', error);
     return NextResponse.json(

@@ -11,8 +11,12 @@ import Loading from '@/components/Loading';
 const managerMenuItems = [
   { label: 'Dashboard', href: '/manager' },
   { label: 'Begin Day', href: '/manager/begin-day' },
+  { label: 'Open Pumps', href: '/manager/open-pumps' },
+  { label: 'Supervisor Entries', href: '/manager/supervisor-entries' },
+  { label: 'Summary Book', href: '/manager/summary-book' },
   { label: 'End Day', href: '/manager/end-day' },
-  { label: 'Receive Stock', href: '/manager/stock' },
+  { label: 'Stock In', href: '/manager/stock' },
+  { label: 'Closing Stock', href: '/manager/closing-stock' },
   { label: 'Reports', href: '/manager/reports' },
 ];
 
