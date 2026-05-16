@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import DayShift from '@/models/DayShift';
 import Station from '@/models/Station';
+import PriceHistory from '@/models/PriceHistory';
 import User from '@/models/User';
 import { requireAuth } from '@/lib/auth';
 import { beginDaySchema } from '@/lib/validation';
@@ -48,6 +49,11 @@ export async function POST(request) {
     }
 
     await autoCloseExpiredInProgressShifts({ stationId: validatedData.stationId, session });
+
+    const submittedPrices = {
+      PMS: Number(validatedData.pricesAtStart.PMS),
+      AGO: Number(validatedData.pricesAtStart.AGO),
+    };
 
     // Check if there's already an active day
     const existingActiveDay = await DayShift.findOne({
@@ -98,6 +104,45 @@ export async function POST(request) {
       });
     }
 
+    const openingPriceChanges = [];
+    for (const fuelType of ['PMS', 'AGO']) {
+      const previousPrice = Number(station.currentPrices?.[fuelType] || 0);
+      const newPrice = submittedPrices[fuelType];
+
+      if (previousPrice !== newPrice) {
+        const changeAmount = newPrice - previousPrice;
+        const changePercentage = previousPrice > 0
+          ? ((changeAmount / previousPrice) * 100)
+          : 100;
+
+        openingPriceChanges.push({
+          stationId: station._id,
+          stationName: station.name,
+          fuelType,
+          previousPrice,
+          newPrice,
+          changeAmount,
+          changePercentage,
+          effectiveDate: new Date(),
+          changedBy: currentUser.id,
+          changedByName: currentUser.name,
+          reason: 'Opening day price set during begin day',
+          approvalStatus: 'approved',
+          approvedBy: currentUser.id,
+          approvedByName: currentUser.name,
+          approvedAt: new Date(),
+        });
+      }
+    }
+
+    station.currentPrices.PMS = submittedPrices.PMS;
+    station.currentPrices.AGO = submittedPrices.AGO;
+    await station.save({ session });
+
+    if (openingPriceChanges.length > 0) {
+      await PriceHistory.create(openingPriceChanges, { session });
+    }
+
     // Create day shift
     const dayShift = await DayShift.create([{
       stationId: validatedData.stationId,
@@ -108,10 +153,7 @@ export async function POST(request) {
       startedByName: currentUser.name,
       startTime: new Date(),
       dispenserAssignments,
-      pricesAtStart: {
-        PMS: station.currentPrices.PMS,
-        AGO: station.currentPrices.AGO,
-      },
+      pricesAtStart: submittedPrices,
     }], { session });
 
     // Create audit log
@@ -127,6 +169,8 @@ export async function POST(request) {
       details: {
         date: validatedData.date,
         dispenserCount: dispenserAssignments.length,
+        pricesAtStart: submittedPrices,
+        openingPriceChanges,
       },
     });
 

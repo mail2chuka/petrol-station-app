@@ -60,6 +60,10 @@ export const stockReceiptSchema = z.object({
 export const beginDaySchema = z.object({
   stationId: z.string(),
   date: z.string(),
+  pricesAtStart: z.object({
+    PMS: z.number().positive('PMS price must be positive'),
+    AGO: z.number().positive('AGO price must be positive'),
+  }),
   dispensers: z.array(z.object({
     dispenserId: z.string(),
     fuelType: z.enum([FUEL_TYPES.PMS, FUEL_TYPES.AGO]),

@@ -16,8 +16,11 @@ function BeginDayPageContent() {
   const adminStationId = searchParams.get('stationId');
   const activeStationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
   const [dispensers, setDispensers] = useState([]);
+  const [station, setStation] = useState(null);
   const [supervisors, setSupervisors] = useState([]);
   const [assignments, setAssignments] = useState([]);
+  const [openPumps, setOpenPumps] = useState([]);
+  const [pricesAtStart, setPricesAtStart] = useState({ PMS: '', AGO: '' });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -30,15 +33,31 @@ function BeginDayPageContent() {
     if (!activeStationId) return;
 
     try {
-      const [dispensersRes, usersRes] = await Promise.all([
+      const [stationsRes, dispensersRes, usersRes, openingsRes] = await Promise.all([
+        fetch('/api/stations'),
         fetch(`/api/stations/${activeStationId}/dispensers`),
         fetch(`/api/users?role=supervisor&stationId=${activeStationId}`),
+        fetch(`/api/pump-openings?stationId=${activeStationId}&date=${new Date().toISOString().split('T')[0]}`),
       ]);
 
+      const stationsData = await stationsRes.json();
       const dispensersData = await dispensersRes.json();
       const usersData = await usersRes.json();
+      const openingsData = await openingsRes.json();
 
-      const activeDispensers = dispensersData.dispensers?.filter(d => d.isActive) || [];
+      const currentStation = (stationsData.stations || []).find((s) => s._id === activeStationId) || null;
+      setStation(currentStation);
+      setPricesAtStart({
+        PMS: currentStation?.currentPrices?.PMS != null ? String(currentStation.currentPrices.PMS) : '',
+        AGO: currentStation?.currentPrices?.AGO != null ? String(currentStation.currentPrices.AGO) : '',
+      });
+      const todayOpening = (openingsData.openings || [])[0] || null;
+      const openPumpIds = new Set((todayOpening?.pumps || []).map((pump) => pump._id));
+      setOpenPumps(todayOpening?.pumps || []);
+
+      const activeDispensers = (dispensersData.dispensers || [])
+        .filter((dispenser) => dispenser.isActive)
+        .filter((dispenser) => openPumpIds.size === 0 || openPumpIds.has(dispenser.dispenserId));
       setDispensers(activeDispensers);
       setSupervisors(usersData.users || []);
 
@@ -47,6 +66,7 @@ function BeginDayPageContent() {
         activeDispensers.map(d => ({
           dispenserId: d.dispenserId,
           dispenserName: d.name,
+          tankId: d.tankId || '',
           fuelType: d.fuelType,
           attendantId: '',
           initialReading: '',
@@ -72,6 +92,12 @@ function BeginDayPageContent() {
     setSubmitting(true);
 
     // Validate all assignments
+    if (!pricesAtStart.PMS || !pricesAtStart.AGO) {
+      setError('Please enter the PMS and AGO prices for the day.');
+      setSubmitting(false);
+      return;
+    }
+
     for (const assignment of assignments) {
       if (!assignment.attendantId || assignment.initialReading === '') {
         setError('Please fill in all fields for each dispenser');
@@ -87,6 +113,10 @@ function BeginDayPageContent() {
         body: JSON.stringify({
           stationId: activeStationId,
           date: new Date().toISOString().split('T')[0],
+          pricesAtStart: {
+            PMS: parseFloat(pricesAtStart.PMS),
+            AGO: parseFloat(pricesAtStart.AGO),
+          },
           dispensers: assignments.map(a => ({
             dispenserId: a.dispenserId,
             fuelType: a.fuelType,
@@ -133,6 +163,40 @@ function BeginDayPageContent() {
       )}
 
       <Card title="Dispenser Assignments">
+        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Input
+            label="PMS Price For The Day (N/L)"
+            type="number"
+            name="price-pms"
+            value={pricesAtStart.PMS}
+            onChange={(e) => setPricesAtStart((current) => ({ ...current, PMS: e.target.value }))}
+            placeholder="Enter PMS price"
+            step="0.01"
+            min="0.01"
+            required
+          />
+          <Input
+            label="AGO Price For The Day (N/L)"
+            type="number"
+            name="price-ago"
+            value={pricesAtStart.AGO}
+            onChange={(e) => setPricesAtStart((current) => ({ ...current, AGO: e.target.value }))}
+            placeholder="Enter AGO price"
+            step="0.01"
+            min="0.01"
+            required
+          />
+        </div>
+        {openPumps.length > 0 && (
+          <div className="mb-4 rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-900">
+            Assignments are limited to pumps in today&apos;s open-pumps list.
+          </div>
+        )}
+        {openPumps.length === 0 && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            No open-pumps list found for today. All active pumps are shown.
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           <div className="space-y-6">
             {assignments.map((assignment, index) => (
@@ -140,6 +204,9 @@ function BeginDayPageContent() {
                 <h3 className="font-medium text-lg mb-4">
                   {assignment.dispenserName} ({assignment.fuelType})
                 </h3>
+                <p className="text-xs text-gray-500 mb-3">
+                  Tank: {station?.tanks?.find((tank) => tank._id === assignment.tankId)?.label || assignment.tankId || 'Unmapped'}
+                </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Select
                     label="Supervisor"

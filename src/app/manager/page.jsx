@@ -15,6 +15,13 @@ function ManagerDashboardContent() {
   const [activeDayShift, setActiveDayShift] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const buildManagerHref = (path) => {
+    if (session?.user?.role === 'admin' && adminStationId) {
+      return `${path}?stationId=${adminStationId}`;
+    }
+    return path;
+  };
+
   useEffect(() => {
     fetchData();
   }, [session]);
@@ -145,7 +152,7 @@ function ManagerDashboardContent() {
           <div className="space-y-3">
             {!activeDayShift ? (
               <a
-                href="/manager/begin-day"
+                href={buildManagerHref('/manager/begin-day')}
                 className="block p-4 bg-gradient-to-r from-ecana-maroon-50 to-ecana-maroon-100 hover:from-ecana-maroon-100 hover:to-ecana-maroon-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-ecana-maroon-200"
               >
                 <p className="font-bold text-ecana-maroon text-lg">🚀 Begin Day</p>
@@ -153,7 +160,7 @@ function ManagerDashboardContent() {
               </a>
             ) : (
               <a
-                href="/manager/end-day"
+                href={buildManagerHref('/manager/end-day')}
                 className="block p-4 bg-gradient-to-r from-red-50 to-red-100 hover:from-red-100 hover:to-red-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-red-200"
               >
                 <p className="font-bold text-red-700 text-lg">🛑 End Day</p>
@@ -161,46 +168,53 @@ function ManagerDashboardContent() {
               </a>
             )}
             <a
-              href="/manager/open-pumps"
+              href={buildManagerHref('/manager/open-pumps')}
               className="block p-4 bg-gradient-to-r from-cyan-50 to-cyan-100 hover:from-cyan-100 hover:to-cyan-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-cyan-200"
             >
               <p className="font-bold text-cyan-700 text-lg">⛽ Open Pumps</p>
               <p className="text-sm text-gray-600 mt-1">Select pumps available for today's operations</p>
             </a>
             <a
-              href="/manager/supervisor-entries"
+              href={buildManagerHref('/manager/supervisor-entries')}
               className="block p-4 bg-gradient-to-r from-amber-50 to-amber-100 hover:from-amber-100 hover:to-amber-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-amber-200"
             >
               <p className="font-bold text-amber-700 text-lg">🧾 Supervisor Entries</p>
               <p className="text-sm text-gray-600 mt-1">Approve or query meter and RTT submissions</p>
             </a>
             <a
-              href="/manager/stock"
+              href={buildManagerHref('/manager/stock')}
               className="block p-4 bg-gradient-to-r from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-green-200"
             >
               <p className="font-bold text-green-700 text-lg">📦 Stock In</p>
               <p className="text-sm text-gray-600 mt-1">Record received litres and split by tank</p>
             </a>
             <a
-              href="/manager/closing-stock"
+              href={buildManagerHref('/manager/closing-stock')}
               className="block p-4 bg-gradient-to-r from-fuchsia-50 to-fuchsia-100 hover:from-fuchsia-100 hover:to-fuchsia-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-fuchsia-200"
             >
               <p className="font-bold text-fuchsia-700 text-lg">🛢️ Closing Stock</p>
               <p className="text-sm text-gray-600 mt-1">Confirm per-tank closing stock values</p>
             </a>
             <a
-              href="/manager/summary-book"
+              href={buildManagerHref('/manager/summary-book')}
               className="block p-4 bg-gradient-to-r from-indigo-50 to-indigo-100 hover:from-indigo-100 hover:to-indigo-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-indigo-200"
             >
               <p className="font-bold text-indigo-700 text-lg">📘 Summary Book</p>
               <p className="text-sm text-gray-600 mt-1">View daily summary by tank and export PDF/Excel</p>
             </a>
             <a
-              href="/manager/reports"
+              href={buildManagerHref('/manager/reports')}
               className="block p-4 bg-gradient-to-r from-ecana-blue-50 to-ecana-blue-100 hover:from-ecana-blue-100 hover:to-ecana-blue-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-ecana-blue-200"
             >
               <p className="font-bold text-ecana-blue text-lg">📊 View Reports</p>
               <p className="text-sm text-gray-600 mt-1">Access daily reports</p>
+            </a>
+            <a
+              href={buildManagerHref('/manager/station-config')}
+              className="block p-4 bg-gradient-to-r from-slate-50 to-slate-100 hover:from-slate-100 hover:to-slate-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-slate-200"
+            >
+              <p className="font-bold text-slate-800 text-lg">🛠️ Station Config</p>
+              <p className="text-sm text-gray-600 mt-1">Maintain tank and pump setup for this station</p>
             </a>
           </div>
         </Card>

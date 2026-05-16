@@ -29,6 +29,9 @@ export default function StationsPage() {
     confirmCode: '',
   });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [mappingStation, setMappingStation] = useState(null);
+  const [mappingForm, setMappingForm] = useState({ tanks: [], dispensers: [], editReason: '' });
+  const [savingMapping, setSavingMapping] = useState(false);
   const [deactivating, setDeactivating] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -81,6 +84,68 @@ export default function StationsPage() {
       editReason: '',
       confirmCode: '',
     });
+  };
+
+  const openMappingEditor = (station) => {
+    setError('');
+    setSuccess('');
+    setMappingStation(station);
+    setMappingForm({
+      tanks: (station?.tanks || []).map((tank) => ({
+        _id: tank._id,
+        label: tank.label,
+        product: tank.product,
+        capacity: tank.capacity,
+        isActive: tank.isActive !== false,
+      })),
+      dispensers: (station?.dispensers || []).map((dispenser) => ({
+        dispenserId: dispenser.dispenserId,
+        name: dispenser.name,
+        tankId: dispenser.tankId || '',
+        fuelType: dispenser.fuelType,
+        isActive: dispenser.isActive !== false,
+      })),
+      editReason: '',
+    });
+  };
+
+  const saveMapping = async () => {
+    if (!mappingStation?._id) return;
+
+    if (!mappingForm.editReason || mappingForm.editReason.trim().length < 5) {
+      setError('Please provide a reason (min 5 characters) for tank/pump mapping changes.');
+      return;
+    }
+
+    setSavingMapping(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const res = await fetch(`/api/stations/${mappingStation._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tanks: mappingForm.tanks,
+          dispensers: mappingForm.dispensers,
+          editReason: mappingForm.editReason,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || 'Failed to save tank/pump mapping');
+        return;
+      }
+
+      setSuccess('Tank and pump mapping updated successfully.');
+      setMappingStation(null);
+      await fetchStations();
+    } catch (e) {
+      setError('An error occurred while saving tank/pump mapping.');
+    } finally {
+      setSavingMapping(false);
+    }
   };
 
   const savePrices = async () => {
@@ -374,6 +439,9 @@ export default function StationsPage() {
           <Button size="sm" variant="secondary" onClick={() => openEditStation(row)}>
             Edit Details
           </Button>
+          <Button size="sm" variant="outline" onClick={() => openMappingEditor(row)}>
+            Map Pumps/Tanks
+          </Button>
           <Button
             size="sm"
             variant="danger"
@@ -429,6 +497,152 @@ export default function StationsPage() {
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl mb-4">
           {error}
+        </div>
+      )}
+
+      {mappingStation && (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close mapping editor"
+            onClick={() => setMappingStation(null)}
+          />
+          <div className="absolute inset-x-4 top-6 bottom-6 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[900px] rounded-2xl bg-white shadow-xl overflow-y-auto">
+            <div className="p-4 sm:p-6 space-y-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm text-gray-600">Configure tanks and pump mapping</p>
+                  <p className="text-lg font-bold text-gray-900">{mappingStation.name}</p>
+                </div>
+                <Button variant="secondary" onClick={() => setMappingStation(null)}>Close</Button>
+              </div>
+
+              <Card title="Tanks">
+                <div className="space-y-3">
+                  {mappingForm.tanks.map((tank, index) => (
+                    <div key={`${tank._id || 'tank'}-${index}`} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                      <Input
+                        label="Tank ID"
+                        value={tank._id}
+                        onChange={(e) => setMappingForm((p) => {
+                          const tanks = [...p.tanks];
+                          tanks[index]._id = e.target.value;
+                          return { ...p, tanks };
+                        })}
+                        placeholder="e.g. PMS-1"
+                      />
+                      <Input
+                        label="Label"
+                        value={tank.label}
+                        onChange={(e) => setMappingForm((p) => {
+                          const tanks = [...p.tanks];
+                          tanks[index].label = e.target.value;
+                          return { ...p, tanks };
+                        })}
+                        placeholder="Display name"
+                      />
+                      <Select
+                        label="Product"
+                        value={tank.product}
+                        onChange={(e) => setMappingForm((p) => {
+                          const tanks = [...p.tanks];
+                          tanks[index].product = e.target.value;
+                          return { ...p, tanks };
+                        })}
+                        options={[{ value: 'PMS', label: 'PMS' }, { value: 'AGO', label: 'AGO' }]}
+                      />
+                      <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+                        <Input
+                          label="Capacity"
+                          type="number"
+                          value={tank.capacity}
+                          onChange={(e) => setMappingForm((p) => {
+                            const tanks = [...p.tanks];
+                            tanks[index].capacity = e.target.value;
+                            return { ...p, tanks };
+                          })}
+                          min="1"
+                          step="0.01"
+                        />
+                        <Button type="button" variant="danger" onClick={() => setMappingForm((p) => ({ ...p, tanks: p.tanks.filter((_, i) => i !== index) }))}>Remove</Button>
+                      </div>
+                    </div>
+                  ))}
+                  <Button type="button" variant="secondary" onClick={() => setMappingForm((p) => ({ ...p, tanks: [...p.tanks, { _id: '', label: '', product: 'PMS', capacity: '', isActive: true }] }))}>
+                    Add Tank
+                  </Button>
+                </div>
+              </Card>
+
+              <Card title="Dispensers / Pumps">
+                <div className="space-y-3">
+                  {mappingForm.dispensers.map((dispenser, index) => (
+                    <div key={`${dispenser.dispenserId || 'disp'}-${index}`} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                      <Input
+                        label="Pump ID"
+                        value={dispenser.dispenserId}
+                        onChange={(e) => setMappingForm((p) => {
+                          const dispensers = [...p.dispensers];
+                          dispensers[index].dispenserId = e.target.value;
+                          return { ...p, dispensers };
+                        })}
+                        placeholder="e.g. PUMP-1"
+                      />
+                      <Input
+                        label="Name"
+                        value={dispenser.name}
+                        onChange={(e) => setMappingForm((p) => {
+                          const dispensers = [...p.dispensers];
+                          dispensers[index].name = e.target.value;
+                          return { ...p, dispensers };
+                        })}
+                        placeholder="Pump label"
+                      />
+                      <Select
+                        label="Fuel Type"
+                        value={dispenser.fuelType}
+                        onChange={(e) => setMappingForm((p) => {
+                          const dispensers = [...p.dispensers];
+                          dispensers[index].fuelType = e.target.value;
+                          return { ...p, dispensers };
+                        })}
+                        options={[{ value: 'PMS', label: 'PMS' }, { value: 'AGO', label: 'AGO' }]}
+                      />
+                      <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+                        <Select
+                          label="Mapped Tank"
+                          value={dispenser.tankId}
+                          onChange={(e) => setMappingForm((p) => {
+                            const dispensers = [...p.dispensers];
+                            dispensers[index].tankId = e.target.value;
+                            return { ...p, dispensers };
+                          })}
+                          options={mappingForm.tanks.map((tank) => ({ value: tank._id, label: `${tank.label || tank._id} (${tank.product})` }))}
+                          placeholder="Select tank"
+                        />
+                        <Button type="button" variant="danger" onClick={() => setMappingForm((p) => ({ ...p, dispensers: p.dispensers.filter((_, i) => i !== index) }))}>Remove</Button>
+                      </div>
+                    </div>
+                  ))}
+                  <Button type="button" variant="secondary" onClick={() => setMappingForm((p) => ({ ...p, dispensers: [...p.dispensers, { dispenserId: '', name: '', fuelType: 'PMS', tankId: '', isActive: true }] }))}>
+                    Add Pump
+                  </Button>
+                </div>
+              </Card>
+
+              <Input
+                label="Reason for mapping change"
+                value={mappingForm.editReason}
+                onChange={(e) => setMappingForm((p) => ({ ...p, editReason: e.target.value }))}
+                placeholder="Explain why pumps/tanks are being added or remapped"
+              />
+
+              <Button variant="primary" size="lg" fullWidth disabled={savingMapping} onClick={saveMapping}>
+                {savingMapping ? 'Saving Mapping...' : 'Save Tank / Pump Mapping'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

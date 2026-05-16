@@ -10,6 +10,7 @@ import Loading from '@/components/Loading';
 
 const managerMenuItems = [
   { label: 'Dashboard', href: '/manager' },
+  { label: 'Station Config', href: '/manager/station-config' },
   { label: 'Begin Day', href: '/manager/begin-day' },
   { label: 'Open Pumps', href: '/manager/open-pumps' },
   { label: 'Supervisor Entries', href: '/manager/supervisor-entries' },

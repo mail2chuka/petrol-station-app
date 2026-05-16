@@ -44,7 +44,7 @@ export async function POST(request, { params }) {
     }
 
     const body = await request.json();
-    const { dispenserId, name, fuelType } = body;
+    const { dispenserId, name, fuelType, tankId } = body;
 
     if (!dispenserId || !name || !fuelType) {
       return NextResponse.json(
@@ -73,10 +73,21 @@ export async function POST(request, { params }) {
       );
     }
 
+    if (tankId) {
+      const validTank = station.tanks?.find((tank) => tank._id === tankId);
+      if (!validTank) {
+        return NextResponse.json(
+          { error: `Invalid tankId: ${tankId}` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Add dispenser
     station.dispensers.push({
       dispenserId,
       name,
+      tankId: tankId || null,
       fuelType,
       isActive: true,
     });
@@ -96,6 +107,7 @@ export async function POST(request, { params }) {
       details: {
         dispenserId,
         name,
+        tankId: tankId || null,
         fuelType,
       },
     });
