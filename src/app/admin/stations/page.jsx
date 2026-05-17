@@ -521,7 +521,7 @@ export default function StationsPage() {
               <Card title="Tanks">
                 <div className="space-y-3">
                   {mappingForm.tanks.map((tank, index) => (
-                    <div key={`${tank._id || 'tank'}-${index}`} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+                    <div key={`mapping-tank-row-${index}`} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
                       <Input
                         label="Tank ID"
                         value={tank._id}
@@ -579,7 +579,7 @@ export default function StationsPage() {
               <Card title="Dispensers / Pumps">
                 <div className="space-y-3">
                   {mappingForm.dispensers.map((dispenser, index) => (
-                    <div key={`${dispenser.dispenserId || 'disp'}-${index}`} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+                    <div key={`mapping-dispenser-row-${index}`} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
                       <Input
                         label="Pump ID"
                         value={dispenser.dispenserId}

@@ -254,7 +254,7 @@ function StationConfigPageContent() {
             <p className="text-sm text-slate-500">No tanks configured yet.</p>
           )}
           {form.tanks.map((tank, index) => (
-            <div key={`${tank._id || 'tank'}-${index}`} className="rounded-2xl border border-slate-200 p-4">
+            <div key={`tank-row-${index}`} className="rounded-2xl border border-slate-200 p-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <Input
                   label="Tank ID"
@@ -321,7 +321,7 @@ function StationConfigPageContent() {
             <p className="text-sm text-slate-500">No pumps configured yet.</p>
           )}
           {form.dispensers.map((dispenser, index) => (
-            <div key={`${dispenser.dispenserId || 'dispenser'}-${index}`} className="rounded-2xl border border-slate-200 p-4">
+            <div key={`dispenser-row-${index}`} className="rounded-2xl border border-slate-200 p-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <Input
                   label="Pump ID"
