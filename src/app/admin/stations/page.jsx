@@ -521,7 +521,7 @@ export default function StationsPage() {
               <Card title="Tanks">
                 <div className="space-y-3">
                   {mappingForm.tanks.map((tank, index) => (
-                    <div key={`${tank._id || 'tank'}-${index}`} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                    <div key={`${tank._id || 'tank'}-${index}`} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
                       <Input
                         label="Tank ID"
                         value={tank._id}
@@ -531,6 +531,7 @@ export default function StationsPage() {
                           return { ...p, tanks };
                         })}
                         placeholder="e.g. PMS-1"
+                        className="min-w-0"
                       />
                       <Input
                         label="Label"
@@ -578,7 +579,7 @@ export default function StationsPage() {
               <Card title="Dispensers / Pumps">
                 <div className="space-y-3">
                   {mappingForm.dispensers.map((dispenser, index) => (
-                    <div key={`${dispenser.dispenserId || 'disp'}-${index}`} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                    <div key={`${dispenser.dispenserId || 'disp'}-${index}`} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
                       <Input
                         label="Pump ID"
                         value={dispenser.dispenserId}
@@ -588,6 +589,7 @@ export default function StationsPage() {
                           return { ...p, dispensers };
                         })}
                         placeholder="e.g. PUMP-1"
+                        className="min-w-0"
                       />
                       <Input
                         label="Name"
@@ -608,8 +610,9 @@ export default function StationsPage() {
                           return { ...p, dispensers };
                         })}
                         options={[{ value: 'PMS', label: 'PMS' }, { value: 'AGO', label: 'AGO' }]}
+                        className="min-w-0"
                       />
-                      <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end lg:col-span-4">
                         <Select
                           label="Mapped Tank"
                           value={dispenser.tankId}
@@ -620,6 +623,7 @@ export default function StationsPage() {
                           })}
                           options={mappingForm.tanks.map((tank) => ({ value: tank._id, label: `${tank.label || tank._id} (${tank.product})` }))}
                           placeholder="Select tank"
+                          className="min-w-0"
                         />
                         <Button type="button" variant="danger" onClick={() => setMappingForm((p) => ({ ...p, dispensers: p.dispensers.filter((_, i) => i !== index) }))}>Remove</Button>
                       </div>

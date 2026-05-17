@@ -255,13 +255,14 @@ function StationConfigPageContent() {
           )}
           {form.tanks.map((tank, index) => (
             <div key={`${tank._id || 'tank'}-${index}`} className="rounded-2xl border border-slate-200 p-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <Input
                   label="Tank ID"
                   name={`tank-id-${index}`}
                   value={tank._id}
                   onChange={(e) => updateTank(index, '_id', e.target.value)}
                   placeholder="e.g. PMS-1"
+                  className="min-w-0"
                 />
                 <Input
                   label="Label"
@@ -321,13 +322,14 @@ function StationConfigPageContent() {
           )}
           {form.dispensers.map((dispenser, index) => (
             <div key={`${dispenser.dispenserId || 'dispenser'}-${index}`} className="rounded-2xl border border-slate-200 p-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <Input
                   label="Pump ID"
                   name={`dispenser-id-${index}`}
                   value={dispenser.dispenserId}
                   onChange={(e) => updateDispenser(index, 'dispenserId', e.target.value)}
                   placeholder="e.g. PUMP-1"
+                  className="min-w-0"
                 />
                 <Input
                   label="Pump Name"
@@ -358,8 +360,9 @@ function StationConfigPageContent() {
                       label: `${tank.label || tank._id} (${tank.product})`,
                     })),
                   ]}
+                  className="min-w-0"
                 />
-                <div className="space-y-4">
+                <div className="space-y-4 md:col-span-2 xl:col-span-4 flex flex-col sm:flex-row sm:items-end gap-3">
                   <Select
                     label="Status"
                     name={`dispenser-status-${index}`}
