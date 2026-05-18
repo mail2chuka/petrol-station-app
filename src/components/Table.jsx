@@ -44,7 +44,7 @@ export default function Table({ columns, data, onRowClick, emptyMessage = 'No da
                   </div>
                 )}
               </div>
-              {columns[columns.length - 1] && columns.length > 2 && (
+              {columns[columns.length - 1] && columns.length > 2 && columns[columns.length - 1].header !== 'Actions' && (
                 <div className="text-right shrink-0">
                   <div className="text-sm font-bold text-ecana-maroon">
                     {columns[columns.length - 1]?.render
@@ -62,24 +62,37 @@ export default function Table({ columns, data, onRowClick, emptyMessage = 'No da
             {columns.length > 3 && (
               <dl className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
                 {columns.slice(2, Math.min(columns.length - 1, 6)).map((column, colIndex) => (
-                  <div key={colIndex} className="rounded-xl bg-slate-50 px-3 py-2">
+                  <div key={colIndex} className="rounded-xl bg-slate-50 px-3 py-2 min-w-0">
                     <dt className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">
                       {column.header}
                     </dt>
-                    <dd className="mt-0.5 text-sm font-medium text-slate-900 truncate">
+                    <dd className="mt-0.5 text-sm font-medium text-slate-900 min-w-0">
                       {column.render ? column.render(row) : row[column.field]}
                     </dd>
                   </div>
                 ))}
               </dl>
             )}
+
+            {columns[columns.length - 1] && columns.length > 2 && columns[columns.length - 1].header === 'Actions' && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-2">
+                  {columns[columns.length - 1].header}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {columns[columns.length - 1]?.render
+                    ? columns[columns.length - 1].render(row)
+                    : row[columns[columns.length - 1]?.field]}
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
       {/* Desktop table */}
-      <div className="hidden sm:block overflow-hidden rounded-xl border border-slate-200/80">
-        <table className="min-w-full">
+      <div className="hidden sm:block overflow-x-auto rounded-xl border border-slate-200/80">
+        <table className="min-w-[1100px] w-full">
           <thead>
             <tr className="bg-slate-50/80">
               {columns.map((column, index) => (
@@ -108,7 +121,7 @@ export default function Table({ columns, data, onRowClick, emptyMessage = 'No da
                 {columns.map((column, colIndex) => (
                   <td
                     key={colIndex}
-                    className="px-5 py-4 text-sm text-slate-700"
+                    className="px-5 py-4 text-sm text-slate-700 align-top"
                   >
                     {column.render ? column.render(row) : row[column.field]}
                   </td>

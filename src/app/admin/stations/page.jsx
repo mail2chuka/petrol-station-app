@@ -514,7 +514,7 @@ export default function StationsPage() {
     {
       header: 'Actions',
       render: (row) => (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 max-w-full">
           <Link
             href={`/manager?stationId=${row._id}`}
             className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-xs font-semibold border border-ecana-blue/30 text-ecana-blue hover:bg-ecana-blue/10 transition-colors"
