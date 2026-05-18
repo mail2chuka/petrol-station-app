@@ -236,6 +236,35 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: 'Station not found' }, { status: 404 });
     }
 
+    // Check for hard delete
+    const { hardDelete, adminPassword } = (await request.json().catch(() => ({}))) || {};
+    if (hardDelete) {
+      // Require admin password for hard delete
+      if (!adminPassword || typeof adminPassword !== 'string' || adminPassword.length < 6) {
+        return NextResponse.json({ error: 'Admin password required for hard delete.' }, { status: 400 });
+      }
+      // Validate admin password (assumes User model has a comparePassword method)
+      const User = (await import('@/models/User')).default;
+      const adminUser = await User.findById(currentUser.id);
+      if (!adminUser || !(await adminUser.comparePassword(adminPassword))) {
+        return NextResponse.json({ error: 'Invalid admin password.' }, { status: 401 });
+      }
+      await Station.deleteOne({ _id: station._id });
+      await createAuditLog({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: AUDIT_ACTIONS.DELETE,
+        resource: AUDIT_RESOURCES.STATION,
+        resourceId: station._id.toString(),
+        stationId: station._id,
+        stationName: station.name,
+        details: { code: station.code, location: station.location, hardDelete: true },
+      });
+      return NextResponse.json({ message: 'Station permanently deleted.' });
+    }
+
+    // Soft delete (deactivate)
     station.isActive = false;
     await station.save();
 
