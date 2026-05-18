@@ -248,10 +248,10 @@ export default function StationsPage() {
     setError('');
     setSuccess('');
     try {
-      const res = await fetch(`/api/stations/${station._id}`, {
+      const res = await fetch(`/api/stations/${station._id}/deactivate`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: false }),
+        body: JSON.stringify({}),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -276,10 +276,10 @@ export default function StationsPage() {
     setError('');
     setSuccess('');
     try {
-      const res = await fetch(`/api/stations/${station._id}`, {
+      const res = await fetch(`/api/stations/${station._id}/reactivate`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: true }),
+        body: JSON.stringify({}),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -317,10 +317,10 @@ export default function StationsPage() {
     setSuccess('');
 
     try {
-      const res = await fetch(`/api/stations/${deleteModal.station._id}`, {
+      const res = await fetch(`/api/stations/${deleteModal.station._id}/hard-delete`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hardDelete: true, adminPassword: deleteModal.password }),
+        body: JSON.stringify({ adminPassword: deleteModal.password }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
