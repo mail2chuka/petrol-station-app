@@ -33,6 +33,13 @@ export default function StationsPage() {
   const [mappingForm, setMappingForm] = useState({ tanks: [], dispensers: [], editReason: '' });
   const [savingMapping, setSavingMapping] = useState(false);
   const [deactivating, setDeactivating] = useState(null);
+  const [deleteModal, setDeleteModal] = useState({
+    open: false,
+    station: null,
+    password: '',
+    loading: false,
+    error: '',
+  });
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -241,7 +248,11 @@ export default function StationsPage() {
     setError('');
     setSuccess('');
     try {
-      const res = await fetch(`/api/stations/${station._id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/stations/${station._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: false }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || 'Failed to deactivate station');
@@ -253,6 +264,83 @@ export default function StationsPage() {
       setError('An error occurred while deactivating the station.');
     } finally {
       setDeactivating(null);
+    }
+  };
+
+  const reactivateStation = async (station) => {
+    if (!station?._id) return;
+    const ok = window.confirm(`Reactivate station "${station.name}"?`);
+    if (!ok) return;
+
+    setDeactivating(station._id);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetch(`/api/stations/${station._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || 'Failed to reactivate station');
+        return;
+      }
+
+      setSuccess('Station reactivated.');
+      await fetchStations();
+    } catch (e) {
+      setError('An error occurred while reactivating the station.');
+    } finally {
+      setDeactivating(null);
+    }
+  };
+
+  const openDeleteModal = (station) => {
+    setDeleteModal({ open: true, station, password: '', loading: false, error: '' });
+  };
+
+  const closeDeleteModal = () => {
+    setDeleteModal({ open: false, station: null, password: '', loading: false, error: '' });
+  };
+
+  const handleDeleteStation = async () => {
+    if (!deleteModal.station?._id) return;
+
+    if (!deleteModal.password || deleteModal.password.trim().length < 1) {
+      setDeleteModal((current) => ({ ...current, error: 'Admin password required.' }));
+      return;
+    }
+
+    setDeleteModal((current) => ({ ...current, loading: true, error: '' }));
+    setError('');
+    setSuccess('');
+
+    try {
+      const res = await fetch(`/api/stations/${deleteModal.station._id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hardDelete: true, adminPassword: deleteModal.password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteModal((current) => ({
+          ...current,
+          loading: false,
+          error: data.error || 'Failed to delete station',
+        }));
+        return;
+      }
+
+      setSuccess('Station permanently deleted.');
+      closeDeleteModal();
+      await fetchStations();
+    } catch (e) {
+      setDeleteModal((current) => ({
+        ...current,
+        loading: false,
+        error: 'An error occurred while deleting the station.',
+      }));
     }
   };
 
@@ -467,93 +555,6 @@ export default function StationsPage() {
           >
             Delete
           </Button>
-          // Reactivate station
-          const reactivateStation = async (station) => {
-            if (!station?._id) return;
-            const ok = window.confirm(`Reactivate station "${station.name}"?`);
-            if (!ok) return;
-            setDeactivating(station._id);
-            setError('');
-            setSuccess('');
-            try {
-              const res = await fetch(`/api/stations/${station._id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ isActive: true }),
-              });
-              const data = await res.json().catch(() => ({}));
-              if (!res.ok) {
-                setError(data.error || 'Failed to reactivate station');
-                return;
-              }
-              setSuccess('Station reactivated.');
-              await fetchStations();
-            } catch (e) {
-              setError('An error occurred while reactivating the station.');
-            } finally {
-              setDeactivating(null);
-            }
-          };
-
-          // Hard delete modal state
-          const [deleteModal, setDeleteModal] = useState({ open: false, station: null, password: '', loading: false, error: '' });
-
-          const openDeleteModal = (station) => {
-            setDeleteModal({ open: true, station, password: '', loading: false, error: '' });
-          };
-
-          const closeDeleteModal = () => {
-            setDeleteModal({ open: false, station: null, password: '', loading: false, error: '' });
-          };
-
-          const handleDeleteStation = async () => {
-            if (!deleteModal.station?._id || !deleteModal.password) {
-              setDeleteModal((p) => ({ ...p, error: 'Admin password required.' }));
-              return;
-            }
-            setDeleteModal((p) => ({ ...p, loading: true, error: '' }));
-            setError('');
-            setSuccess('');
-            try {
-              const res = await fetch(`/api/stations/${deleteModal.station._id}`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hardDelete: true, adminPassword: deleteModal.password }),
-              });
-              const data = await res.json().catch(() => ({}));
-              if (!res.ok) {
-                setDeleteModal((p) => ({ ...p, error: data.error || 'Failed to delete station', loading: false }));
-                return;
-              }
-              setSuccess('Station permanently deleted.');
-              closeDeleteModal();
-              await fetchStations();
-            } catch (e) {
-              setDeleteModal((p) => ({ ...p, error: 'An error occurred.', loading: false }));
-            }
-          };
-              {/* Hard Delete Modal */}
-              {deleteModal.open && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                  <div className="absolute inset-0 bg-black/40" onClick={closeDeleteModal} />
-                  <div className="relative bg-white rounded-xl shadow-xl p-6 w-full max-w-sm z-10">
-                    <h2 className="text-lg font-bold mb-2">Delete Station</h2>
-                    <p className="mb-4 text-sm text-gray-700">This will permanently delete <span className="font-semibold">{deleteModal.station?.name}</span> and cannot be undone.<br/>Enter your admin password to confirm.</p>
-                    <Input
-                      label="Admin Password"
-                      type="password"
-                      value={deleteModal.password}
-                      onChange={e => setDeleteModal((p) => ({ ...p, password: e.target.value }))}
-                      disabled={deleteModal.loading}
-                    />
-                    {deleteModal.error && <div className="text-red-600 text-sm mt-2">{deleteModal.error}</div>}
-                    <div className="flex gap-2 mt-4">
-                      <Button variant="secondary" onClick={closeDeleteModal} disabled={deleteModal.loading}>Cancel</Button>
-                      <Button variant="danger" onClick={handleDeleteStation} loading={deleteModal.loading}>Delete</Button>
-                    </div>
-                  </div>
-                </div>
-              )}
         </div>
       )
     },
@@ -757,6 +758,53 @@ export default function StationsPage() {
       {success && (
         <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-xl mb-4">
           {success}
+        </div>
+      )}
+
+      {deleteModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close delete dialog"
+            onClick={closeDeleteModal}
+          />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-gray-900">Delete Station</h2>
+            <p className="mt-2 text-sm text-gray-700">
+              This will permanently delete <span className="font-semibold">{deleteModal.station?.name}</span>.
+              Enter your admin password to confirm.
+            </p>
+
+            <div className="mt-4">
+              <Input
+                label="Admin Password"
+                type="password"
+                value={deleteModal.password}
+                onChange={(e) => setDeleteModal((current) => ({ ...current, password: e.target.value }))}
+                disabled={deleteModal.loading}
+              />
+            </div>
+
+            {deleteModal.error && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {deleteModal.error}
+              </div>
+            )}
+
+            <div className="mt-5 flex gap-2">
+              <Button variant="secondary" onClick={closeDeleteModal} disabled={deleteModal.loading}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleDeleteStation}
+                isLoading={deleteModal.loading}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
