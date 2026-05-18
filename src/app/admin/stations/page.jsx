@@ -589,26 +589,39 @@ export default function StationsPage() {
 
       <Card className="mb-6">
         <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
-          <div className="flex items-end gap-2 sm:flex-1">
-            <button
-              type="button"
-              onClick={toggleSearch}
-              aria-label={showSearch ? 'Close search' : 'Open search'}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.35-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
-              </svg>
-            </button>
-            {showSearch && (
-              <div className="flex-1 min-w-0">
-                <Input
-                  label="Search"
-                  name="query"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search by name, code, or location"
-                />
+          <div className="flex items-center gap-2 sm:flex-1 min-w-0">
+            {!showSearch ? (
+              <button
+                type="button"
+                onClick={() => setShowSearch(true)}
+                aria-label="Open search"
+                className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.35-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
+                </svg>
+              </button>
+            ) : (
+              <div className="flex flex-1 items-center gap-2 min-w-0">
+                <div className="flex-1 min-w-0">
+                  <Input
+                    name="query"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search by name, code, or location"
+                    autoFocus
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleSearch}
+                  aria-label="Clear search"
+                  className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
             )}
           </div>
