@@ -236,8 +236,18 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: 'Station not found' }, { status: 404 });
     }
 
-    // Check for hard delete
-    const { hardDelete, adminPassword } = (await request.json().catch(() => ({}))) || {};
+    // Check for hard delete (handle missing/empty body gracefully)
+    let hardDelete = false;
+    let adminPassword = undefined;
+    if (request.headers.get('content-type')?.includes('application/json')) {
+      try {
+        const body = await request.json();
+        hardDelete = body.hardDelete;
+        adminPassword = body.adminPassword;
+      } catch (e) {
+        // Ignore JSON parse errors for soft delete
+      }
+    }
     if (hardDelete) {
       // Require admin password for hard delete
       if (!adminPassword || typeof adminPassword !== 'string' || adminPassword.length < 6) {
