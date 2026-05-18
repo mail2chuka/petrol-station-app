@@ -8,10 +8,11 @@ import { ROLES } from '@/lib/constants';
 // GET /api/stations/[id]/dispensers - Get all dispensers
 export async function GET(request, { params }) {
   try {
-    await requireStationAccess(params.id);
+    const { id } = await params;
+    await requireStationAccess(id);
     await connectDB();
 
-    const station = await Station.findById(params.id);
+    const station = await Station.findById(id);
     if (!station) {
       return NextResponse.json(
         { error: 'Station not found' },
@@ -43,6 +44,7 @@ export async function POST(request, { params }) {
       );
     }
 
+    const { id } = await params;
     const body = await request.json();
     const { dispenserId, name, fuelType, tankId } = body;
 
@@ -53,7 +55,7 @@ export async function POST(request, { params }) {
       );
     }
 
-    const station = await Station.findById(params.id);
+    const station = await Station.findById(id);
     if (!station) {
       return NextResponse.json(
         { error: 'Station not found' },

@@ -31,10 +31,11 @@ export async function PATCH(request, { params }) {
       );
     }
 
+    const { id, priceHistoryId } = await params;
     const body = await request.json();
     const validatedData = approvalSchema.parse(body);
 
-    const station = await Station.findById(params.id).session(session);
+    const station = await Station.findById(id).session(session);
     if (!station) {
       await session.abortTransaction();
       return NextResponse.json(
@@ -59,7 +60,7 @@ export async function PATCH(request, { params }) {
     }
 
     const priceRequest = await PriceHistory.findOne({
-      _id: params.priceHistoryId,
+      _id: priceHistoryId,
       stationId: station._id,
     }).session(session);
 

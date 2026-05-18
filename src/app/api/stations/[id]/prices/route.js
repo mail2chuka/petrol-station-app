@@ -16,7 +16,8 @@ export async function GET(request, { params }) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    const station = await Station.findById(params.id);
+    const { id } = await params;
+    const station = await Station.findById(id);
     if (!station) {
       return NextResponse.json(
         { error: 'Station not found' },
@@ -84,10 +85,11 @@ export async function POST(request, { params }) {
       );
     }
 
+    const { id } = await params;
     const body = await request.json();
     const validatedData = priceAdjustmentSchema.parse(body);
 
-    const station = await Station.findById(params.id).session(session);
+    const station = await Station.findById(id).session(session);
     if (!station) {
       await session.abortTransaction();
       return NextResponse.json(

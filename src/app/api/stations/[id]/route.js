@@ -11,14 +11,15 @@ export async function GET(request, { params }) {
     const currentUser = await requireAuth();
     await connectDB();
 
+    const { id } = await params;
     // Admin can access any station; others can only access their own
     if (currentUser.role !== ROLES.ADMIN) {
-      if (!currentUser.stationId || currentUser.stationId !== params.id) {
+      if (!currentUser.stationId || currentUser.stationId !== id) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
     }
 
-    const station = await Station.findById(params.id);
+    const station = await Station.findById(id);
     if (!station) {
       return NextResponse.json({ error: 'Station not found' }, { status: 404 });
     }
@@ -39,6 +40,7 @@ export async function PATCH(request, { params }) {
     const currentUser = await requireManagerOrAdmin();
     await connectDB();
 
+    const { id } = await params;
     const body = await request.json();
     const {
       name,
@@ -53,7 +55,7 @@ export async function PATCH(request, { params }) {
       editReason,
     } = body;
 
-    const station = await Station.findById(params.id);
+    const station = await Station.findById(id);
     if (!station) {
       return NextResponse.json({ error: 'Station not found' }, { status: 404 });
     }
@@ -231,7 +233,8 @@ export async function DELETE(request, { params }) {
     const currentUser = await requireAdmin();
     await connectDB();
 
-    const station = await Station.findById(params.id);
+    const { id } = await params;
+    const station = await Station.findById(id);
     if (!station) {
       return NextResponse.json({ error: 'Station not found' }, { status: 404 });
     }

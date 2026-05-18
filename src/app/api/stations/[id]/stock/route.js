@@ -25,10 +25,11 @@ export async function POST(request, { params }) {
       );
     }
 
+    const { id } = await params;
     const body = await request.json();
     const validatedData = stockReceiptSchema.parse(body);
 
-    const station = await Station.findById(params.id).session(session);
+    const station = await Station.findById(id).session(session);
     if (!station) {
       await session.abortTransaction();
       return NextResponse.json(
@@ -38,7 +39,7 @@ export async function POST(request, { params }) {
     }
 
     // Managers can only manage their own station
-    if (currentUser.role === ROLES.MANAGER && currentUser.stationId !== params.id) {
+    if (currentUser.role === ROLES.MANAGER && currentUser.stationId !== id) {
       await session.abortTransaction();
       return NextResponse.json(
         { error: 'Access denied to this station' },

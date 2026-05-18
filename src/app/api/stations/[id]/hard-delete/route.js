@@ -10,7 +10,8 @@ export async function DELETE(request, { params }) {
     const currentUser = await requireAdmin();
     await connectDB();
 
-    const station = await Station.findById(params.id);
+    const { id } = await params;
+    const station = await Station.findById(id);
     if (!station) {
       return NextResponse.json({ error: 'Station not found' }, { status: 404 });
     }
