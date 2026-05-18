@@ -14,6 +14,7 @@ export default function StationsPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedStation, setSelectedStation] = useState(null);
   const [priceForm, setPriceForm] = useState({ pms: '', ago: '', reason: '', tolerancePercent: '' });
@@ -435,6 +436,16 @@ export default function StationsPage() {
     });
   };
 
+  const toggleSearch = () => {
+    setShowSearch((current) => {
+      const next = !current;
+      if (!next) {
+        setQuery('');
+      }
+      return next;
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -577,25 +588,42 @@ export default function StationsPage() {
       </div>
 
       <Card className="mb-6">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Input
-            label="Search"
-            name="query"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name, code, or location"
-          />
-          <Select
-            label="Show"
-            name="includeInactive"
-            value={includeInactive ? 'all' : 'active'}
-            onChange={(e) => setIncludeInactive(e.target.value === 'all')}
-            options={[
-              { value: 'active', label: 'Active only' },
-              { value: 'all', label: 'Active + Inactive' },
-            ]}
-          />
-          <div className="hidden sm:block" />
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+          <div className="flex items-end gap-2 sm:flex-1">
+            <button
+              type="button"
+              onClick={toggleSearch}
+              aria-label={showSearch ? 'Close search' : 'Open search'}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.35-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
+              </svg>
+            </button>
+            {showSearch && (
+              <div className="flex-1 min-w-0">
+                <Input
+                  label="Search"
+                  name="query"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search by name, code, or location"
+                />
+              </div>
+            )}
+          </div>
+          <div className="sm:w-64">
+            <Select
+              label="Show"
+              name="includeInactive"
+              value={includeInactive ? 'all' : 'active'}
+              onChange={(e) => setIncludeInactive(e.target.value === 'all')}
+              options={[
+                { value: 'active', label: 'Active only' },
+                { value: 'all', label: 'Active + Inactive' },
+              ]}
+            />
+          </div>
         </div>
       </Card>
 
