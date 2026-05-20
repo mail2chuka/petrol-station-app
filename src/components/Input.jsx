@@ -19,6 +19,7 @@ export default function Input({
   icon: Icon,
   helpText,
   autoComplete,
+  autoFocus,
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const isPassword = type === 'password';
@@ -56,6 +57,7 @@ export default function Input({
           max={max}
           step={step}
           autoComplete={autoComplete}
+          autoFocus={autoFocus}
           className={`
             w-full
             px-4 py-3

@@ -19,6 +19,8 @@ function StationConfigPageContent() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [newTankIdx, setNewTankIdx] = useState(null);
+  const [newDispenserIdx, setNewDispenserIdx] = useState(null);
   const [station, setStation] = useState(null);
   const [form, setForm] = useState({
     numberOfTanks: '0',
@@ -93,6 +95,7 @@ function StationConfigPageContent() {
   };
 
   const addTank = () => {
+    setNewTankIdx(form.tanks.length);
     setForm((current) => ({
       ...current,
       tanks: [...current.tanks, { _id: '', label: '', product: 'PMS', capacity: '', isActive: true }],
@@ -100,6 +103,7 @@ function StationConfigPageContent() {
   };
 
   const addDispenser = () => {
+    setNewDispenserIdx(form.dispensers.length);
     setForm((current) => ({
       ...current,
       dispensers: [...current.dispensers, { dispenserId: '', name: '', fuelType: 'PMS', tankId: '', isActive: true }],
@@ -245,10 +249,7 @@ function StationConfigPageContent() {
         </div>
       </Card>
 
-      <Card
-        title="Tanks"
-        action={<Button variant="secondary" size="sm" onClick={addTank}>Add Tank</Button>}
-      >
+      <Card title="Tanks">
         <div className="space-y-4">
           {form.tanks.length === 0 && (
             <p className="text-sm text-slate-500">No tanks configured yet.</p>
@@ -263,6 +264,7 @@ function StationConfigPageContent() {
                   onChange={(e) => updateTank(index, '_id', e.target.value)}
                   placeholder="e.g. PMS-1"
                   className="min-w-0"
+                  autoFocus={index === newTankIdx}
                 />
                 <Input
                   label="Label"
@@ -309,13 +311,13 @@ function StationConfigPageContent() {
               </div>
             </div>
           ))}
+          <div className="pt-1">
+            <Button variant="secondary" size="sm" onClick={addTank}>Add Tank</Button>
+          </div>
         </div>
       </Card>
 
-      <Card
-        title="Pumps / Dispensers"
-        action={<Button variant="secondary" size="sm" onClick={addDispenser}>Add Pump</Button>}
-      >
+      <Card title="Pumps / Dispensers">
         <div className="space-y-4">
           {form.dispensers.length === 0 && (
             <p className="text-sm text-slate-500">No pumps configured yet.</p>
@@ -330,6 +332,7 @@ function StationConfigPageContent() {
                   onChange={(e) => updateDispenser(index, 'dispenserId', e.target.value)}
                   placeholder="e.g. PUMP-1"
                   className="min-w-0"
+                  autoFocus={index === newDispenserIdx}
                 />
                 <Input
                   label="Pump Name"
@@ -380,6 +383,9 @@ function StationConfigPageContent() {
               </div>
             </div>
           ))}
+          <div className="pt-1">
+            <Button variant="secondary" size="sm" onClick={addDispenser}>Add Pump</Button>
+          </div>
         </div>
       </Card>
 
