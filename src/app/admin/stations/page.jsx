@@ -761,14 +761,16 @@ export default function StationsPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end lg:col-span-4">
                         <Select
                           label="Mapped Tank"
-                          value={dispenser.tankId}
+                          value={dispenser.tankId || ''}
                           onChange={(e) => setMappingForm((p) => {
                             const dispensers = [...p.dispensers];
-                            dispensers[index].tankId = e.target.value;
+                            dispensers[index].tankId = e.target.value || '';
                             return { ...p, dispensers };
                           })}
-                          options={mappingForm.tanks.map((tank) => ({ value: tank._id, label: `${tank.label || tank._id} (${tank.product})` }))}
-                          placeholder="Select tank"
+                          options={[
+                            { value: '', label: 'Unmapped' },
+                            ...mappingForm.tanks.map((tank) => ({ value: tank._id, label: `${tank.label || tank._id} (${tank.product})` })),
+                          ]}
                           className="min-w-0"
                         />
                         <Button type="button" variant="danger" onClick={() => setMappingForm((p) => ({ ...p, dispensers: p.dispensers.filter((_, i) => i !== index) }))}>Remove</Button>

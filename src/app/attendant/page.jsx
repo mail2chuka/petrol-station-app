@@ -120,7 +120,7 @@ export default function AttendantDashboard() {
       {/* My Assignment Card */}
       {myAssignment && (
         <Card title="My Assignment Today" className="mb-6">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-3 bg-slate-50 rounded-xl">
               <p className="text-xs text-slate-500 uppercase tracking-wide">Dispenser</p>
               <p className="text-lg font-bold text-slate-900 mt-1">{myAssignment.dispenserName}</p>
@@ -128,6 +128,10 @@ export default function AttendantDashboard() {
             <div className="p-3 bg-slate-50 rounded-xl">
               <p className="text-xs text-slate-500 uppercase tracking-wide">Fuel Type</p>
               <p className="text-lg font-bold text-slate-900 mt-1">{myAssignment.fuelType}</p>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-xl">
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Tank</p>
+              <p className="text-lg font-bold text-slate-900 mt-1">{myAssignment.tankLabel || myAssignment.tankId || 'Unmapped'}</p>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl">
               <p className="text-xs text-slate-500 uppercase tracking-wide">Initial Reading</p>

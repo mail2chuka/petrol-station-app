@@ -93,10 +93,16 @@ export async function POST(request) {
         );
       }
 
+      const mappedTank = dispenser.tankId
+        ? station.tanks.find((t) => t._id === dispenser.tankId)
+        : null;
+
       dispenserAssignments.push({
         dispenserId: assignment.dispenserId,
         dispenserName: dispenser.name,
         fuelType: dispenser.fuelType,
+        tankId: dispenser.tankId || null,
+        tankLabel: mappedTank?.label || dispenser.tankId || '',
         attendantId: assignment.attendantId,
         attendantName: supervisor.name,
         initialReading: assignment.initialReading,

@@ -70,6 +70,14 @@ const dayShiftSchema = new mongoose.Schema(
           type: String, // Denormalized
           required: true,
         },
+        tankId: {
+          type: String,
+          default: null,
+        },
+        tankLabel: {
+          type: String,
+          default: '',
+        },
         initialReading: {
           type: Number,
           required: true,
