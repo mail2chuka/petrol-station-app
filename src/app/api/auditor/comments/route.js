@@ -2,14 +2,21 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import AuditorComment from '@/models/AuditorComment';
 import Station from '@/models/Station';
-import { requireAuth, requireAdmin } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
 
-// GET /api/auditor/comments - Admin-only list of auditor comments
+// GET /api/auditor/comments - Admin sees all; auditors see their own
 export async function GET(request) {
   try {
-    const currentUser = await requireAdmin();
+    const currentUser = await requireAuth();
     await connectDB();
+
+    const isAuditor = [ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR].includes(currentUser.role);
+    const isAdmin = currentUser.role === ROLES.ADMIN;
+
+    if (!isAdmin && !isAuditor) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const stationId = searchParams.get('stationId');
@@ -18,6 +25,10 @@ export async function GET(request) {
     const query = {};
     if (stationId) query.stationId = stationId;
     if (date) query.date = date;
+
+    if (isAuditor) {
+      query.auditorId = currentUser.id;
+    }
 
     const comments = await AuditorComment.find(query)
       .sort({ createdAt: -1 })

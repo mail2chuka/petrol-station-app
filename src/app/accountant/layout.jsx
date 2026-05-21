@@ -12,6 +12,7 @@ const accountantMenuItems = [
   { label: 'Dashboard', href: '/accountant' },
   { label: 'Record Payments', href: '/accountant/payments' },
   { label: 'View Payments', href: '/accountant/view-payments' },
+  { label: 'Cash Deposits', href: '/accountant/deposits' },
 ];
 
 export default function AccountantLayout({ children }) {

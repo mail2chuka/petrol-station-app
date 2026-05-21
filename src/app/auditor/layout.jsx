@@ -8,8 +8,14 @@ import Sidebar from '@/components/Sidebar';
 import MobileTabBar from '@/components/MobileTabBar';
 import Loading from '@/components/Loading';
 
+const AUDITOR_ROLES = ['daily_auditor', 'external_auditor'];
+
 const auditorMenuItems = [
-  { label: 'Reports', href: '/auditor' },
+  { label: 'Daily Report', href: '/auditor' },
+  { label: 'Monthly Report', href: '/auditor/monthly' },
+  { label: 'Meter Book', href: '/auditor/meter-book' },
+  { label: 'Tank Stock', href: '/auditor/tank-stock' },
+  { label: 'Flags', href: '/auditor/flags' },
 ];
 
 export default function AuditorLayout({ children }) {
@@ -21,12 +27,12 @@ export default function AuditorLayout({ children }) {
 
     if (!session) {
       router.push('/login');
-    } else if (session.user.role !== 'auditor') {
+    } else if (!AUDITOR_ROLES.includes(session.user.role)) {
       router.push('/');
     }
   }, [session, status, router]);
 
-  if (status === 'loading' || !session || session.user.role !== 'auditor') {
+  if (status === 'loading' || !session || !AUDITOR_ROLES.includes(session.user.role)) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center">
         <Loading size="large" text="Loading dashboard..." />

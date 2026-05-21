@@ -11,6 +11,8 @@ import Loading from '@/components/Loading';
 const supervisorMenuItems = [
   { label: 'Dashboard', href: '/supervisor' },
   { label: 'Record Sales', href: '/supervisor/sales' },
+  { label: 'Meter Readings', href: '/supervisor/meter-readings' },
+  { label: 'Tank Stock', href: '/supervisor/tank-stock' },
 ];
 
 export default function SupervisorLayout({ children }) {

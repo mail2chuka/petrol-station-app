@@ -16,6 +16,7 @@ const fuelAdminMenuItems = [
   { label: 'Users', href: '/admin/users' },
   { label: 'Staff', href: '/admin/staff' },
   { label: 'Reports', href: '/admin/reports' },
+  { label: 'Flags', href: '/admin/flags' },
   { label: 'Audit Logs', href: '/admin/audit' },
   { label: 'Switch Business', href: '/select-business' },
 ];
