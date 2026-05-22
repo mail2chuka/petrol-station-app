@@ -72,8 +72,10 @@ function BeginDayPageContent() {
     setError('');
     setSubmitting(true);
 
-    if (!pricesAtStart.PMS || !pricesAtStart.AGO) {
-      setError('Please enter the PMS and AGO prices for the day.');
+    const pmsNum = parseFloat(pricesAtStart.PMS);
+    const agoNum = parseFloat(pricesAtStart.AGO);
+    if (!pricesAtStart.PMS || !pricesAtStart.AGO || isNaN(pmsNum) || isNaN(agoNum) || pmsNum <= 0 || agoNum <= 0) {
+      setError('Please enter valid PMS and AGO prices greater than zero.');
       setSubmitting(false);
       return;
     }
@@ -101,8 +103,8 @@ function BeginDayPageContent() {
           stationId: activeStationId,
           date: new Date().toISOString().split('T')[0],
           pricesAtStart: {
-            PMS: parseFloat(pricesAtStart.PMS),
-            AGO: parseFloat(pricesAtStart.AGO),
+            PMS: pmsNum,
+            AGO: agoNum,
           },
           dispensers: selectedDispensers.map(d => ({
             dispenserId: d.dispenserId,
@@ -112,14 +114,22 @@ function BeginDayPageContent() {
         }),
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        setError(`Server error (HTTP ${res.status}) — check server logs`);
+        setSubmitting(false);
+        return;
+      }
+
       if (res.ok) {
         router.push(adminStationId ? `/manager?stationId=${adminStationId}` : '/manager');
       } else {
-        setError(data.error || 'Failed to begin day');
+        setError(data?.error || `Failed to begin day (${res.status})`);
       }
-    } catch {
-      setError('An error occurred. Please try again.');
+    } catch (err) {
+      setError(err?.message || 'Network error. Please try again.');
     } finally {
       setSubmitting(false);
     }

@@ -12,8 +12,7 @@ import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
 // POST /api/day-shifts/begin - Begin a new day
 export async function POST(request) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let session = null;
 
   try {
     const currentUser = await requireAuth();
@@ -38,13 +37,13 @@ export async function POST(request) {
       );
     }
 
+    session = await mongoose.startSession();
+    session.startTransaction();
+
     const station = await Station.findById(validatedData.stationId).session(session);
     if (!station) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: 'Station not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Station not found' }, { status: 404 });
     }
 
     await autoCloseExpiredInProgressShifts({ stationId: validatedData.stationId, session });
@@ -139,7 +138,6 @@ export async function POST(request) {
       await PriceHistory.create(openingPriceChanges, { session, ordered: true });
     }
 
-    // Create day shift
     const dayShift = await DayShift.create([{
       stationId: validatedData.stationId,
       stationName: station.name,
@@ -152,7 +150,8 @@ export async function POST(request) {
       pricesAtStart: submittedPrices,
     }], { session, ordered: true });
 
-    // Create audit log
+    await session.commitTransaction();
+
     await createAuditLog({
       userId: currentUser.id,
       userName: currentUser.name,
@@ -170,25 +169,27 @@ export async function POST(request) {
       },
     });
 
-    await session.commitTransaction();
-
     return NextResponse.json({ dayShift: dayShift[0] }, { status: 201 });
   } catch (error) {
-    await session.abortTransaction();
+    if (session) {
+      try { await session.abortTransaction(); } catch {}
+    }
     console.error('Error beginning day:', error);
-    
+
     if (error.name === 'ZodError') {
       return NextResponse.json(
-        { error: 'Validation error', details: error.errors },
+        { error: 'Validation error: ' + error.errors.map(e => e.message).join(', ') },
         { status: 400 }
       );
     }
-    
+
     return NextResponse.json(
       { error: error.message || 'Failed to begin day' },
       { status: 500 }
     );
   } finally {
-    session.endSession();
+    if (session) {
+      try { session.endSession(); } catch {}
+    }
   }
 }
