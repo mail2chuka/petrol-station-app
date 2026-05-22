@@ -161,7 +161,7 @@ export async function POST(request, { params }) {
         changedByName: currentUser.name,
         reason: String(body.reason).trim(),
         approvalStatus: 'pending',
-      }], { session });
+      }], { session, ordered: true });
 
       await createAuditLog({
         userId: currentUser.id,
@@ -216,7 +216,7 @@ export async function POST(request, { params }) {
       approvedBy: currentUser.id,
       approvedByName: currentUser.name,
       approvedAt: new Date(),
-    }], { session });
+    }], { session, ordered: true });
 
     // Create audit log
     await createAuditLog({

@@ -137,7 +137,7 @@ export async function POST(request, { params }) {
           recordedByName: currentUser.name,
           referenceId: dayShift._id,
           notes: `Sales for ${dayShift.date.toISOString().split('T')[0]} (tolerance ${tolerancePercent}%)`,
-        }], { session });
+        }], { session, ordered: true });
       }
     }
 

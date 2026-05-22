@@ -136,7 +136,7 @@ export async function POST(request) {
     await station.save({ session });
 
     if (openingPriceChanges.length > 0) {
-      await PriceHistory.create(openingPriceChanges, { session });
+      await PriceHistory.create(openingPriceChanges, { session, ordered: true });
     }
 
     // Create day shift
@@ -150,7 +150,7 @@ export async function POST(request) {
       startTime: new Date(),
       dispenserAssignments,
       pricesAtStart: submittedPrices,
-    }], { session });
+    }], { session, ordered: true });
 
     // Create audit log
     await createAuditLog({

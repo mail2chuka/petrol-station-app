@@ -103,7 +103,7 @@ export async function POST(request, { params }) {
       recordedBy: currentUser.id,
       recordedByName: currentUser.name,
       notes: body.notes || '',
-    }], { session });
+    }], { session, ordered: true });
 
     // Create audit log
     await createAuditLog({

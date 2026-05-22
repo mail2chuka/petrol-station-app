@@ -99,7 +99,7 @@ export async function POST(request) {
       discrepancy,
       enteredBy: currentUser.id,
       enteredByName: currentUser.name,
-    }], { session });
+    }], { session, ordered: true });
 
     // Create audit log
     await createAuditLog({
