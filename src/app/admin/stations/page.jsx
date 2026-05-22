@@ -50,6 +50,9 @@ export default function StationsPage() {
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [mappingError, setMappingError] = useState('');
+  const [editError, setEditError] = useState('');
+  const [priceError, setPriceError] = useState('');
 
   useEffect(() => {
     fetchStations();
@@ -70,6 +73,7 @@ export default function StationsPage() {
   const openPriceEditor = (station) => {
     setError('');
     setSuccess('');
+    setPriceError('');
     setSelectedStation(station);
     setPriceForm({
       pms: station?.currentPrices?.PMS ?? '',
@@ -82,6 +86,7 @@ export default function StationsPage() {
   const openEditStation = (station) => {
     setError('');
     setSuccess('');
+    setEditError('');
     setEditingStation(station);
     setEditForm({
       name: station?.name || '',
@@ -97,6 +102,7 @@ export default function StationsPage() {
   const openMappingEditor = (station) => {
     setError('');
     setSuccess('');
+    setMappingError('');
     setMappingStation(station);
     setMappingForm({
       tanks: (station?.tanks || []).map((tank) => ({
@@ -121,13 +127,12 @@ export default function StationsPage() {
     if (!mappingStation?._id) return;
 
     if (!mappingForm.editReason || mappingForm.editReason.trim().length < 5) {
-      setError('Please provide a reason (min 5 characters) for tank/pump mapping changes.');
+      setMappingError('Please provide a reason (at least 5 characters) for tank/pump mapping changes.');
       return;
     }
 
     setSavingMapping(true);
-    setError('');
-    setSuccess('');
+    setMappingError('');
 
     try {
       const res = await fetch(`/api/stations/${mappingStation._id}`, {
@@ -142,7 +147,7 @@ export default function StationsPage() {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || 'Failed to save tank/pump mapping');
+        setMappingError(data.error || 'Failed to save tank/pump mapping');
         return;
       }
 
@@ -150,7 +155,7 @@ export default function StationsPage() {
       setMappingStation(null);
       await fetchStations();
     } catch (e) {
-      setError('An error occurred while saving tank/pump mapping.');
+      setMappingError('An error occurred while saving tank/pump mapping.');
     } finally {
       setSavingMapping(false);
     }
@@ -164,18 +169,17 @@ export default function StationsPage() {
     const tolerancePercent = Number(priceForm.tolerancePercent);
 
     if (!Number.isFinite(pmsPrice) || pmsPrice <= 0 || !Number.isFinite(agoPrice) || agoPrice <= 0) {
-      setError('Please enter valid positive prices for both PMS and AGO.');
+      setPriceError('Please enter valid positive prices for both PMS and AGO.');
       return;
     }
 
     if (!Number.isFinite(tolerancePercent) || tolerancePercent < 0) {
-      setError('Please enter a valid tolerance percentage (0 or higher).');
+      setPriceError('Please enter a valid tolerance percentage (0 or higher).');
       return;
     }
 
     setSavingPrices(true);
-    setError('');
-    setSuccess('');
+    setPriceError('');
 
     try {
       const updates = [];
@@ -226,7 +230,7 @@ export default function StationsPage() {
       const failed = results.find((r) => !r.ok);
       if (failed) {
         const data = await failed.json().catch(() => ({}));
-        setError(data.error || 'Failed to update prices');
+        setPriceError(data.error || 'Failed to update prices');
         return;
       }
 
@@ -234,7 +238,7 @@ export default function StationsPage() {
       setSelectedStation(null);
       await fetchStations();
     } catch (e) {
-      setError('An error occurred while updating prices.');
+      setPriceError('An error occurred while updating prices.');
     } finally {
       setSavingPrices(false);
     }
@@ -352,17 +356,17 @@ export default function StationsPage() {
     const numberOfPumps = Number(editForm.numberOfPumps);
 
     if (!Number.isFinite(numberOfTanks) || numberOfTanks < 0) {
-      setError('Please enter a valid number of tanks (0 or more).');
+      setEditError('Please enter a valid number of tanks (0 or more).');
       return;
     }
 
     if (!Number.isFinite(numberOfPumps) || numberOfPumps < 0) {
-      setError('Please enter a valid number of pumps (0 or more).');
+      setEditError('Please enter a valid number of pumps (0 or more).');
       return;
     }
 
     if (String(editForm.confirmCode).trim().toUpperCase() !== String(editingStation.code).toUpperCase()) {
-      setError('Confirmation code does not match the station code.');
+      setEditError('Confirmation code does not match the station code.');
       return;
     }
 
@@ -393,7 +397,7 @@ export default function StationsPage() {
         Number(changes.numberOfPumps) !== Number(editingStation.numberOfPumps || 0)) &&
       (!changes.editReason || changes.editReason.length < 5)
     ) {
-      setError('Please provide a reason (min 5 characters) for tank/pump changes.');
+      setEditError('Please provide a reason (at least 5 characters) for tank/pump changes.');
       return;
     }
 
@@ -403,8 +407,7 @@ export default function StationsPage() {
     if (!ok) return;
 
     setSavingEdit(true);
-    setError('');
-    setSuccess('');
+    setEditError('');
 
     try {
       const res = await fetch(`/api/stations/${editingStation._id}`, {
@@ -415,7 +418,7 @@ export default function StationsPage() {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || 'Failed to update station');
+        setEditError(data.error || 'Failed to update station');
         return;
       }
 
@@ -423,7 +426,7 @@ export default function StationsPage() {
       setEditingStation(null);
       await fetchStations();
     } catch (e) {
-      setError('An error occurred while updating the station.');
+      setEditError('An error occurred while updating the station.');
     } finally {
       setSavingEdit(false);
     }
@@ -786,9 +789,18 @@ export default function StationsPage() {
               <Input
                 label="Reason for mapping change"
                 value={mappingForm.editReason}
-                onChange={(e) => setMappingForm((p) => ({ ...p, editReason: e.target.value }))}
+                onChange={(e) => {
+                  setMappingError('');
+                  setMappingForm((p) => ({ ...p, editReason: e.target.value }));
+                }}
                 placeholder="Explain why pumps/tanks are being added or remapped"
               />
+
+              {mappingError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {mappingError}
+                </div>
+              )}
 
               <Button variant="primary" size="lg" fullWidth disabled={savingMapping} onClick={saveMapping}>
                 {savingMapping ? 'Saving Mapping...' : 'Save Tank / Pump Mapping'}
@@ -911,6 +923,12 @@ export default function StationsPage() {
                 placeholder="e.g., NNPCL price update"
               />
 
+              {priceError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {priceError}
+                </div>
+              )}
+
               <div className="mt-2 flex gap-2">
                 <Button
                   variant="primary"
@@ -1012,6 +1030,12 @@ export default function StationsPage() {
                 onChange={(e) => setEditForm((p) => ({ ...p, confirmCode: e.target.value }))}
                 placeholder="Enter station code"
               />
+
+              {editError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {editError}
+                </div>
+              )}
 
               <div className="mt-2 flex gap-2">
                 <Button
