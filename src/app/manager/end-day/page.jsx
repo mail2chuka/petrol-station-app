@@ -228,17 +228,20 @@ function EndDayPageContent() {
   const allClosingEntered =
     activeTanks.length > 0 && activeTanks.every(t => closingByTankId[t._id]);
 
-  // Sales summary
+  // Sales summary — discrepancy based on supervisor collections vs expected (not payment records)
   const salesByFuel = { PMS: { liters: 0, amount: 0 }, AGO: { liters: 0, amount: 0 } };
+  let totalCollected = 0;
   salesEntries.forEach(s => {
     salesByFuel[s.fuelType].liters += s.liters;
     salesByFuel[s.fuelType].amount += s.expectedAmount;
+    totalCollected += (s.totalAmount || 0);
   });
+  const totalExpected = salesByFuel.PMS.amount + salesByFuel.AGO.amount;
+  const discrepancy = totalCollected - totalExpected;
+
+  // Payment records — separate accountant reconciliation
   const totalCash = paymentRecords.reduce((sum, p) => sum + p.cashReceived, 0);
   const totalPos = paymentRecords.reduce((sum, p) => sum + p.posReceived, 0);
-  const totalExpected = salesByFuel.PMS.amount + salesByFuel.AGO.amount;
-  const totalActual = totalCash + totalPos;
-  const discrepancy = totalActual - totalExpected;
 
   // Pump table: match meter readings to dispenser assignments
   const readingsByPumpId = {};
@@ -444,28 +447,37 @@ function EndDayPageContent() {
             <p className="text-sm text-gray-600">₦{fmt(salesByFuel.AGO.amount)}</p>
           </div>
           <div className="text-center p-4 bg-gray-50 rounded-xl">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Cash Received</p>
-            <p className="text-lg font-bold text-gray-800">₦{fmt(totalCash)}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Expected Revenue</p>
+            <p className="text-lg font-bold text-gray-800">₦{fmt(totalExpected)}</p>
           </div>
-          <div className="text-center p-4 bg-gray-50 rounded-xl">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">POS Received</p>
-            <p className="text-lg font-bold text-gray-800">₦{fmt(totalPos)}</p>
-          </div>
-        </div>
-        <div className="flex gap-6 pt-3 border-t border-gray-100">
-          <div>
-            <p className="text-xs text-gray-500">Expected</p>
-            <p className="font-semibold text-gray-800">₦{fmt(totalExpected)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Actual</p>
-            <p className="font-semibold text-gray-800">₦{fmt(totalActual)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Discrepancy</p>
-            <p className={`font-semibold ${discrepancy < 0 ? 'text-red-600' : discrepancy > 0 ? 'text-green-600' : 'text-gray-800'}`}>
+          <div className={`text-center p-4 rounded-xl ${discrepancy < 0 ? 'bg-red-50' : discrepancy > 0 ? 'bg-green-50' : 'bg-gray-50'}`}>
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Sales Discrepancy</p>
+            <p className={`text-lg font-bold ${discrepancy < 0 ? 'text-red-700' : discrepancy > 0 ? 'text-green-700' : 'text-gray-800'}`}>
               {discrepancy >= 0 ? '+' : ''}₦{fmt(discrepancy)}
             </p>
+            <p className="text-xs text-gray-400">collected vs expected</p>
+          </div>
+        </div>
+
+        {/* Accountant payment summary (separate reconciliation) */}
+        <div className="pt-4 border-t border-gray-100">
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">Accountant Collections</p>
+          <div className="flex gap-6">
+            <div>
+              <p className="text-xs text-gray-400">Cash</p>
+              <p className="font-semibold text-gray-800">₦{fmt(totalCash)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">POS</p>
+              <p className="font-semibold text-gray-800">₦{fmt(totalPos)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Total</p>
+              <p className="font-semibold text-gray-800">₦{fmt(totalCash + totalPos)}</p>
+            </div>
+            {paymentRecords.length === 0 && (
+              <p className="text-xs text-amber-600 self-center">No payment records entered yet</p>
+            )}
           </div>
         </div>
       </Card>

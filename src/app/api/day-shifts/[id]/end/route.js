@@ -27,10 +27,12 @@ export async function POST(request, { params }) {
       );
     }
 
+    const { id } = await params;
+
     session = await mongoose.startSession();
     session.startTransaction();
 
-    const dayShift = await DayShift.findById(params.id).session(session);
+    const dayShift = await DayShift.findById(id).session(session);
     if (!dayShift) {
       await session.abortTransaction();
       return NextResponse.json({ error: 'Day shift not found' }, { status: 404 });
@@ -107,18 +109,22 @@ export async function POST(request, { params }) {
       PMS: { liters: 0, amount: 0 },
       AGO: { liters: 0, amount: 0 },
     };
+    let totalCollected = 0; // sum of what supervisors actually collected (cash + POS per sale)
     salesEntries.forEach(sale => {
       totalSales[sale.fuelType].liters += sale.liters;
       totalSales[sale.fuelType].amount += sale.expectedAmount;
+      totalCollected += (sale.totalAmount || 0);
     });
 
+    // Payment records track what the accountant received from supervisors (separate from discrepancy)
     const totalPayments = {
       cash: paymentRecords.reduce((sum, p) => sum + p.cashReceived, 0),
       pos: paymentRecords.reduce((sum, p) => sum + p.posReceived, 0),
     };
 
+    // Discrepancy = supervisor collections vs expected revenue from liters sold
     const expectedAmount = totalSales.PMS.amount + totalSales.AGO.amount;
-    const actualAmount = totalPayments.cash + totalPayments.pos;
+    const actualAmount = totalCollected;
     const discrepancy = actualAmount - expectedAmount;
 
     // Update station.currentStock from manager-measured closing tank entries
