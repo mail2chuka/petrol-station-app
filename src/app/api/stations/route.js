@@ -57,10 +57,30 @@ export async function POST(request) {
       );
     }
 
+    const stationCode = validatedData.code.toUpperCase();
+
+    // Auto-generate tank and dispenser records from the declared counts.
+    // The mapping step later lets the admin configure labels, capacities, and assignments.
+    const tanks = Array.from({ length: validatedData.numberOfTanks || 0 }, (_, i) => ({
+      _id: `${stationCode}-TANK-${i + 1}`,
+      label: `Tank ${i + 1}`,
+      product: 'PMS',
+      capacity: 10000,
+      isActive: true,
+    }));
+
+    const dispensers = Array.from({ length: validatedData.numberOfPumps || 0 }, (_, i) => ({
+      dispenserId: `${stationCode}-PUMP-${i + 1}`,
+      name: `Pump ${i + 1}`,
+      fuelType: 'PMS',
+      tankId: null,
+      isActive: true,
+    }));
+
     // Create station
     const station = await Station.create({
       ...validatedData,
-      code: validatedData.code.toUpperCase(),
+      code: stationCode,
       createdBy: currentUser.id,
       createdByName: currentUser.name,
       tolerancePercent: 2.5,
@@ -72,7 +92,8 @@ export async function POST(request) {
         PMS: 0,
         AGO: 0,
       },
-      dispensers: [],
+      tanks,
+      dispensers,
     });
 
     // Create audit log
