@@ -51,6 +51,7 @@ export default function StationsPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [mappingError, setMappingError] = useState('');
+  const [mappingIsInitial, setMappingIsInitial] = useState(false);
   const [editError, setEditError] = useState('');
   const [priceError, setPriceError] = useState('');
 
@@ -103,6 +104,9 @@ export default function StationsPage() {
     setError('');
     setSuccess('');
     setMappingError('');
+    // Initial setup = no pump has been assigned to a tank yet
+    const isInitial = (station?.dispensers || []).every((d) => !d.tankId);
+    setMappingIsInitial(isInitial);
     setMappingStation(station);
     setMappingForm({
       tanks: (station?.tanks || []).map((tank) => ({
@@ -126,8 +130,8 @@ export default function StationsPage() {
   const saveMapping = async () => {
     if (!mappingStation?._id) return;
 
-    if (!mappingForm.editReason || mappingForm.editReason.trim().length < 5) {
-      setMappingError('Please provide a reason (at least 5 characters) for tank/pump mapping changes.');
+    if (!mappingIsInitial && (!mappingForm.editReason || mappingForm.editReason.trim().length < 5)) {
+      setMappingError('Please provide a reason (at least 5 characters) for mapping changes.');
       return;
     }
 
@@ -661,11 +665,21 @@ export default function StationsPage() {
             <div className="p-4 sm:p-6 space-y-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm text-gray-600">Configure tanks and pump mapping</p>
-                  <p className="text-lg font-bold text-gray-900">{mappingStation.name}</p>
+                  <p className="text-sm text-gray-500">{mappingIsInitial ? 'Initial setup' : 'Reconfigure'} — {mappingStation.name}</p>
+                  <p className="text-lg font-bold text-gray-900">Tank &amp; Pump Configuration</p>
                 </div>
                 <Button variant="secondary" onClick={() => setMappingStation(null)}>Close</Button>
               </div>
+
+              {mappingIsInitial ? (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                  These tanks and pumps were auto-generated when the station was created. Set the correct product type, capacity, and label for each tank, then assign each pump to the tank it draws from.
+                </div>
+              ) : (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  You are reconfiguring an active station. All changes are audited and require a reason.
+                </div>
+              )}
 
               <Card title="Tanks">
                 <div className="space-y-3">
@@ -720,7 +734,7 @@ export default function StationsPage() {
                     </div>
                   ))}
                   <Button type="button" variant="secondary" onClick={() => setMappingForm((p) => ({ ...p, tanks: [...p.tanks, { _id: '', label: '', product: 'PMS', capacity: '', isActive: true }] }))}>
-                    Add Tank
+                    + Add Extra Tank
                   </Button>
                 </div>
               </Card>
@@ -781,20 +795,22 @@ export default function StationsPage() {
                     </div>
                   ))}
                   <Button type="button" variant="secondary" onClick={() => setMappingForm((p) => ({ ...p, dispensers: [...p.dispensers, { dispenserId: '', name: '', fuelType: 'PMS', tankId: '', isActive: true }] }))}>
-                    Add Pump
+                    + Add Extra Pump
                   </Button>
                 </div>
               </Card>
 
-              <Input
-                label="Reason for mapping change"
-                value={mappingForm.editReason}
-                onChange={(e) => {
-                  setMappingError('');
-                  setMappingForm((p) => ({ ...p, editReason: e.target.value }));
-                }}
-                placeholder="Explain why pumps/tanks are being added or remapped"
-              />
+              {!mappingIsInitial && (
+                <Input
+                  label="Reason for changes"
+                  value={mappingForm.editReason}
+                  onChange={(e) => {
+                    setMappingError('');
+                    setMappingForm((p) => ({ ...p, editReason: e.target.value }));
+                  }}
+                  placeholder="Explain why the tank/pump configuration is being changed"
+                />
+              )}
 
               {mappingError && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -803,7 +819,7 @@ export default function StationsPage() {
               )}
 
               <Button variant="primary" size="lg" fullWidth disabled={savingMapping} onClick={saveMapping}>
-                {savingMapping ? 'Saving Mapping...' : 'Save Tank / Pump Mapping'}
+                {savingMapping ? 'Saving...' : mappingIsInitial ? 'Confirm Configuration' : 'Save Changes'}
               </Button>
             </div>
           </div>
