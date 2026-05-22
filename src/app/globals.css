@@ -136,6 +136,18 @@
     color: #0f172a;
   }
 
+  /* Remove number input spinners globally */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
