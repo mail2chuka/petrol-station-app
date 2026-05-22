@@ -24,7 +24,11 @@ export default function SupervisorDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (session?.user?.stationId) fetchData();
+    if (session?.user?.stationId) {
+      fetchData();
+    } else if (session) {
+      setLoading(false);
+    }
   }, [session]);
 
   const fetchData = async () => {
@@ -60,6 +64,17 @@ export default function SupervisorDashboard() {
   };
 
   if (loading) return <Loading />;
+
+  if (!session?.user?.stationId) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Supervisor Dashboard</h1>
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm">
+          Your account is not assigned to a station. Please contact your administrator.
+        </div>
+      </div>
+    );
+  }
 
   const today = new Date().toLocaleDateString('en-NG', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -109,7 +124,7 @@ export default function SupervisorDashboard() {
             className={`group rounded-xl border p-4 transition-all duration-200 ${
               activeDayShift
                 ? 'border-ecana-blue/20 bg-ecana-blue/5 hover:bg-ecana-blue/10'
-                : 'border-slate-200 bg-slate-50 opacity-60 pointer-events-none'
+                : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -119,8 +134,10 @@ export default function SupervisorDashboard() {
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">Record Sales</p>
-                <p className="text-xs text-slate-500 mt-0.5">Enter liters sold and payments</p>
+                <p className={`text-sm font-semibold ${activeDayShift ? 'text-slate-900' : 'text-slate-500'}`}>Record Sales</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {activeDayShift ? 'Enter liters sold and payments' : 'Waiting for manager to begin the day'}
+                </p>
               </div>
             </div>
           </a>

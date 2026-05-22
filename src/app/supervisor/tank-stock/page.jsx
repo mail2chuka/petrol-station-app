@@ -17,6 +17,7 @@ export default function TankStockPage() {
   const [tanks, setTanks] = useState([]);
   const [existingEntries, setExistingEntries] = useState({});
   const [forms, setForms] = useState({});
+  const [editing, setEditing] = useState({});
   const [period, setPeriod] = useState('opening');
   const [date, setDate] = useState(today());
   const [loading, setLoading] = useState(true);
@@ -40,15 +41,14 @@ export default function TankStockPage() {
       const activeTanks = (stationData.station?.tanks || []).filter((t) => t.isActive !== false);
       setTanks(activeTanks);
 
-      // Index by "tankId-period"
       const map = {};
       for (const entry of (stockData.entries || [])) {
         map[`${entry.tankId}-${entry.period}`] = entry;
       }
       setExistingEntries(map);
 
-      // Init form values
       const initialForms = {};
+      const initialEditing = {};
       for (const tank of activeTanks) {
         const key = `${tank._id}-${period}`;
         const existing = map[key];
@@ -56,8 +56,11 @@ export default function TankStockPage() {
           stockValue: existing ? String(existing.closingStockMeasured) : '',
           notes: existing?.notes || '',
         };
+        initialEditing[tank._id] = !existing;
       }
       setForms(initialForms);
+      setEditing(initialEditing);
+      setMessages({});
     } catch (err) {
       console.error('Error loading tank stock data:', err);
     } finally {
@@ -67,6 +70,27 @@ export default function TankStockPage() {
 
   const updateForm = (tankId, field, value) => {
     setForms((prev) => ({ ...prev, [tankId]: { ...prev[tankId], [field]: value } }));
+  };
+
+  const startEditing = (tankId) => {
+    const existingKey = `${tankId}-${period}`;
+    const existing = existingEntries[existingKey];
+    if (existing) {
+      setForms((prev) => ({
+        ...prev,
+        [tankId]: {
+          stockValue: String(existing.closingStockMeasured),
+          notes: existing.notes || '',
+        },
+      }));
+    }
+    setEditing((prev) => ({ ...prev, [tankId]: true }));
+    setMessages((prev) => ({ ...prev, [tankId]: '' }));
+  };
+
+  const cancelEditing = (tankId) => {
+    setEditing((prev) => ({ ...prev, [tankId]: false }));
+    setMessages((prev) => ({ ...prev, [tankId]: '' }));
   };
 
   const submitEntry = async (tank) => {
@@ -93,10 +117,9 @@ export default function TankStockPage() {
       if (!res.ok) {
         setMessages((prev) => ({ ...prev, [tank._id]: data.error || 'Failed to save' }));
       } else {
-        setMessages((prev) => ({ ...prev, [tank._id]: 'Saved successfully.' }));
         await fetchData();
       }
-    } catch (err) {
+    } catch {
       setMessages((prev) => ({ ...prev, [tank._id]: 'An error occurred.' }));
     } finally {
       setSubmitting((prev) => ({ ...prev, [tank._id]: false }));
@@ -110,7 +133,7 @@ export default function TankStockPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Tank Stock</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Enter the measured stock level for each tank. Submit opening at the start of the day and closing at the end.
+          Record the measured stock level for each tank at opening and closing.
         </p>
       </div>
 
@@ -148,68 +171,128 @@ export default function TankStockPage() {
         const existing = existingEntries[existingKey];
         const oppositeKey = `${tank._id}-${period === 'opening' ? 'closing' : 'opening'}`;
         const oppositeEntry = existingEntries[oppositeKey];
+        const isEditing = editing[tank._id];
+        const periodLabel = period === 'opening' ? 'Opening' : 'Closing';
+        const savedAt = existing
+          ? new Date(existing.updatedAt || existing.createdAt).toLocaleString('en-NG', {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            })
+          : null;
 
         return (
           <Card
             key={tank._id}
             title={`${tank.label || tank._id} — ${tank.product}`}
-            subtitle={existing ? `${period === 'opening' ? 'Opening' : 'Closing'} already submitted` : `${period === 'opening' ? 'Opening' : 'Closing'} not yet submitted`}
+            subtitle={
+              existing
+                ? `${periodLabel} submitted · ${savedAt}`
+                : `${periodLabel} not yet submitted`
+            }
           >
             {oppositeEntry && (
               <div className="mb-4 text-sm text-slate-500">
                 {period === 'closing'
-                  ? `Opening stock: ${Number(oppositeEntry.closingStockMeasured).toLocaleString()}L`
-                  : `Closing stock: ${Number(oppositeEntry.closingStockMeasured).toLocaleString()}L`}
+                  ? `Opening stock: ${Number(oppositeEntry.closingStockMeasured).toLocaleString()} L`
+                  : `Closing stock: ${Number(oppositeEntry.closingStockMeasured).toLocaleString()} L`}
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                label={`${period === 'opening' ? 'Opening' : 'Closing'} Stock (Litres)`}
-                type="number"
-                name={`stock-${tank._id}`}
-                value={f.stockValue || ''}
-                onChange={(e) => updateForm(tank._id, 'stockValue', e.target.value)}
-                min="0"
-                step="0.01"
-                placeholder="e.g. 15000"
-              />
-              <Input
-                label="Notes (Optional)"
-                name={`notes-${tank._id}`}
-                value={f.notes || ''}
-                onChange={(e) => updateForm(tank._id, 'notes', e.target.value)}
-                placeholder="Any observation..."
-              />
-            </div>
+            {existing && !isEditing ? (
+              /* ── DISPLAY MODE ── */
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 space-y-1.5">
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+                    {periodLabel} Stock
+                  </p>
+                  <p className="text-3xl font-bold text-slate-900 leading-none">
+                    {Number(existing.closingStockMeasured).toLocaleString()}
+                    <span className="text-xl font-normal text-slate-400 ml-1.5">L</span>
+                  </p>
+                  {existing.notes ? (
+                    <p className="text-sm text-slate-500 pt-1">Note: {existing.notes}</p>
+                  ) : null}
+                  {existing.variance !== undefined && existing.variance !== 0 ? (
+                    <p
+                      className={`text-sm font-medium ${
+                        existing.variance < 0 ? 'text-red-600' : 'text-emerald-600'
+                      }`}
+                    >
+                      Variance: {existing.variance > 0 ? '+' : ''}
+                      {existing.variance.toFixed(2)} L
+                      {existing.variancePercent != null
+                        ? ` (${existing.variance > 0 ? '+' : ''}${existing.variancePercent.toFixed(1)}%)`
+                        : ''}
+                    </p>
+                  ) : null}
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => startEditing(tank._id)}
+                >
+                  Edit
+                </Button>
+              </div>
+            ) : (
+              /* ── EDIT / CREATE MODE ── */
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label={`${periodLabel} Stock (Litres)`}
+                    type="number"
+                    name={`stock-${tank._id}`}
+                    value={f.stockValue || ''}
+                    onChange={(e) => updateForm(tank._id, 'stockValue', e.target.value)}
+                    min="0"
+                    step="0.01"
+                    placeholder="e.g. 15000"
+                  />
+                  <Input
+                    label="Notes (Optional)"
+                    name={`notes-${tank._id}`}
+                    value={f.notes || ''}
+                    onChange={(e) => updateForm(tank._id, 'notes', e.target.value)}
+                    placeholder="Any observation..."
+                  />
+                </div>
 
-            {existing && (
-              <div className="mt-3 p-3 bg-slate-50 rounded-lg text-sm text-slate-600">
-                Last submitted: <span className="font-semibold">{Number(existing.closingStockMeasured).toLocaleString()}L</span>
-                {existing.variance !== 0 && (
-                  <span className={`ml-2 ${existing.variance < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    (variance: {existing.variance > 0 ? '+' : ''}{existing.variance.toFixed(2)}L, {existing.variancePercent.toFixed(1)}%)
-                  </span>
+                {messages[tank._id] && (
+                  <p
+                    className={`mt-2 text-sm ${
+                      messages[tank._id].startsWith('Saved') ? 'text-green-600' : 'text-red-600'
+                    }`}
+                  >
+                    {messages[tank._id]}
+                  </p>
                 )}
-              </div>
-            )}
 
-            {messages[tank._id] && (
-              <p className={`mt-2 text-sm ${messages[tank._id].startsWith('Saved') ? 'text-green-600' : 'text-red-600'}`}>
-                {messages[tank._id]}
-              </p>
+                <div className="mt-4 flex gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => submitEntry(tank)}
+                    disabled={submitting[tank._id] || !f.stockValue}
+                  >
+                    {submitting[tank._id]
+                      ? 'Saving...'
+                      : existing
+                      ? `Update ${periodLabel}`
+                      : `Save ${periodLabel}`}
+                  </Button>
+                  {existing && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => cancelEditing(tank._id)}
+                      disabled={submitting[tank._id]}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </>
             )}
-
-            <div className="mt-4">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => submitEntry(tank)}
-                disabled={submitting[tank._id] || !f.stockValue}
-              >
-                {submitting[tank._id] ? 'Saving...' : existing ? `Update ${period === 'opening' ? 'Opening' : 'Closing'}` : `Save ${period === 'opening' ? 'Opening' : 'Closing'}`}
-              </Button>
-            </div>
           </Card>
         );
       })}
