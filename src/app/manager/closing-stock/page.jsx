@@ -54,7 +54,10 @@ function ClosingStockPageContent() {
 
       if (!stationRes.ok) {
         setError(stationData.error || 'Failed to load station');
-        setLoading(false);
+        return;
+      }
+      if (!tsRes.ok) {
+        setError(tsData.error || 'Failed to load tank stock entries');
         return;
       }
 
@@ -63,8 +66,8 @@ function ClosingStockPageContent() {
       const entries = tsData.entries || [];
       setTankStockEntries(entries);
       initForms(stationObj, entries);
-    } catch {
-      setError('Failed to load data. Please try again.');
+    } catch (err) {
+      setError(`Failed to load data: ${err.message || 'Please try again.'}`);
     } finally {
       setLoading(false);
     }
@@ -226,7 +229,8 @@ function ClosingStockPageContent() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {activeTanks.length === 0 ? (
               <Card>
-                <p className="text-gray-400 text-sm">No tanks configured for this station.</p>
+                <p className="text-amber-700 text-sm font-medium">No active tanks configured for this station.</p>
+                <p className="text-gray-500 text-xs mt-1">Go to <strong>Station Config</strong> and add tanks before recording closing stock.</p>
               </Card>
             ) : (
               activeTanks.map(tank => {

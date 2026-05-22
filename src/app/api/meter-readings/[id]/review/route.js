@@ -20,8 +20,9 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Only manager/admin can review supervisor entries' }, { status: 403 });
     }
 
+    const { id } = await params;
     const payload = reviewSchema.parse(await request.json());
-    const reading = await MeterReading.findById(params.id);
+    const reading = await MeterReading.findById(id);
 
     if (!reading) {
       return NextResponse.json({ error: 'Meter reading not found' }, { status: 404 });
