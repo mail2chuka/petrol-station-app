@@ -29,7 +29,8 @@ export async function GET(request) {
       return NextResponse.json({ error: 'stationId is required' }, { status: 400 });
     }
 
-    if (currentUser.role !== ROLES.ADMIN && currentUser.stationId !== stationId) {
+    const bypassRoles = [ROLES.ADMIN, ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR];
+    if (!bypassRoles.includes(currentUser.role) && currentUser.stationId !== stationId) {
       return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
     }
 

@@ -11,7 +11,8 @@ import Loading from '@/components/Loading';
 const AUDITOR_ROLES = ['daily_auditor', 'external_auditor'];
 
 const auditorMenuItems = [
-  { label: 'Daily Report', href: '/auditor' },
+  { label: 'Dashboard', href: '/auditor' },
+  { label: 'Daily Report', href: '/auditor/daily' },
   { label: 'Monthly Report', href: '/auditor/monthly' },
   { label: 'Meter Book', href: '/auditor/meter-book' },
   { label: 'Tank Stock', href: '/auditor/tank-stock' },

@@ -12,7 +12,8 @@ export async function GET(request) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    if (![ROLES.ADMIN, ROLES.AUDITOR].includes(currentUser.role)) {
+    const auditRoles = [ROLES.ADMIN, ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR];
+    if (!auditRoles.includes(currentUser.role)) {
       return NextResponse.json(
         { error: 'Insufficient permissions' },
         { status: 403 }

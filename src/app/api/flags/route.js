@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import connectDB from '@/lib/db';
 import Flag from '@/models/Flag';
+import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/audit';
 import { ROLES } from '@/lib/constants';
@@ -33,7 +34,8 @@ export async function GET(request) {
     if (status) query.status = status;
     if (severity) query.severity = severity;
 
-    if (currentUser.role === ROLES.ADMIN) {
+    const globalRoles = [ROLES.ADMIN, ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR];
+    if (globalRoles.includes(currentUser.role)) {
       if (stationId) query.stationId = stationId;
     } else if (currentUser.stationId) {
       query.stationId = currentUser.stationId;
@@ -68,16 +70,12 @@ export async function POST(request) {
 
     const payload = createFlagSchema.parse(await request.json());
 
-    if (currentUser.stationId !== payload.stationId) {
-      return NextResponse.json(
-        { error: 'Access denied to this station' },
-        { status: 403 }
-      );
-    }
+    const station = await Station.findById(payload.stationId).lean();
+    const stationName = station?.name || currentUser.stationName || 'Unknown Station';
 
     const flag = await Flag.create({
       stationId: payload.stationId,
-      stationName: currentUser.stationName || 'Unknown Station',
+      stationName,
       raisedByUserId: currentUser.id,
       raisedByUserName: currentUser.name,
       raisedByUserRole: currentUser.role,

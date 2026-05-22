@@ -17,8 +17,9 @@ export async function GET(request) {
 
     let query = includeInactive && currentUser.role === ROLES.ADMIN ? {} : { isActive: true };
     
-    // Non-admin users can only see their own station (except auditors)
-    if (currentUser.role !== ROLES.ADMIN && currentUser.role !== ROLES.AUDITOR && currentUser.stationId) {
+    // Non-admin, non-auditor users can only see their own station
+    const globalRoles = [ROLES.ADMIN, ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR];
+    if (!globalRoles.includes(currentUser.role) && currentUser.stationId) {
       query._id = currentUser.stationId;
     }
 

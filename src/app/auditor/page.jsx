@@ -1,257 +1,157 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 import Card from '@/components/Card';
-import Select from '@/components/Select';
-import Input from '@/components/Input';
-import Button from '@/components/Button';
-import Table from '@/components/Table';
 import Loading from '@/components/Loading';
 
+const MODULES = [
+  { label: 'Daily Report', href: '/auditor/daily', desc: 'Full daily report: sales, meter readings, collections, tank stock.' },
+  { label: 'Monthly Report', href: '/auditor/monthly', desc: 'Month-by-day revenue and sales breakdown for any station.' },
+  { label: 'Meter Book', href: '/auditor/meter-book', desc: 'Verify pump meter readings and spot discrepancies.' },
+  { label: 'Tank Stock', href: '/auditor/tank-stock', desc: 'Review opening and closing tank stock entries.' },
+  { label: 'Flags', href: '/auditor/flags', desc: 'Raise discrepancy flags and track resolution status.' },
+];
+
+const SEVERITY_STYLES = {
+  critical: { dot: 'bg-red-500', pill: 'bg-red-100 text-red-700', row: 'bg-red-50', label: 'text-red-700' },
+  warning:  { dot: 'bg-amber-500', pill: 'bg-amber-100 text-amber-700', row: 'bg-amber-50', label: 'text-amber-700' },
+  info:     { dot: 'bg-blue-400', pill: 'bg-blue-100 text-blue-700', row: 'bg-blue-50', label: 'text-gray-800' },
+};
+
 export default function AuditorDashboard() {
+  const { data: session } = useSession();
   const [stations, setStations] = useState([]);
-  const [selectedStation, setSelectedStation] = useState('');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [financialSummary, setFinancialSummary] = useState(null);
-  const [comment, setComment] = useState('');
-  const [savingComment, setSavingComment] = useState(false);
-  const [commentStatus, setCommentStatus] = useState('');
-  const [previousComments, setPreviousComments] = useState([]);
+  const [flags, setFlags] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchStations();
+    const fetchAll = async () => {
+      setLoading(true);
+      try {
+        const [stRes, flRes] = await Promise.all([
+          fetch('/api/stations'),
+          fetch('/api/flags?status=open&limit=50'),
+        ]);
+        const [stData, flData] = await Promise.all([stRes.json(), flRes.json()]);
+        setStations(stData.stations || []);
+        setFlags(flData.flags || []);
+      } catch {
+        // silent — tiles just show 0
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAll();
   }, []);
 
-  useEffect(() => {
-    if (selectedStation && selectedDate) fetchComments();
-  }, [selectedStation, selectedDate]);
+  const openFlags = flags.filter(f => f.status === 'open');
+  const critical = openFlags.filter(f => f.severity === 'critical').length;
+  const warning  = openFlags.filter(f => f.severity === 'warning').length;
+  const info     = openFlags.filter(f => f.severity === 'info').length;
 
-  const fetchStations = async () => {
-    try {
-      const res = await fetch('/api/stations');
-      const data = await res.json();
-      setStations(data.stations || []);
-      if (data.stations?.length > 0) setSelectedStation(data.stations[0]._id);
-    } catch (err) {
-      console.error('Error fetching stations:', err);
-    }
-  };
-
-  const fetchComments = async () => {
-    try {
-      const res = await fetch(`/api/auditor/comments?stationId=${selectedStation}&date=${selectedDate}`);
-      const data = await res.json();
-      setPreviousComments(data.comments || []);
-    } catch (err) {
-      console.error('Error fetching comments:', err);
-    }
-  };
-
-  const fetchReport = async () => {
-    if (!selectedStation || !selectedDate) return;
-    setLoading(true);
-    setCommentStatus('');
-    try {
-      const [dailyRes, financialRes] = await Promise.all([
-        fetch(`/api/reports/daily?stationId=${selectedStation}&date=${selectedDate}`),
-        fetch(`/api/reports/financial-daily?stationId=${selectedStation}&date=${selectedDate}`),
-      ]);
-      const dailyData = await dailyRes.json();
-      const financialData = await financialRes.json();
-      setReport(dailyRes.ok ? dailyData : null);
-      setFinancialSummary(financialRes.ok ? (financialData.summary || null) : null);
-    } catch (err) {
-      console.error('Error fetching report:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const submitComment = async () => {
-    if (!selectedStation || !selectedDate || !comment.trim()) return;
-    setSavingComment(true);
-    setCommentStatus('');
-    try {
-      const res = await fetch('/api/auditor/comments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stationId: selectedStation, date: selectedDate, comment }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setCommentStatus(data.error || 'Failed to save comment');
-        return;
-      }
-      setComment('');
-      setCommentStatus('Comment saved.');
-      fetchComments();
-    } catch (err) {
-      setCommentStatus('An error occurred while saving the comment.');
-    } finally {
-      setSavingComment(false);
-    }
-  };
-
-  const stationName = stations.find((s) => s._id === selectedStation)?.name || '';
-
-  const attendantColumns = [
-    { header: 'Supervisor', field: 'supervisorName' },
-    { header: 'Total Litres', render: (row) => `${row.totalLiters.toFixed(2)}L` },
-    { header: 'Expected', render: (row) => `₦${row.totalExpected.toFixed(2)}` },
-    { header: 'Cash', render: (row) => `₦${row.totalCash.toFixed(2)}` },
-    { header: 'POS', render: (row) => `₦${row.totalPos.toFixed(2)}` },
-    { header: 'Received', render: (row) => `₦${row.totalReceived.toFixed(2)}` },
-  ];
+  const today = new Date().toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
-    <>
-      {/* Print-only header */}
-      <div className="hidden print:block mb-6">
-        <h1 className="text-2xl font-bold">Daily Audit Report</h1>
-        <p className="text-sm">{stationName} — {selectedDate}</p>
-      </div>
-
-      <div className="space-y-6">
-        {/* Controls — hidden on print */}
-        <div className="print:hidden flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Daily Report</h1>
-            <p className="text-sm text-slate-500 mt-1">Select a station and date to generate a report.</p>
-          </div>
-          {report && (
-            <button
-              onClick={() => window.print()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-all shadow-sm shrink-0"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-              </svg>
-              Print / Save PDF
-            </button>
-          )}
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">Audit Dashboard</h1>
+          <p className="text-gray-500 mt-1">
+            Welcome, <span className="font-medium text-gray-700">{session?.user?.name || 'Auditor'}</span>. {today}.
+          </p>
         </div>
-
-        <Card title="Report Parameters" className="print:hidden">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Select
-              label="Station"
-              name="station"
-              value={selectedStation}
-              onChange={(e) => setSelectedStation(e.target.value)}
-              options={stations.map((s) => ({ value: s._id, label: `${s.name} (${s.code})` }))}
-            />
-            <Input
-              label="Date"
-              type="date"
-              name="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-            />
-            <div className="flex items-end">
-              <Button onClick={fetchReport} disabled={loading} className="w-full">
-                {loading ? 'Loading...' : 'Generate Report'}
-              </Button>
-            </div>
-          </div>
-        </Card>
-
-        {loading && <Loading />}
-
-        {report && !loading && (
-          <>
-            {financialSummary && (
-              <Card title="Financial Summary">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100">
-                    <p className="text-xs text-slate-500">Total Payments (Inflow)</p>
-                    <p className="text-xl font-bold text-emerald-700">₦{financialSummary.totalPaymentsReceived.toFixed(2)}</p>
-                    <p className="text-xs text-slate-400 mt-1">Cash: ₦{financialSummary.totalPaymentsCash.toFixed(2)} · POS: ₦{financialSummary.totalPaymentsPos.toFixed(2)}</p>
-                  </div>
-                  <div className="p-4 rounded-xl bg-red-50 border border-red-100">
-                    <p className="text-xs text-slate-500">Stock Receipts (Outflow)</p>
-                    <p className="text-xl font-bold text-red-700">₦{financialSummary.totalStockCost.toFixed(2)}</p>
-                  </div>
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                    <p className="text-xs text-slate-500">Net Position</p>
-                    <p className={`text-xl font-bold ${financialSummary.netPosition >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                      ₦{financialSummary.netPosition.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-1">Expected Sales: ₦{financialSummary.totalSalesExpected.toFixed(2)}</p>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {[
-                { label: 'PMS Litres', value: `${report.summary.totalSales.PMS.liters.toFixed(2)}L`, sub: `₦${report.summary.totalSales.PMS.amount.toFixed(2)}` },
-                { label: 'AGO Litres', value: `${report.summary.totalSales.AGO.liters.toFixed(2)}L`, sub: `₦${report.summary.totalSales.AGO.amount.toFixed(2)}` },
-                { label: 'Expected', value: `₦${report.summary.expectedAmount.toFixed(2)}` },
-                { label: 'Received', value: `₦${report.summary.actualAmount.toFixed(2)}`, highlight: report.summary.discrepancy !== 0, discrepancy: report.summary.discrepancy },
-              ].map((card) => (
-                <div key={card.label} className="p-4 bg-white border border-slate-200 rounded-xl">
-                  <p className="text-xs text-slate-500 mb-1">{card.label}</p>
-                  <p className="text-lg font-bold text-slate-900">{card.value}</p>
-                  {card.sub && <p className="text-xs text-slate-400">{card.sub}</p>}
-                  {card.highlight && card.discrepancy !== 0 && (
-                    <p className={`text-xs font-medium mt-1 ${card.discrepancy > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {card.discrepancy > 0 ? '+' : ''}₦{card.discrepancy.toFixed(2)}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <Card title="Supervisor Summary">
-              <Table columns={attendantColumns} data={report.supervisorSummaries} />
-            </Card>
-          </>
-        )}
-
-        {/* Comment section — always visible (not gated behind report) */}
-        <Card title="Audit Comment" className="print:hidden">
-          <div className="space-y-3">
-            <p className="text-xs text-slate-500">
-              Leave a comment for {selectedDate}{stationName ? ` — ${stationName}` : ''}. Comments are saved to the admin.
-            </p>
-            <textarea
-              className="w-full min-h-[120px] rounded-xl border-2 border-slate-200 p-3 text-sm focus:outline-none focus:border-ecana-maroon focus:ring-4 focus:ring-ecana-maroon/10 transition-all resize-none"
-              placeholder="Leave your audit comment..."
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-            />
-            {commentStatus && (
-              <p className={`text-sm ${commentStatus === 'Comment saved.' ? 'text-green-600' : 'text-red-600'}`}>{commentStatus}</p>
-            )}
-            <div className="flex justify-end">
-              <Button onClick={submitComment} disabled={savingComment || !comment.trim() || !selectedStation}>
-                {savingComment ? 'Saving...' : 'Submit Comment'}
-              </Button>
-            </div>
-          </div>
-
-          {previousComments.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Previous comments for this date</p>
-              {previousComments.map((c) => (
-                <div key={c._id} className="p-3 bg-slate-50 rounded-lg text-sm">
-                  <p className="text-slate-700">{c.comment}</p>
-                  <p className="text-xs text-slate-400 mt-1">{new Date(c.createdAt).toLocaleString('en-NG')}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
       </div>
 
-      <style>{`
-        @media print {
-          @page { margin: 1.5cm; }
-          body { font-size: 12pt; }
-        }
-      `}</style>
-    </>
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="spinner" /></div>
+      ) : (
+        <>
+          {/* Stats tiles */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="card-modern p-5 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Stations</p>
+              <p className="text-3xl font-bold text-gray-800">{stations.length}</p>
+            </div>
+            <div className={`card-modern p-5 text-center ${critical > 0 ? 'bg-red-50 border-red-200' : ''}`}>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Critical</p>
+              <p className={`text-3xl font-bold ${critical > 0 ? 'text-red-700' : 'text-gray-800'}`}>{critical}</p>
+              <p className="text-xs text-gray-400 mt-0.5">open flags</p>
+            </div>
+            <div className={`card-modern p-5 text-center ${warning > 0 ? 'bg-amber-50 border-amber-200' : ''}`}>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Warning</p>
+              <p className={`text-3xl font-bold ${warning > 0 ? 'text-amber-700' : 'text-gray-800'}`}>{warning}</p>
+              <p className="text-xs text-gray-400 mt-0.5">open flags</p>
+            </div>
+            <div className="card-modern p-5 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Info</p>
+              <p className="text-3xl font-bold text-gray-800">{info}</p>
+              <p className="text-xs text-gray-400 mt-0.5">open flags</p>
+            </div>
+          </div>
+
+          {/* Open flags preview */}
+          {openFlags.length > 0 && (
+            <Card title="Open Flags">
+              <div className="space-y-2">
+                {openFlags.slice(0, 6).map(flag => {
+                  const s = SEVERITY_STYLES[flag.severity] || SEVERITY_STYLES.info;
+                  return (
+                    <div key={flag._id} className={`flex items-start gap-3 p-3 rounded-lg ${s.row}`}>
+                      <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${s.label}`}>{flag.reason}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {flag.stationName} · {new Date(flag.createdAt).toLocaleDateString('en-NG')}
+                          {flag.targetType && ` · ${flag.targetType.replace('_', ' ')}`}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 text-xs font-semibold uppercase px-2 py-0.5 rounded-full ${s.pill}`}>
+                        {flag.severity}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {openFlags.length > 6 && (
+                <div className="mt-3 pt-3 border-t border-gray-100 text-center">
+                  <Link href="/auditor/flags" className="text-sm text-ecana-maroon hover:underline font-medium">
+                    View all {openFlags.length} open flags →
+                  </Link>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {openFlags.length === 0 && (
+            <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500" />
+              No open flags — all clear.
+            </div>
+          )}
+
+          {/* Module cards */}
+          <div>
+            <h2 className="text-lg font-semibold text-gray-700 mb-3">Audit Modules</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {MODULES.map(m => (
+                <Link
+                  key={m.href}
+                  href={m.href}
+                  className="card-modern p-5 block hover:shadow-md transition-shadow group"
+                >
+                  <p className="font-semibold text-gray-800 group-hover:text-ecana-maroon transition-colors">
+                    {m.label}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">{m.desc}</p>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
