@@ -15,6 +15,7 @@ const managerMenuItems = [
   { label: 'Begin Day', href: '/manager/begin-day' },
   { label: 'Open Pumps', href: '/manager/open-pumps' },
   { label: 'Supervisor Entries', href: '/manager/supervisor-entries' },
+  { label: 'Accountant Entries', href: '/manager/accountant-entries' },
   { label: 'Summary Book', href: '/manager/summary-book' },
   { label: 'End Day', href: '/manager/end-day' },
   { label: 'Stock In', href: '/manager/stock' },
@@ -28,7 +29,6 @@ function ManagerLayoutContent({ children }) {
   const searchParams = useSearchParams();
   const stationId = searchParams.get('stationId');
   const isAdmin = session?.user?.role === 'admin';
-  const isManager = session?.user?.role === 'manager';
 
   const menuItems = isAdmin && stationId
     ? managerMenuItems.map((item) => ({

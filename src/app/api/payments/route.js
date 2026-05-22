@@ -144,23 +144,25 @@ export async function GET(request) {
     const dayShiftId = searchParams.get('dayShiftId');
     const stationId = searchParams.get('stationId');
     const supervisorId = searchParams.get('supervisorId');
+    const date = searchParams.get('date');
 
     let query = {};
 
-    if (dayShiftId) {
-      query.dayShiftId = dayShiftId;
+    if (dayShiftId) query.dayShiftId = dayShiftId;
+    if (stationId) query.stationId = stationId;
+    if (supervisorId) query.supervisorId = supervisorId;
+
+    if (date) {
+      const start = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(date);
+      end.setHours(23, 59, 59, 999);
+      query.date = { $gte: start, $lte: end };
     }
 
-    if (stationId) {
-      query.stationId = stationId;
-    }
-
-    if (supervisorId) {
-      query.supervisorId = supervisorId;
-    }
-
-    // Non-admin users can only see their station
-    if (currentUser.role !== ROLES.ADMIN && currentUser.stationId) {
+    // Non-admin users without global access can only see their station
+    const globalRoles = [ROLES.ADMIN, ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR];
+    if (!globalRoles.includes(currentUser.role) && currentUser.stationId) {
       query.stationId = currentUser.stationId;
     }
 

@@ -73,6 +73,15 @@ const paymentRecordSchema = new mongoose.Schema(
     notes: {
       type: String,
     },
+    managerReviewStatus: {
+      type: String,
+      enum: ['pending', 'approved', 'queried'],
+      default: 'pending',
+    },
+    managerReviewNote: { type: String, default: '' },
+    reviewedByManagerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    reviewedByManagerName: { type: String, default: '' },
+    reviewedAt: { type: Date, default: null },
   },
   {
     timestamps: true,
