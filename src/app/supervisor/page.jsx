@@ -147,7 +147,7 @@ export default function SupervisorDashboard() {
           {[
             { href: '/supervisor/meter-readings', label: 'Meter Readings', desc: 'Enter opening, closing & RTT' },
             { href: '/supervisor/tank-stock', label: 'Tank Stock', desc: 'Enter opening & closing stock' },
-            { href: '/attendant/sales', label: 'Record Sales', desc: 'Enter liters sold & payments' },
+            { href: '/attendant/sales', label: 'Record Sales', desc: 'Enter litres sold & payments' },
           ].map((action) => (
             <a
               key={action.href}
