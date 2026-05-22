@@ -6,6 +6,8 @@ import Station from '@/models/Station';
 import SalesEntry from '@/models/SalesEntry';
 import PaymentRecord from '@/models/PaymentRecord';
 import StockMovement from '@/models/StockMovement';
+import MeterReading from '@/models/MeterReading';
+import TankStockEntry from '@/models/TankStockEntry';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
@@ -18,7 +20,6 @@ export async function POST(request, { params }) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    // Only managers can end a day
     if (![ROLES.ADMIN, ROLES.MANAGER].includes(currentUser.role)) {
       return NextResponse.json(
         { error: 'Only managers can end the day' },
@@ -26,53 +27,86 @@ export async function POST(request, { params }) {
       );
     }
 
-    const body = await request.json();
-    const { finalReadings } = body; // Array of { dispenserId, finalReading }
-
     session = await mongoose.startSession();
     session.startTransaction();
 
     const dayShift = await DayShift.findById(params.id).session(session);
     if (!dayShift) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: 'Day shift not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Day shift not found' }, { status: 404 });
     }
 
-    // Managers can only manage their own station
     if (currentUser.role === ROLES.MANAGER && currentUser.stationId !== dayShift.stationId.toString()) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: 'Access denied to this station' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
     }
 
     if (dayShift.status !== DAY_STATUS.IN_PROGRESS) {
       await session.abortTransaction();
+      return NextResponse.json({ error: 'Day is not in progress' }, { status: 400 });
+    }
+
+    // Date range for today's shift
+    const shiftDate = new Date(dayShift.date);
+    const startDate = new Date(shiftDate);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(shiftDate);
+    endDate.setHours(23, 59, 59, 999);
+
+    // Load station and active tanks
+    const station = await Station.findById(dayShift.stationId).session(session);
+    const activeTanks = (station.tanks || []).filter(t => t.isActive);
+
+    // Validate: all active tanks must have closing stock entries
+    const closingEntries = await TankStockEntry.find({
+      stationId: dayShift.stationId,
+      date: { $gte: startDate, $lte: endDate },
+      period: 'closing',
+    }).session(session);
+
+    const closingByTankId = {};
+    for (const entry of closingEntries) {
+      closingByTankId[entry.tankId] = entry;
+    }
+
+    const missingTanks = activeTanks.filter(t => !closingByTankId[t._id]);
+    if (missingTanks.length > 0) {
+      await session.abortTransaction();
       return NextResponse.json(
-        { error: 'Day is not in progress' },
+        { error: `Closing stock not entered for: ${missingTanks.map(t => t.label).join(', ')}` },
         { status: 400 }
       );
     }
 
-    // Get sales and payment data
-    const salesEntries = await SalesEntry.find({ 
-      dayShiftId: dayShift._id 
+    // Pull supervisor meter readings from DB to update dispenser final readings
+    const meterReadings = await MeterReading.find({
+      stationId: dayShift.stationId,
+      date: { $gte: startDate, $lte: endDate },
     }).session(session);
 
-    const paymentRecords = await PaymentRecord.find({ 
-      dayShiftId: dayShift._id 
-    }).session(session);
+    const readingsByPumpId = {};
+    for (const r of meterReadings) {
+      readingsByPumpId[r.pumpId] = r;
+    }
 
-    // Calculate totals
+    for (const assignment of dayShift.dispenserAssignments) {
+      const reading = readingsByPumpId[assignment.dispenserId];
+      if (reading) {
+        assignment.finalReading = reading.closing;
+        assignment.totalLiters = Math.max(0, reading.closing - assignment.initialReading - reading.rtt);
+      }
+    }
+
+    // Calculate totals from existing sales and payment records
+    const [salesEntries, paymentRecords] = await Promise.all([
+      SalesEntry.find({ dayShiftId: dayShift._id }).session(session),
+      PaymentRecord.find({ dayShiftId: dayShift._id }).session(session),
+    ]);
+
     const totalSales = {
       PMS: { liters: 0, amount: 0 },
       AGO: { liters: 0, amount: 0 },
     };
-
     salesEntries.forEach(sale => {
       totalSales[sale.fuelType].liters += sale.liters;
       totalSales[sale.fuelType].amount += sale.expectedAmount;
@@ -87,20 +121,34 @@ export async function POST(request, { params }) {
     const actualAmount = totalPayments.cash + totalPayments.pos;
     const discrepancy = actualAmount - expectedAmount;
 
-    // Update dispenser final readings
-    if (finalReadings && Array.isArray(finalReadings)) {
-      for (const reading of finalReadings) {
-        const assignment = dayShift.dispenserAssignments.find(
-          d => d.dispenserId === reading.dispenserId
-        );
-        if (assignment) {
-          assignment.finalReading = reading.finalReading;
-          assignment.totalLiters = reading.finalReading - assignment.initialReading;
-        }
-      }
+    // Update station.currentStock from manager-measured closing tank entries
+    for (const fuelType of ['PMS', 'AGO']) {
+      const previousStock = station.currentStock[fuelType];
+      const closingTotal = closingEntries
+        .filter(e => e.product === fuelType)
+        .reduce((sum, e) => sum + e.closingStockMeasured, 0);
+
+      station.currentStock[fuelType] = closingTotal;
+
+      await StockMovement.create([{
+        stationId: station._id,
+        stationName: station.name,
+        date: shiftDate,
+        fuelType,
+        movementType: 'sale',
+        quantity: closingTotal - previousStock,
+        previousStock,
+        newStock: closingTotal,
+        recordedBy: currentUser.id,
+        recordedByName: currentUser.name,
+        referenceId: dayShift._id,
+        notes: `End of day closing stock for ${shiftDate.toISOString().split('T')[0]}`,
+      }], { session, ordered: true });
     }
 
-    // Update day shift
+    await station.save({ session });
+
+    // Finalise day shift
     dayShift.status = DAY_STATUS.ENDED;
     dayShift.endedBy = currentUser.id;
     dayShift.endedByName = currentUser.name;
@@ -112,40 +160,6 @@ export async function POST(request, { params }) {
     dayShift.discrepancy = discrepancy;
 
     await dayShift.save({ session });
-
-    // Update station stock (deduct sales with tolerance)
-    const station = await Station.findById(dayShift.stationId).session(session);
-    const tolerancePercent = Number(station.tolerancePercent ?? 2.5);
-    const toleranceFactor = Math.max(0, 1 - tolerancePercent / 100);
-    
-    for (const fuelType of ['PMS', 'AGO']) {
-      if (totalSales[fuelType].liters > 0) {
-        const previousStock = station.currentStock[fuelType];
-        const effectiveLiters = totalSales[fuelType].liters * toleranceFactor;
-        const newStock = previousStock - effectiveLiters;
-        
-        station.currentStock[fuelType] = Math.max(0, newStock);
-        
-        // Record stock movement
-        await StockMovement.create([{
-          stationId: station._id,
-          stationName: station.name,
-          date: dayShift.date,
-          fuelType,
-          movementType: 'sale',
-          quantity: -effectiveLiters,
-          previousStock,
-          newStock: station.currentStock[fuelType],
-          recordedBy: currentUser.id,
-          recordedByName: currentUser.name,
-          referenceId: dayShift._id,
-          notes: `Sales for ${dayShift.date.toISOString().split('T')[0]} (tolerance ${tolerancePercent}%)`,
-        }], { session, ordered: true });
-      }
-    }
-
-    await station.save({ session });
-
     await session.commitTransaction();
 
     await createAuditLog({

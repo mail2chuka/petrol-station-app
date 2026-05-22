@@ -1,111 +1,198 @@
-"use client";
+'use client';
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
-import Input from '@/components/Input';
-import Button from '@/components/Button';
 import Loading from '@/components/Loading';
+
+function todayStr() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function fmt(n) {
+  return typeof n === 'number'
+    ? n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '0.00';
+}
 
 function EndDayPageContent() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
   const adminStationId = searchParams.get('stationId');
-  const activeStationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
+  const activeStationId =
+    session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
+
   const [activeDayShift, setActiveDayShift] = useState(null);
-  const [finalReadings, setFinalReadings] = useState([]);
+  const [station, setStation] = useState(null);
+  const [meterReadings, setMeterReadings] = useState([]);
+  const [tankStockEntries, setTankStockEntries] = useState([]);
+  const [salesEntries, setSalesEntries] = useState([]);
+  const [paymentRecords, setPaymentRecords] = useState([]);
+  const [dateStr, setDateStr] = useState(todayStr());
+
+  // Per-tank closing stock form state
+  const [stockForms, setStockForms] = useState({});
+  const [stockEditing, setStockEditing] = useState({});
+  const [stockSaving, setStockSaving] = useState({});
+  const [stockErrors, setStockErrors] = useState({});
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchActiveDayShift();
+    if (session?.user) fetchData();
   }, [session]);
 
-  const fetchActiveDayShift = async () => {
+  const fetchData = async () => {
     if (!activeStationId) return;
-
+    setLoading(true);
     try {
-      const res = await fetch(
-        `/api/day-shifts?stationId=${activeStationId}&status=in_progress`
-      );
-      const data = await res.json();
+      const dsRes = await fetch(`/api/day-shifts?stationId=${activeStationId}&status=in_progress`);
+      const dsData = await dsRes.json();
+      const dayShift = dsData.dayShifts?.[0] || null;
+      setActiveDayShift(dayShift);
 
-      if (data.dayShifts?.length > 0) {
-        const dayShift = data.dayShifts[0];
-        setActiveDayShift(dayShift);
-        
-        // Initialize final readings
-        setFinalReadings(
-          dayShift.dispenserAssignments.map(d => ({
-            dispenserId: d.dispenserId,
-            dispenserName: d.dispenserName,
-            fuelType: d.fuelType,
-            supervisorName: d.supervisorName,
-            initialReading: d.initialReading,
-            finalReading: '',
-          }))
-        );
-      } else {
-        setError('No active day shift found');
+      if (!dayShift) {
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error('Error fetching day shift:', error);
+
+      const shiftDate = new Date(dayShift.date).toISOString().split('T')[0];
+      setDateStr(shiftDate);
+
+      const [stationRes, mrRes, tsRes, salesRes, payRes] = await Promise.all([
+        fetch(`/api/stations/${activeStationId}`),
+        fetch(`/api/meter-readings?stationId=${activeStationId}&date=${shiftDate}`),
+        fetch(`/api/tank-stock?stationId=${activeStationId}&date=${shiftDate}`),
+        fetch(`/api/sales?dayShiftId=${dayShift._id}`),
+        fetch(`/api/payments?dayShiftId=${dayShift._id}`),
+      ]);
+
+      const [stationData, mrData, tsData, salesData, payData] = await Promise.all([
+        stationRes.json(),
+        mrRes.json(),
+        tsRes.json(),
+        salesRes.json(),
+        payRes.json(),
+      ]);
+
+      const stationObj = stationData.station || null;
+      setStation(stationObj);
+      setMeterReadings(mrData.readings || []);
+      setSalesEntries(salesData.salesEntries || []);
+      setPaymentRecords(payData.paymentRecords || []);
+
+      initTankState(stationObj, tsData.entries || []);
+      setTankStockEntries(tsData.entries || []);
+    } catch (err) {
+      console.error(err);
       setError('Failed to load data');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleReadingChange = (index, value) => {
-    const newReadings = [...finalReadings];
-    newReadings[index].finalReading = value;
-    setFinalReadings(newReadings);
+  const initTankState = (stationObj, entries) => {
+    const activeTanks = (stationObj?.tanks || []).filter(t => t.isActive);
+    const closingByTankId = {};
+    for (const e of entries.filter(e => e.period === 'closing')) {
+      closingByTankId[e.tankId] = e;
+    }
+    const newForms = {};
+    const newEditing = {};
+    for (const tank of activeTanks) {
+      const saved = closingByTankId[tank._id];
+      newForms[tank._id] = saved
+        ? { value: String(saved.closingStockMeasured), notes: saved.notes || '' }
+        : { value: '', notes: '' };
+      newEditing[tank._id] = !saved;
+    }
+    setStockForms(newForms);
+    setStockEditing(newEditing);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const refreshTankStock = async () => {
+    const tsRes = await fetch(`/api/tank-stock?stationId=${activeStationId}&date=${dateStr}`);
+    const tsData = await tsRes.json();
+    const entries = tsData.entries || [];
+    setTankStockEntries(entries);
+    initTankState(station, entries);
+  };
+
+  const handleFormChange = (tankId, field, value) => {
+    setStockForms(prev => ({ ...prev, [tankId]: { ...prev[tankId], [field]: value } }));
+  };
+
+  const handleSaveStock = async (tank) => {
+    const form = stockForms[tank._id] || { value: '', notes: '' };
+    const value = parseFloat(form.value);
+    if (isNaN(value) || value < 0) {
+      setStockErrors(prev => ({ ...prev, [tank._id]: 'Enter a valid stock value (0 or greater)' }));
+      return;
+    }
+    setStockErrors(prev => ({ ...prev, [tank._id]: '' }));
+    setStockSaving(prev => ({ ...prev, [tank._id]: true }));
+    try {
+      const res = await fetch('/api/tank-stock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stationId: activeStationId,
+          tankId: tank._id,
+          date: dateStr,
+          period: 'closing',
+          stockValue: value,
+          notes: form.notes || '',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setStockErrors(prev => ({ ...prev, [tank._id]: data.error || 'Failed to save' }));
+      } else {
+        await refreshTankStock();
+      }
+    } catch {
+      setStockErrors(prev => ({ ...prev, [tank._id]: 'Network error. Please try again.' }));
+    } finally {
+      setStockSaving(prev => ({ ...prev, [tank._id]: false }));
+    }
+  };
+
+  const handleStartEdit = (tankId) => {
+    setStockEditing(prev => ({ ...prev, [tankId]: true }));
+  };
+
+  const handleCancelEdit = (tankId) => {
+    const saved = tankStockEntries.find(e => e.tankId === tankId && e.period === 'closing');
+    if (saved) {
+      setStockForms(prev => ({
+        ...prev,
+        [tankId]: { value: String(saved.closingStockMeasured), notes: saved.notes || '' },
+      }));
+    }
+    setStockEditing(prev => ({ ...prev, [tankId]: false }));
+  };
+
+  const handleEndDay = async () => {
     setError('');
     setSubmitting(true);
-
-    // Validate all readings
-    for (const reading of finalReadings) {
-      if (!reading.finalReading) {
-        setError('Please fill in all final readings');
-        setSubmitting(false);
-        return;
-      }
-      if (parseFloat(reading.finalReading) < reading.initialReading) {
-        setError('Final reading cannot be less than initial reading');
-        setSubmitting(false);
-        return;
-      }
-    }
-
     try {
       const res = await fetch(`/api/day-shifts/${activeDayShift._id}/end`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          finalReadings: finalReadings.map(r => ({
-            dispenserId: r.dispenserId,
-            finalReading: parseFloat(r.finalReading),
-          })),
-        }),
+        body: JSON.stringify({}),
       });
-
       const data = await res.json();
-
       if (res.ok) {
-        alert('Day ended successfully!');
         const nextUrl = adminStationId ? `/manager?stationId=${adminStationId}` : '/manager';
         router.push(nextUrl);
       } else {
         setError(data.error || 'Failed to end day');
       }
-    } catch (error) {
+    } catch {
       setError('An error occurred. Please try again.');
     } finally {
       setSubmitting(false);
@@ -127,92 +214,289 @@ function EndDayPageContent() {
       <div>
         <h1 className="text-3xl font-bold text-gray-800 mb-8">End Day</h1>
         <Card>
-          <p className="text-red-600">{error || 'No active day shift found'}</p>
+          <p className="text-red-600">{error || 'No active day shift found.'}</p>
         </Card>
       </div>
     );
   }
 
+  const activeTanks = (station?.tanks || []).filter(t => t.isActive);
+  const closingByTankId = {};
+  for (const e of tankStockEntries.filter(e => e.period === 'closing')) {
+    closingByTankId[e.tankId] = e;
+  }
+  const allClosingEntered =
+    activeTanks.length > 0 && activeTanks.every(t => closingByTankId[t._id]);
+
+  // Sales summary
+  const salesByFuel = { PMS: { liters: 0, amount: 0 }, AGO: { liters: 0, amount: 0 } };
+  salesEntries.forEach(s => {
+    salesByFuel[s.fuelType].liters += s.liters;
+    salesByFuel[s.fuelType].amount += s.expectedAmount;
+  });
+  const totalCash = paymentRecords.reduce((sum, p) => sum + p.cashReceived, 0);
+  const totalPos = paymentRecords.reduce((sum, p) => sum + p.posReceived, 0);
+  const totalExpected = salesByFuel.PMS.amount + salesByFuel.AGO.amount;
+  const totalActual = totalCash + totalPos;
+  const discrepancy = totalActual - totalExpected;
+
+  // Pump table: match meter readings to dispenser assignments
+  const readingsByPumpId = {};
+  for (const r of meterReadings) readingsByPumpId[r.pumpId] = r;
+  const pumpRows = activeDayShift.dispenserAssignments.map(d => ({
+    ...d,
+    reading: readingsByPumpId[d.dispenserId] || null,
+  }));
+
   return (
-    <div>
-      <h1 className="text-3xl font-bold text-gray-800 mb-8">End Day</h1>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-800">End Day</h1>
+        <p className="text-gray-500 mt-1">
+          {activeDayShift.stationName} —{' '}
+          {new Date(activeDayShift.date).toLocaleDateString('en-NG', { dateStyle: 'full' })}
+        </p>
+      </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
           {error}
         </div>
       )}
 
-      <Card title="Final Dispenser Readings">
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-6">
-            {finalReadings.map((reading, index) => (
-              <div key={index} className="p-4 border border-gray-200 rounded-lg">
-                <h3 className="font-medium text-lg mb-2">
-                  {reading.dispenserName} ({reading.fuelType})
-                </h3>
-                {reading.supervisorName && (
-                  <p className="text-sm text-gray-600 mb-4">
-                    Supervisor: {reading.supervisorName}
-                  </p>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Initial Reading
-                    </label>
-                    <input
-                      type="text"
-                      value={`${reading.initialReading.toFixed(2)}L`}
-                      disabled
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
-                    />
-                  </div>
-                  <Input
-                    label="Final Reading (Liters)"
-                    type="number"
-                    name={`final-${index}`}
-                    value={reading.finalReading}
-                    onChange={(e) => handleReadingChange(index, e.target.value)}
-                    placeholder="0.00"
-                    step="0.01"
-                    min={reading.initialReading}
-                    required
-                  />
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Total Sold
-                    </label>
-                    <input
-                      type="text"
-                      value={
-                        reading.finalReading
-                          ? `${(parseFloat(reading.finalReading) - reading.initialReading).toFixed(2)}L`
-                          : '0.00L'
-                      }
-                      disabled
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
+      {/* Section 1: Supervisor Meter Readings — read-only report */}
+      <Card title="Supervisor Meter Readings">
+        {pumpRows.length === 0 ? (
+          <p className="text-gray-400 text-sm">No pumps assigned for this shift.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-gray-200">
+                  <th className="pb-3 pr-4 font-semibold text-gray-500 uppercase text-xs tracking-wide">Pump</th>
+                  <th className="pb-3 pr-4 font-semibold text-gray-500 uppercase text-xs tracking-wide">Fuel</th>
+                  <th className="pb-3 pr-4 font-semibold text-gray-500 uppercase text-xs tracking-wide text-right">Opening</th>
+                  <th className="pb-3 pr-4 font-semibold text-gray-500 uppercase text-xs tracking-wide text-right">Closing</th>
+                  <th className="pb-3 pr-4 font-semibold text-gray-500 uppercase text-xs tracking-wide text-right">RTT</th>
+                  <th className="pb-3 pr-4 font-semibold text-gray-500 uppercase text-xs tracking-wide text-right">Net Litres</th>
+                  <th className="pb-3 font-semibold text-gray-500 uppercase text-xs tracking-wide">Supervisor</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {pumpRows.map((pump, i) => {
+                  const r = pump.reading;
+                  const netLitres = r ? Math.max(0, r.closing - r.opening - r.rtt) : null;
+                  return (
+                    <tr key={i} className={!r ? 'bg-amber-50' : ''}>
+                      <td className="py-3 pr-4 font-medium text-gray-800">{pump.dispenserName}</td>
+                      <td className="py-3 pr-4">
+                        <span className={`badge ${pump.fuelType === 'PMS' ? 'badge-success' : 'badge-info'}`}>
+                          {pump.fuelType}
+                        </span>
+                      </td>
+                      <td className="py-3 pr-4 text-right text-gray-700">
+                        {r ? fmt(r.opening) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="py-3 pr-4 text-right text-gray-700">
+                        {r ? fmt(r.closing) : <span className="text-amber-600 font-medium">Not entered</span>}
+                      </td>
+                      <td className="py-3 pr-4 text-right text-gray-700">
+                        {r ? fmt(r.rtt) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="py-3 pr-4 text-right font-semibold text-gray-800">
+                        {netLitres !== null ? fmt(netLitres) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="py-3 text-gray-600 text-xs">
+                        {r ? (
+                          <span>
+                            {r.supervisorName}
+                            {r.discrepancyFlag && (
+                              <span className="ml-1 text-amber-600 font-bold">⚠</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-amber-600">No reading</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-
-          <div className="mt-6">
-            <Button type="submit" variant="danger" disabled={submitting}>
-              {submitting ? 'Ending Day...' : 'End Day'}
-            </Button>
-          </div>
-        </form>
+        )}
       </Card>
+
+      {/* Section 2: Closing Tank Stock — manager entry */}
+      <Card title="Closing Tank Stock">
+        <p className="text-sm text-gray-500 mb-5">
+          Physically measure and enter the stock remaining in each tank.
+          All tanks must be recorded before the day can end.
+        </p>
+
+        {activeTanks.length === 0 ? (
+          <p className="text-gray-400 text-sm">No tanks configured for this station.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {activeTanks.map(tank => {
+              const saved = closingByTankId[tank._id];
+              const isEditing = stockEditing[tank._id];
+              const isSaving = stockSaving[tank._id];
+              const errMsg = stockErrors[tank._id];
+              const form = stockForms[tank._id] || { value: '', notes: '' };
+
+              return (
+                <div key={tank._id} className="card-modern p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="font-semibold text-gray-800">{tank.label}</p>
+                      <span className={`badge ${tank.product === 'PMS' ? 'badge-success' : 'badge-info'}`}>
+                        {tank.product}
+                      </span>
+                    </div>
+                    {saved && !isEditing && (
+                      <button
+                        onClick={() => handleStartEdit(tank._id)}
+                        className="text-sm text-ecana-maroon hover:underline font-medium"
+                      >
+                        Edit
+                      </button>
+                    )}
+                  </div>
+
+                  {saved && !isEditing ? (
+                    <div>
+                      <p className="text-3xl font-bold text-gray-800">
+                        {fmt(saved.closingStockMeasured)}{' '}
+                        <span className="text-lg font-normal text-gray-500">L</span>
+                      </p>
+                      {saved.notes && (
+                        <p className="text-xs text-gray-500 mt-1">{saved.notes}</p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">by {saved.supervisorName}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Stock Remaining (Litres)
+                        </label>
+                        <input
+                          type="number"
+                          className="input-modern"
+                          placeholder="0.00"
+                          step="0.01"
+                          min="0"
+                          value={form.value}
+                          onChange={e => handleFormChange(tank._id, 'value', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Notes (optional)
+                        </label>
+                        <input
+                          type="text"
+                          className="input-modern"
+                          placeholder="Any observations..."
+                          value={form.notes}
+                          onChange={e => handleFormChange(tank._id, 'notes', e.target.value)}
+                        />
+                      </div>
+                      {errMsg && <p className="text-sm text-red-600">{errMsg}</p>}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSaveStock(tank)}
+                          disabled={isSaving}
+                          className="btn-modern btn-primary text-sm px-4 py-2 disabled:opacity-60"
+                        >
+                          {isSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        {saved && (
+                          <button
+                            onClick={() => handleCancelEdit(tank._id)}
+                            className="btn-modern text-sm px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* Section 3: Day Summary */}
+      <Card title="Day Summary">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          <div className="text-center p-4 bg-green-50 rounded-xl">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">PMS Sales</p>
+            <p className="text-lg font-bold text-gray-800">{fmt(salesByFuel.PMS.liters)} L</p>
+            <p className="text-sm text-gray-600">₦{fmt(salesByFuel.PMS.amount)}</p>
+          </div>
+          <div className="text-center p-4 bg-blue-50 rounded-xl">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">AGO Sales</p>
+            <p className="text-lg font-bold text-gray-800">{fmt(salesByFuel.AGO.liters)} L</p>
+            <p className="text-sm text-gray-600">₦{fmt(salesByFuel.AGO.amount)}</p>
+          </div>
+          <div className="text-center p-4 bg-gray-50 rounded-xl">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Cash Received</p>
+            <p className="text-lg font-bold text-gray-800">₦{fmt(totalCash)}</p>
+          </div>
+          <div className="text-center p-4 bg-gray-50 rounded-xl">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">POS Received</p>
+            <p className="text-lg font-bold text-gray-800">₦{fmt(totalPos)}</p>
+          </div>
+        </div>
+        <div className="flex gap-6 pt-3 border-t border-gray-100">
+          <div>
+            <p className="text-xs text-gray-500">Expected</p>
+            <p className="font-semibold text-gray-800">₦{fmt(totalExpected)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Actual</p>
+            <p className="font-semibold text-gray-800">₦{fmt(totalActual)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Discrepancy</p>
+            <p className={`font-semibold ${discrepancy < 0 ? 'text-red-600' : discrepancy > 0 ? 'text-green-600' : 'text-gray-800'}`}>
+              {discrepancy >= 0 ? '+' : ''}₦{fmt(discrepancy)}
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      {/* End Day action */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pb-8">
+        {!allClosingEntered && activeTanks.length > 0 && (
+          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-lg">
+            Enter closing stock for all tanks before ending the day.
+          </p>
+        )}
+        <button
+          onClick={handleEndDay}
+          disabled={submitting || !allClosingEntered}
+          className="btn-modern text-white font-semibold px-8 py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{
+            background: allClosingEntered
+              ? 'linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)'
+              : '#d1d5db',
+          }}
+        >
+          {submitting ? 'Ending Day…' : 'End Day'}
+        </button>
+      </div>
     </div>
   );
 }
 
 export default function EndDayPage() {
   return (
-    <Suspense fallback={<Loading /> }>
+    <Suspense fallback={<Loading />}>
       <EndDayPageContent />
     </Suspense>
   );

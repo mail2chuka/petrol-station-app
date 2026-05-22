@@ -51,19 +51,35 @@ export async function GET(request) {
   }
 }
 
-// POST /api/tank-stock — supervisor submits opening or closing stock for one tank
+// POST /api/tank-stock
+// Supervisors can submit opening or closing entries for their station.
+// Managers and admins can submit closing entries only.
 export async function POST(request) {
   try {
     const currentUser = await requireAuth();
     await connectDB();
 
-    if (currentUser.role !== ROLES.SUPERVISOR) {
-      return NextResponse.json({ error: 'Only supervisors can submit tank stock entries' }, { status: 403 });
+    const isSupervisor = currentUser.role === ROLES.SUPERVISOR;
+    const isManagerOrAdmin = [ROLES.MANAGER, ROLES.ADMIN].includes(currentUser.role);
+
+    if (!isSupervisor && !isManagerOrAdmin) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
     const payload = createSchema.parse(await request.json());
 
-    if (currentUser.stationId !== payload.stationId) {
+    if (isManagerOrAdmin && payload.period !== 'closing') {
+      return NextResponse.json(
+        { error: 'Managers can only submit closing stock entries' },
+        { status: 403 }
+      );
+    }
+
+    // Station access: managers only their own station
+    if (currentUser.role === ROLES.MANAGER && currentUser.stationId !== payload.stationId) {
+      return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
+    }
+    if (isSupervisor && currentUser.stationId !== payload.stationId) {
       return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
     }
 
@@ -82,7 +98,7 @@ export async function POST(request) {
     const endDate = new Date(payload.date);
     endDate.setHours(23, 59, 59, 999);
 
-    // For closing: look up today's opening entry to get openingStock
+    // For closing entries: look up today's opening entry to get openingStock
     let openingStock = payload.stockValue;
     if (payload.period === 'closing') {
       const openingEntry = await TankStockEntry.findOne({
@@ -96,9 +112,32 @@ export async function POST(request) {
       }
     }
 
-    const closingStockMeasured = payload.period === 'closing' ? payload.stockValue : payload.stockValue;
+    const closingStockMeasured = payload.stockValue;
     const variance = closingStockMeasured - openingStock;
     const variancePercent = openingStock > 0 ? (variance / openingStock) * 100 : 0;
+
+    const updateData = {
+      stationId: payload.stationId,
+      stationName: station.name,
+      tankId: payload.tankId,
+      tankLabel: tank.label || payload.tankId,
+      product: tank.product,
+      date: startDate,
+      period: payload.period,
+      openingStock,
+      closingStockMeasured,
+      supervisorId: currentUser.id,
+      supervisorName: currentUser.name,
+      variance,
+      variancePercent,
+      notes: payload.notes || '',
+    };
+
+    // Tag manager-submitted entries
+    if (isManagerOrAdmin) {
+      updateData.managerId = currentUser.id;
+      updateData.managerName = currentUser.name;
+    }
 
     const entry = await TankStockEntry.findOneAndUpdate(
       {
@@ -107,22 +146,7 @@ export async function POST(request) {
         date: { $gte: startDate, $lte: endDate },
         period: payload.period,
       },
-      {
-        stationId: payload.stationId,
-        stationName: station.name,
-        tankId: payload.tankId,
-        tankLabel: tank.label || payload.tankId,
-        product: tank.product,
-        date: startDate,
-        period: payload.period,
-        openingStock,
-        closingStockMeasured,
-        supervisorId: currentUser.id,
-        supervisorName: currentUser.name,
-        variance,
-        variancePercent,
-        notes: payload.notes || '',
-      },
+      updateData,
       { new: true, upsert: true, runValidators: true }
     );
 
