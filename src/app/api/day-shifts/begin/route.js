@@ -4,7 +4,6 @@ import connectDB from '@/lib/db';
 import DayShift from '@/models/DayShift';
 import Station from '@/models/Station';
 import PriceHistory from '@/models/PriceHistory';
-import User from '@/models/User';
 import { requireAuth } from '@/lib/auth';
 import { beginDaySchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
@@ -69,7 +68,7 @@ export async function POST(request) {
       );
     }
 
-    // Validate dispensers and get attendant names
+    // Validate dispensers
     const dispenserAssignments = [];
     for (const assignment of validatedData.dispensers) {
       const dispenser = station.dispensers.find(
@@ -84,15 +83,6 @@ export async function POST(request) {
         );
       }
 
-      const supervisor = await User.findById(assignment.attendantId).session(session);
-      if (!supervisor || supervisor.role !== ROLES.SUPERVISOR || !supervisor.isActive) {
-        await session.abortTransaction();
-        return NextResponse.json(
-          { error: `Invalid supervisor for dispenser ${assignment.dispenserId}` },
-          { status: 400 }
-        );
-      }
-
       const mappedTank = dispenser.tankId
         ? station.tanks.find((t) => t._id === dispenser.tankId)
         : null;
@@ -103,8 +93,8 @@ export async function POST(request) {
         fuelType: dispenser.fuelType,
         tankId: dispenser.tankId || null,
         tankLabel: mappedTank?.label || dispenser.tankId || '',
-        attendantId: assignment.attendantId,
-        attendantName: supervisor.name,
+        supervisorId: null,
+        supervisorName: '',
         initialReading: assignment.initialReading,
         totalLiters: 0,
       });

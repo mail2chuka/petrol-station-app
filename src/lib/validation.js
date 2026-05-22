@@ -67,7 +67,6 @@ export const beginDaySchema = z.object({
   dispensers: z.array(z.object({
     dispenserId: z.string(),
     fuelType: z.enum([FUEL_TYPES.PMS, FUEL_TYPES.AGO]),
-    attendantId: z.string(),
     initialReading: z.number().min(0, 'Initial reading cannot be negative'),
   })),
 });
@@ -84,7 +83,7 @@ export const salesEntrySchema = z.object({
 // Payment Record Schema
 export const paymentRecordSchema = z.object({
   dayShiftId: z.string(),
-  attendantId: z.string(),
+  supervisorId: z.string(),
   cashReceived: z.number().min(0, 'Cash received cannot be negative'),
   posReceived: z.number().min(0, 'POS received cannot be negative'),
 });

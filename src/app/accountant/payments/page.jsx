@@ -11,10 +11,10 @@ import Loading from '@/components/Loading';
 export default function RecordPaymentsPage() {
   const { data: session } = useSession();
   const [activeDayShift, setActiveDayShift] = useState(null);
-  const [attendants, setAttendants] = useState([]);
+  const [supervisors, setAttendants] = useState([]);
   const [posTerminals, setPosTerminals] = useState([]);
   const [formData, setFormData] = useState({
-    attendantId: '',
+    supervisorId: '',
     cashReceived: '',
     posReceived: '',
     posTerminalId: '',
@@ -86,7 +86,7 @@ export default function RecordPaymentsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dayShiftId: activeDayShift._id,
-          attendantId: formData.attendantId,
+          supervisorId: formData.supervisorId,
           cashReceived: parseFloat(formData.cashReceived) || 0,
           posReceived: posAmount,
           posTerminalId: formData.posTerminalId || null,
@@ -98,7 +98,7 @@ export default function RecordPaymentsPage() {
 
       if (res.ok) {
         setSuccess('Payment recorded successfully!');
-        setFormData({ attendantId: '', cashReceived: '', posReceived: '', posTerminalId: '', notes: '' });
+        setFormData({ supervisorId: '', cashReceived: '', posReceived: '', posTerminalId: '', notes: '' });
       } else {
         setError(data.error || 'Failed to record payment');
       }
@@ -145,13 +145,13 @@ export default function RecordPaymentsPage() {
       <Card title="Payment Details">
         <form onSubmit={handleSubmit} className="space-y-4">
           <Select
-            label="Supervisor / Attendant"
-            name="attendantId"
-            value={formData.attendantId}
+            label="Supervisor"
+            name="supervisorId"
+            value={formData.supervisorId}
             onChange={handleChange}
             options={[
               { value: '', label: 'Select supervisor...' },
-              ...attendants.map((a) => ({ value: a._id, label: a.name })),
+              ...supervisors.map((a) => ({ value: a._id, label: a.name })),
             ]}
             required
           />
@@ -226,7 +226,7 @@ export default function RecordPaymentsPage() {
             />
           </div>
 
-          <Button type="submit" variant="primary" disabled={submitting || !formData.attendantId}>
+          <Button type="submit" variant="primary" disabled={submitting || !formData.supervisorId}>
             {submitting ? 'Recording...' : 'Record Payment'}
           </Button>
         </form>

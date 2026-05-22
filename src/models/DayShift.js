@@ -61,14 +61,14 @@ const dayShiftSchema = new mongoose.Schema(
           enum: Object.values(FUEL_TYPES),
           required: true,
         },
-        attendantId: {
+        supervisorId: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'User',
-          required: true,
+          default: null,
         },
-        attendantName: {
-          type: String, // Denormalized
-          required: true,
+        supervisorName: {
+          type: String,
+          default: '',
         },
         tankId: {
           type: String,

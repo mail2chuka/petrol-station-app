@@ -43,7 +43,7 @@ function EndDayPageContent() {
             dispenserId: d.dispenserId,
             dispenserName: d.dispenserName,
             fuelType: d.fuelType,
-            attendantName: d.attendantName,
+            supervisorName: d.supervisorName,
             initialReading: d.initialReading,
             finalReading: '',
           }))
@@ -151,9 +151,11 @@ function EndDayPageContent() {
                 <h3 className="font-medium text-lg mb-2">
                   {reading.dispenserName} ({reading.fuelType})
                 </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Attendant: {reading.attendantName}
-                </p>
+                {reading.supervisorName && (
+                  <p className="text-sm text-gray-600 mb-4">
+                    Supervisor: {reading.supervisorName}
+                  </p>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">

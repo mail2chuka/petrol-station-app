@@ -107,7 +107,7 @@ export default function AccountantDashboard() {
             Welcome back, <strong>{session?.user?.name}</strong>!
           </p>
           <p className="text-gray-600 mt-2">
-            Use the sidebar to record payments received from attendants.
+            Use the sidebar to record payments received from supervisors.
           </p>
         </Card>
 
@@ -119,7 +119,7 @@ export default function AccountantDashboard() {
                 className="block p-3 bg-ecana-maroon-50 hover:bg-ecana-maroon-100 rounded-lg transition-colors"
               >
                 <p className="font-medium text-ecana-maroon">Record Payment</p>
-                <p className="text-sm text-gray-600">Record cash and POS payments from attendants</p>
+                <p className="text-sm text-gray-600">Record cash and POS payments from supervisors</p>
               </a>
             )}
             <a
@@ -139,7 +139,7 @@ export default function AccountantDashboard() {
             {todayPayments.map((payment, index) => (
               <div key={index} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
                 <div>
-                  <p className="font-medium">{payment.attendantName}</p>
+                  <p className="font-medium">{payment.supervisorName}</p>
                   <p className="text-sm text-gray-600">
                     {new Date(payment.createdAt).toLocaleTimeString()}
                   </p>

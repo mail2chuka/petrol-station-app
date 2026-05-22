@@ -34,7 +34,7 @@ export default function ViewPaymentsPage() {
       header: 'Date/Time', 
       render: (row) => new Date(row.createdAt).toLocaleString()
     },
-    { header: 'Attendant', field: 'attendantName' },
+    { header: 'Supervisor', field: 'supervisorName' },
     { 
       header: 'Cash', 
       render: (row) => `₦${row.cashReceived.toFixed(2)}`

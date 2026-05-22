@@ -50,7 +50,7 @@ export async function POST(request) {
       );
     }
 
-    // Find the dispenser assignment
+    // Find the dispenser assignment for this day
     const assignment = dayShift.dispenserAssignments.find(
       d => d.dispenserId === validatedData.dispenserId
     );
@@ -60,15 +60,6 @@ export async function POST(request) {
       return NextResponse.json(
         { error: 'Dispenser not found in day shift' },
         { status: 404 }
-      );
-    }
-
-    // Verify attendant is assigned to this dispenser
-    if (assignment.attendantId.toString() !== currentUser.id) {
-      await session.abortTransaction();
-      return NextResponse.json(
-        { error: 'You are not assigned to this dispenser' },
-        { status: 403 }
       );
     }
 
@@ -94,8 +85,8 @@ export async function POST(request) {
       stationId: dayShift.stationId,
       stationName: dayShift.stationName,
       date: dayShift.date,
-      attendantId: currentUser.id,
-      attendantName: currentUser.name,
+      supervisorId: currentUser.id,
+      supervisorName: currentUser.name,
       dispenserId: validatedData.dispenserId,
       dispenserName: assignment.dispenserName,
       fuelType: assignment.fuelType,
@@ -136,14 +127,14 @@ export async function POST(request) {
   } catch (error) {
     await session.abortTransaction();
     console.error('Error creating sales entry:', error);
-    
+
     if (error.name === 'ZodError') {
       return NextResponse.json(
         { error: 'Validation error', details: error.errors },
         { status: 400 }
       );
     }
-    
+
     return NextResponse.json(
       { error: error.message || 'Failed to create sales entry' },
       { status: 500 }
@@ -162,7 +153,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const dayShiftId = searchParams.get('dayShiftId');
     const stationId = searchParams.get('stationId');
-    const attendantId = searchParams.get('attendantId');
+    const supervisorId = searchParams.get('supervisorId');
 
     let query = {};
 
@@ -174,13 +165,13 @@ export async function GET(request) {
       query.stationId = stationId;
     }
 
-    if (attendantId) {
-      query.attendantId = attendantId;
+    if (supervisorId) {
+      query.supervisorId = supervisorId;
     }
 
     // Supervisors can only see their own sales
     if (currentUser.role === ROLES.SUPERVISOR) {
-      query.attendantId = currentUser.id;
+      query.supervisorId = currentUser.id;
     }
 
     // Non-admin users can only see their station

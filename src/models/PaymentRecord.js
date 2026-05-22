@@ -15,7 +15,7 @@ const paymentRecordSchema = new mongoose.Schema(
       index: true,
     },
     stationName: {
-      type: String, // Denormalized
+      type: String,
       required: true,
     },
     date: {
@@ -23,14 +23,14 @@ const paymentRecordSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    attendantId: {
+    supervisorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
       index: true,
     },
-    attendantName: {
-      type: String, // Denormalized
+    supervisorName: {
+      type: String,
       required: true,
     },
     cashReceived: {
@@ -47,27 +47,27 @@ const paymentRecordSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-      method: {
-        type: String,
-        enum: ['cash', 'pos'],
-        default: null, // Optional for backward compatibility with mixed cash/POS records
-      },
-      posTerminalId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'POSTerminal',
-        default: null, // Only filled if method is 'pos'
-      },
-      posTerminalLabel: {
-        type: String,
-        default: null, // Denormalized POS terminal label
-      },
+    method: {
+      type: String,
+      enum: ['cash', 'pos'],
+      default: null,
+    },
+    posTerminalId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'POSTerminal',
+      default: null,
+    },
+    posTerminalLabel: {
+      type: String,
+      default: null,
+    },
     recordedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
     recordedByName: {
-      type: String, // Denormalized
+      type: String,
       required: true,
     },
     notes: {
@@ -79,8 +79,7 @@ const paymentRecordSchema = new mongoose.Schema(
   }
 );
 
-// Compound indexes
 paymentRecordSchema.index({ stationId: 1, date: -1 });
-paymentRecordSchema.index({ dayShiftId: 1, attendantId: 1 });
+paymentRecordSchema.index({ dayShiftId: 1, supervisorId: 1 });
 
 export default mongoose.models.PaymentRecord || mongoose.model('PaymentRecord', paymentRecordSchema);

@@ -97,7 +97,7 @@ export default function AuditorDashboard() {
   const stationName = stations.find((s) => s._id === selectedStation)?.name || '';
 
   const attendantColumns = [
-    { header: 'Supervisor', field: 'attendantName' },
+    { header: 'Supervisor', field: 'supervisorName' },
     { header: 'Total Litres', render: (row) => `${row.totalLiters.toFixed(2)}L` },
     { header: 'Expected', render: (row) => `₦${row.totalExpected.toFixed(2)}` },
     { header: 'Cash', render: (row) => `₦${row.totalCash.toFixed(2)}` },
@@ -205,7 +205,7 @@ export default function AuditorDashboard() {
             </div>
 
             <Card title="Supervisor Summary">
-              <Table columns={attendantColumns} data={report.attendantSummaries} />
+              <Table columns={attendantColumns} data={report.supervisorSummaries} />
             </Card>
           </>
         )}

@@ -16,7 +16,7 @@ const salesEntrySchema = new mongoose.Schema(
       index: true,
     },
     stationName: {
-      type: String, // Denormalized
+      type: String,
       required: true,
     },
     date: {
@@ -24,14 +24,14 @@ const salesEntrySchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    attendantId: {
+    supervisorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
       index: true,
     },
-    attendantName: {
-      type: String, // Denormalized
+    supervisorName: {
+      type: String,
       required: true,
     },
     dispenserId: {
@@ -85,7 +85,7 @@ const salesEntrySchema = new mongoose.Schema(
       required: true,
     },
     enteredByName: {
-      type: String, // Denormalized
+      type: String,
       required: true,
     },
   },
@@ -94,9 +94,8 @@ const salesEntrySchema = new mongoose.Schema(
   }
 );
 
-// Compound indexes for queries
 salesEntrySchema.index({ stationId: 1, date: -1 });
-salesEntrySchema.index({ attendantId: 1, date: -1 });
-salesEntrySchema.index({ dayShiftId: 1, attendantId: 1 });
+salesEntrySchema.index({ supervisorId: 1, date: -1 });
+salesEntrySchema.index({ dayShiftId: 1, supervisorId: 1 });
 
 export default mongoose.models.SalesEntry || mongoose.model('SalesEntry', salesEntrySchema);

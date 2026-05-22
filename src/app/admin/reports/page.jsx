@@ -83,7 +83,7 @@ export default function ReportsPage() {
   }));
 
   const attendantColumns = [
-    { header: 'Attendant', field: 'attendantName' },
+    { header: 'Supervisor', field: 'supervisorName' },
     { 
       header: 'Total Liters', 
       render: (row) => `${row.totalLiters.toFixed(2)}L`
@@ -108,7 +108,7 @@ export default function ReportsPage() {
 
   const salesColumns = [
     { header: 'Time', render: (row) => new Date(row.createdAt).toLocaleTimeString() },
-    { header: 'Attendant', field: 'attendantName' },
+    { header: 'Supervisor', field: 'supervisorName' },
     { header: 'Dispenser', field: 'dispenserName' },
     { header: 'Fuel Type', field: 'fuelType' },
     { 
@@ -206,8 +206,8 @@ export default function ReportsPage() {
             </Card>
           </div>
 
-          <Card title="Attendant Summary" className="mb-6">
-            <Table columns={attendantColumns} data={report.attendantSummaries} />
+          <Card title="Supervisor Summary" className="mb-6">
+            <Table columns={attendantColumns} data={report.supervisorSummaries} />
           </Card>
 
           <Card title="All Sales" className="mb-6">
@@ -241,7 +241,7 @@ export default function ReportsPage() {
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="font-medium">{dispenser.dispenserName} - {dispenser.fuelType}</p>
-                      <p className="text-sm text-gray-600">Attendant: {dispenser.attendantName}</p>
+                      {dispenser.supervisorName && <p className="text-sm text-gray-600">Supervisor: {dispenser.supervisorName}</p>}
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-gray-600">

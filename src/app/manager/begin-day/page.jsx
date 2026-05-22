@@ -5,7 +5,6 @@ import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
 import Input from '@/components/Input';
-import Select from '@/components/Select';
 import Button from '@/components/Button';
 import Loading from '@/components/Loading';
 
@@ -15,10 +14,9 @@ function BeginDayPageContent() {
   const searchParams = useSearchParams();
   const adminStationId = searchParams.get('stationId');
   const activeStationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
-  const [station, setStation] = useState(null);
-  const [supervisors, setSupervisors] = useState([]);
-  const [assignments, setAssignments] = useState([]);
-  const [openPumps, setOpenPumps] = useState([]);
+  const [dispensers, setDispensers] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [initialReadings, setInitialReadings] = useState({});
   const [pricesAtStart, setPricesAtStart] = useState({ PMS: '', AGO: '' });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -30,58 +28,43 @@ function BeginDayPageContent() {
 
   const fetchData = async () => {
     if (!activeStationId) return;
-
     try {
-      const [stationsRes, dispensersRes, usersRes, openingsRes] = await Promise.all([
+      const [stationsRes, dispensersRes] = await Promise.all([
         fetch('/api/stations'),
         fetch(`/api/stations/${activeStationId}/dispensers`),
-        fetch(`/api/users?role=supervisor&stationId=${activeStationId}`),
-        fetch(`/api/pump-openings?stationId=${activeStationId}&date=${new Date().toISOString().split('T')[0]}`),
       ]);
-
       const stationsData = await stationsRes.json();
       const dispensersData = await dispensersRes.json();
-      const usersData = await usersRes.json();
-      const openingsData = await openingsRes.json();
 
-      const currentStation = (stationsData.stations || []).find((s) => s._id === activeStationId) || null;
-      setStation(currentStation);
+      const currentStation = (stationsData.stations || []).find(s => s._id === activeStationId);
       setPricesAtStart({
         PMS: currentStation?.currentPrices?.PMS != null ? String(currentStation.currentPrices.PMS) : '',
         AGO: currentStation?.currentPrices?.AGO != null ? String(currentStation.currentPrices.AGO) : '',
       });
-      const todayOpening = (openingsData.openings || [])[0] || null;
-      const openPumpIds = new Set((todayOpening?.pumps || []).map((pump) => pump._id));
-      setOpenPumps(todayOpening?.pumps || []);
 
-      const activeDispensers = (dispensersData.dispensers || [])
-        .filter((dispenser) => dispenser.isActive)
-        .filter((dispenser) => openPumpIds.size === 0 || openPumpIds.has(dispenser.dispenserId));
-      setSupervisors(usersData.users || []);
-
-      // Initialize assignments
-      setAssignments(
-        activeDispensers.map(d => ({
-          dispenserId: d.dispenserId,
-          dispenserName: d.name,
-          tankId: d.tankId || '',
-          fuelType: d.fuelType,
-          attendantId: '',
-          initialReading: '',
-        }))
-      );
-    } catch (error) {
-      console.error('Error fetching data:', error);
+      const active = (dispensersData.dispensers || []).filter(d => d.isActive);
+      setDispensers(active);
+    } catch {
       setError('Failed to load data');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAssignmentChange = (index, field, value) => {
-    const newAssignments = [...assignments];
-    newAssignments[index][field] = value;
-    setAssignments(newAssignments);
+  const togglePump = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleReadingChange = (id, value) => {
+    setInitialReadings(prev => ({ ...prev, [id]: value }));
   };
 
   const handleSubmit = async (e) => {
@@ -89,16 +72,22 @@ function BeginDayPageContent() {
     setError('');
     setSubmitting(true);
 
-    // Validate all assignments
     if (!pricesAtStart.PMS || !pricesAtStart.AGO) {
       setError('Please enter the PMS and AGO prices for the day.');
       setSubmitting(false);
       return;
     }
 
-    for (const assignment of assignments) {
-      if (!assignment.attendantId || assignment.initialReading === '') {
-        setError('Please fill in all fields for each dispenser');
+    if (selected.size === 0) {
+      setError('Please select at least one pump to activate.');
+      setSubmitting(false);
+      return;
+    }
+
+    const selectedDispensers = dispensers.filter(d => selected.has(d.dispenserId));
+    for (const d of selectedDispensers) {
+      if (initialReadings[d.dispenserId] === undefined || initialReadings[d.dispenserId] === '') {
+        setError(`Please enter the initial reading for ${d.name}`);
         setSubmitting(false);
         return;
       }
@@ -115,24 +104,21 @@ function BeginDayPageContent() {
             PMS: parseFloat(pricesAtStart.PMS),
             AGO: parseFloat(pricesAtStart.AGO),
           },
-          dispensers: assignments.map(a => ({
-            dispenserId: a.dispenserId,
-            fuelType: a.fuelType,
-            attendantId: a.attendantId,
-            initialReading: parseFloat(a.initialReading),
+          dispensers: selectedDispensers.map(d => ({
+            dispenserId: d.dispenserId,
+            fuelType: d.fuelType,
+            initialReading: parseFloat(initialReadings[d.dispenserId]),
           })),
         }),
       });
 
       const data = await res.json();
-
       if (res.ok) {
-        const nextUrl = adminStationId ? `/manager?stationId=${adminStationId}` : '/manager';
-        router.push(nextUrl);
+        router.push(adminStationId ? `/manager?stationId=${adminStationId}` : '/manager');
       } else {
         setError(data.error || 'Failed to begin day');
       }
-    } catch (error) {
+    } catch {
       setError('An error occurred. Please try again.');
     } finally {
       setSubmitting(false);
@@ -159,93 +145,90 @@ function BeginDayPageContent() {
         </div>
       )}
 
-      <Card title="Dispenser Assignments">
-        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Input
-            label="PMS Price For The Day (N/L)"
-            type="number"
-            name="price-pms"
-            value={pricesAtStart.PMS}
-            onChange={(e) => setPricesAtStart((current) => ({ ...current, PMS: e.target.value }))}
-            placeholder="Enter PMS price"
-            step="0.01"
-            min="0.01"
-            required
-          />
-          <Input
-            label="AGO Price For The Day (N/L)"
-            type="number"
-            name="price-ago"
-            value={pricesAtStart.AGO}
-            onChange={(e) => setPricesAtStart((current) => ({ ...current, AGO: e.target.value }))}
-            placeholder="Enter AGO price"
-            step="0.01"
-            min="0.01"
-            required
-          />
-        </div>
-        {openPumps.length > 0 && (
-          <div className="mb-4 rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-900">
-            Assignments are limited to pumps in today&apos;s open-pumps list.
+      <form onSubmit={handleSubmit}>
+        <Card title="Day Prices">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Input
+              label="PMS Price For The Day (N/L)"
+              type="number"
+              name="price-pms"
+              value={pricesAtStart.PMS}
+              onChange={e => setPricesAtStart(p => ({ ...p, PMS: e.target.value }))}
+              placeholder="Enter PMS price"
+              step="0.01"
+              min="0.01"
+              required
+            />
+            <Input
+              label="AGO Price For The Day (N/L)"
+              type="number"
+              name="price-ago"
+              value={pricesAtStart.AGO}
+              onChange={e => setPricesAtStart(p => ({ ...p, AGO: e.target.value }))}
+              placeholder="Enter AGO price"
+              step="0.01"
+              min="0.01"
+              required
+            />
           </div>
-        )}
-        {openPumps.length === 0 && (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            No open-pumps list found for today. All active pumps are shown.
-          </div>
-        )}
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-6">
-            {assignments.map((assignment, index) => (
-              <div key={index} className="p-4 border border-gray-200 rounded-lg">
-                <h3 className="font-medium text-lg mb-4">
-                  {assignment.dispenserName} ({assignment.fuelType})
-                </h3>
-                <p className="text-xs text-gray-500 mb-3">
-                  Tank: {station?.tanks?.find((tank) => tank._id === assignment.tankId)?.label || assignment.tankId || 'Unmapped'}
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Select
-                    label="Supervisor"
-                    name={`attendant-${index}`}
-                    value={assignment.attendantId}
-                    onChange={(e) => handleAssignmentChange(index, 'attendantId', e.target.value)}
-                    options={supervisors.map(supervisor => ({
-                      value: supervisor._id,
-                      label: supervisor.name,
-                    }))}
-                    required
-                  />
-                  <Input
-                    label="Initial Reading (Liters)"
-                    type="number"
-                    name={`reading-${index}`}
-                    value={assignment.initialReading}
-                    onChange={(e) => handleAssignmentChange(index, 'initialReading', e.target.value)}
-                    placeholder="0.00"
-                    step="0.01"
-                    min="0"
-                    required
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+        </Card>
 
-          <div className="mt-6">
-            <Button type="submit" variant="primary" disabled={submitting}>
-              {submitting ? 'Starting Day...' : 'Begin Day'}
-            </Button>
-          </div>
-        </form>
-      </Card>
+        <Card title="Activate Pumps" className="mt-6">
+          <p className="text-sm text-gray-600 mb-4">
+            Tick the pumps to activate for today, then enter each pump&apos;s starting meter reading.
+          </p>
+          {dispensers.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              No active pumps found. Configure pumps via Admin &rarr; Stations &rarr; Map Pumps/Tanks.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {dispensers.map(d => (
+                <div key={d.dispenserId} className="border border-gray-200 rounded-lg p-4">
+                  <label className="flex items-center gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(d.dispenserId)}
+                      onChange={() => togglePump(d.dispenserId)}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                    />
+                    <span className="font-medium text-gray-900">{d.name}</span>
+                    <span className="text-xs text-gray-500 ml-1">{d.fuelType} &bull; {d.dispenserId}</span>
+                  </label>
+                  {selected.has(d.dispenserId) && (
+                    <div className="mt-3 ml-7 max-w-xs">
+                      <Input
+                        label="Initial Meter Reading (Liters)"
+                        type="number"
+                        name={`reading-${d.dispenserId}`}
+                        value={initialReadings[d.dispenserId] ?? ''}
+                        onChange={e => handleReadingChange(d.dispenserId, e.target.value)}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <div className="mt-6">
+          <Button type="submit" variant="primary" disabled={submitting || selected.size === 0}>
+            {submitting ? 'Starting Day...' : 'Begin Day'}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
 
 export default function BeginDayPage() {
   return (
-    <Suspense fallback={<Loading /> }>
+    <Suspense fallback={<Loading />}>
       <BeginDayPageContent />
     </Suspense>
   );

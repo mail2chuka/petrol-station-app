@@ -59,12 +59,12 @@ export async function POST(request) {
       );
     }
 
-    // Get attendant name
-    const attendant = await User.findById(validatedData.attendantId).session(session);
-    if (!attendant) {
+    // Get supervisor name
+    const supervisor = await User.findById(validatedData.supervisorId).session(session);
+    if (!supervisor) {
       await session.abortTransaction();
       return NextResponse.json(
-        { error: 'Attendant not found' },
+        { error: 'Supervisor not found' },
         { status: 404 }
       );
     }
@@ -77,8 +77,8 @@ export async function POST(request) {
       stationId: dayShift.stationId,
       stationName: dayShift.stationName,
       date: dayShift.date,
-      attendantId: validatedData.attendantId,
-      attendantName: attendant.name,
+      supervisorId: validatedData.supervisorId,
+      supervisorName: supervisor.name,
       cashReceived: validatedData.cashReceived,
       posReceived: validatedData.posReceived,
       totalReceived,
@@ -98,8 +98,8 @@ export async function POST(request) {
       stationId: dayShift.stationId,
       stationName: dayShift.stationName,
       details: {
-        attendantId: validatedData.attendantId,
-        attendantName: attendant.name,
+        supervisorId: validatedData.supervisorId,
+        supervisorName: supervisor.name,
         cashReceived: validatedData.cashReceived,
         posReceived: validatedData.posReceived,
         totalReceived,
@@ -112,14 +112,14 @@ export async function POST(request) {
   } catch (error) {
     await session.abortTransaction();
     console.error('Error creating payment record:', error);
-    
+
     if (error.name === 'ZodError') {
       return NextResponse.json(
         { error: 'Validation error', details: error.errors },
         { status: 400 }
       );
     }
-    
+
     return NextResponse.json(
       { error: error.message || 'Failed to create payment record' },
       { status: 500 }
@@ -138,7 +138,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const dayShiftId = searchParams.get('dayShiftId');
     const stationId = searchParams.get('stationId');
-    const attendantId = searchParams.get('attendantId');
+    const supervisorId = searchParams.get('supervisorId');
 
     let query = {};
 
@@ -150,8 +150,8 @@ export async function GET(request) {
       query.stationId = stationId;
     }
 
-    if (attendantId) {
-      query.attendantId = attendantId;
+    if (supervisorId) {
+      query.supervisorId = supervisorId;
     }
 
     // Non-admin users can only see their station

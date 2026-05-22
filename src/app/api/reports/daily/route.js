@@ -64,13 +64,13 @@ export async function GET(request) {
       dayShiftId: dayShift._id,
     }).sort({ createdAt: 1 });
 
-    // Aggregate sales by attendant
-    const salesByAttendant = salesEntries.reduce((acc, sale) => {
-      const key = sale.attendantId.toString();
+    // Aggregate sales by supervisor
+    const salesBySupervisor = salesEntries.reduce((acc, sale) => {
+      const key = sale.supervisorId.toString();
       if (!acc[key]) {
         acc[key] = {
-          attendantId: sale.attendantId,
-          attendantName: sale.attendantName,
+          supervisorId: sale.supervisorId,
+          supervisorName: sale.supervisorName,
           sales: [],
           totalLiters: 0,
           totalExpected: 0,
@@ -84,13 +84,13 @@ export async function GET(request) {
       return acc;
     }, {});
 
-    // Aggregate payments by attendant
-    const paymentsByAttendant = paymentRecords.reduce((acc, payment) => {
-      const key = payment.attendantId.toString();
+    // Aggregate payments by supervisor
+    const paymentsBySupervisor = paymentRecords.reduce((acc, payment) => {
+      const key = payment.supervisorId.toString();
       if (!acc[key]) {
         acc[key] = {
-          attendantId: payment.attendantId,
-          attendantName: payment.attendantName,
+          supervisorId: payment.supervisorId,
+          supervisorName: payment.supervisorName,
           payments: [],
           totalCash: 0,
           totalPos: 0,
@@ -104,22 +104,22 @@ export async function GET(request) {
       return acc;
     }, {});
 
-    // Merge data by attendant
-    const attendantSummaries = {};
-    
-    Object.keys(salesByAttendant).forEach(attendantId => {
-      attendantSummaries[attendantId] = {
-        ...salesByAttendant[attendantId],
-        payments: paymentsByAttendant[attendantId]?.payments || [],
-        totalCash: paymentsByAttendant[attendantId]?.totalCash || 0,
-        totalPos: paymentsByAttendant[attendantId]?.totalPos || 0,
-        totalReceived: paymentsByAttendant[attendantId]?.totalReceived || 0,
+    // Merge data by supervisor
+    const supervisorSummaries = {};
+
+    Object.keys(salesBySupervisor).forEach(supervisorId => {
+      supervisorSummaries[supervisorId] = {
+        ...salesBySupervisor[supervisorId],
+        payments: paymentsBySupervisor[supervisorId]?.payments || [],
+        totalCash: paymentsBySupervisor[supervisorId]?.totalCash || 0,
+        totalPos: paymentsBySupervisor[supervisorId]?.totalPos || 0,
+        totalReceived: paymentsBySupervisor[supervisorId]?.totalReceived || 0,
       };
     });
 
     return NextResponse.json({
       dayShift,
-      attendantSummaries: Object.values(attendantSummaries),
+      supervisorSummaries: Object.values(supervisorSummaries),
       salesEntries,
       paymentRecords,
       summary: {
