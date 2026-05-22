@@ -12,8 +12,7 @@ import { ROLES, DAY_STATUS } from '@/lib/constants';
 
 // POST /api/day-shifts/[id]/end - End the day
 export async function POST(request, { params }) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let session = null;
 
   try {
     const currentUser = await requireAuth();
@@ -30,6 +29,9 @@ export async function POST(request, { params }) {
     const body = await request.json();
     const { finalReadings } = body; // Array of { dispenserId, finalReading }
 
+    session = await mongoose.startSession();
+    session.startTransaction();
+
     const dayShift = await DayShift.findById(params.id).session(session);
     if (!dayShift) {
       await session.abortTransaction();
@@ -41,6 +43,7 @@ export async function POST(request, { params }) {
 
     // Managers can only manage their own station
     if (currentUser.role === ROLES.MANAGER && currentUser.stationId !== dayShift.stationId.toString()) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: 'Access denied to this station' },
         { status: 403 }
@@ -143,7 +146,8 @@ export async function POST(request, { params }) {
 
     await station.save({ session });
 
-    // Create audit log
+    await session.commitTransaction();
+
     await createAuditLog({
       userId: currentUser.id,
       userName: currentUser.name,
@@ -163,9 +167,7 @@ export async function POST(request, { params }) {
       },
     });
 
-    await session.commitTransaction();
-
-    return NextResponse.json({ 
+    return NextResponse.json({
       dayShift,
       summary: {
         totalSales,
@@ -173,16 +175,20 @@ export async function POST(request, { params }) {
         expectedAmount,
         actualAmount,
         discrepancy,
-      }
+      },
     });
   } catch (error) {
-    await session.abortTransaction();
+    if (session) {
+      try { await session.abortTransaction(); } catch {}
+    }
     console.error('Error ending day:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to end day' },
       { status: 500 }
     );
   } finally {
-    session.endSession();
+    if (session) {
+      try { session.endSession(); } catch {}
+    }
   }
 }

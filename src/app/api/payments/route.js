@@ -12,8 +12,7 @@ import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
 // POST /api/payments - Create a payment record
 export async function POST(request) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let session = null;
 
   try {
     const currentUser = await requireAuth();
@@ -29,6 +28,9 @@ export async function POST(request) {
 
     const body = await request.json();
     const validatedData = paymentRecordSchema.parse(body);
+
+    session = await mongoose.startSession();
+    session.startTransaction();
 
     let dayShift = await DayShift.findById(validatedData.dayShiftId).session(session);
     if (!dayShift) {
@@ -87,7 +89,8 @@ export async function POST(request) {
       notes: body.notes || '',
     }], { session, ordered: true });
 
-    // Create audit log
+    await session.commitTransaction();
+
     await createAuditLog({
       userId: currentUser.id,
       userName: currentUser.name,
@@ -106,16 +109,16 @@ export async function POST(request) {
       },
     });
 
-    await session.commitTransaction();
-
     return NextResponse.json({ paymentRecord: paymentRecord[0] }, { status: 201 });
   } catch (error) {
-    await session.abortTransaction();
+    if (session) {
+      try { await session.abortTransaction(); } catch {}
+    }
     console.error('Error creating payment record:', error);
 
     if (error.name === 'ZodError') {
       return NextResponse.json(
-        { error: 'Validation error', details: error.errors },
+        { error: 'Validation error: ' + error.errors.map(e => e.message).join(', ') },
         { status: 400 }
       );
     }
@@ -125,7 +128,9 @@ export async function POST(request) {
       { status: 500 }
     );
   } finally {
-    session.endSession();
+    if (session) {
+      try { session.endSession(); } catch {}
+    }
   }
 }
 

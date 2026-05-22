@@ -12,8 +12,7 @@ import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
 // POST /api/sales - Create a sales entry
 export async function POST(request) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let session = null;
 
   try {
     const currentUser = await requireAuth();
@@ -29,6 +28,9 @@ export async function POST(request) {
 
     const body = await request.json();
     const validatedData = salesEntrySchema.parse(body);
+
+    session = await mongoose.startSession();
+    session.startTransaction();
 
     let dayShift = await DayShift.findById(validatedData.dayShiftId).session(session);
     if (!dayShift) {
@@ -50,7 +52,6 @@ export async function POST(request) {
       );
     }
 
-    // Find the dispenser assignment for this day
     const assignment = dayShift.dispenserAssignments.find(
       d => d.dispenserId === validatedData.dispenserId
     );
@@ -63,8 +64,7 @@ export async function POST(request) {
       );
     }
 
-    // Resolve effective price at transaction time.
-    // Fallback to day-start price for backward compatibility when no approved change exists.
+    // Fallback to day-start price when no approved intra-day change exists.
     const effectiveApprovedPrice = await PriceHistory.findOne({
       stationId: dayShift.stationId,
       fuelType: assignment.fuelType,
@@ -79,7 +79,6 @@ export async function POST(request) {
     const totalAmount = validatedData.cashAmount + validatedData.posAmount;
     const discrepancy = totalAmount - expectedAmount;
 
-    // Create sales entry
     const salesEntry = await SalesEntry.create([{
       dayShiftId: dayShift._id,
       stationId: dayShift.stationId,
@@ -101,7 +100,8 @@ export async function POST(request) {
       enteredByName: currentUser.name,
     }], { session, ordered: true });
 
-    // Create audit log
+    await session.commitTransaction();
+
     await createAuditLog({
       userId: currentUser.id,
       userName: currentUser.name,
@@ -121,16 +121,16 @@ export async function POST(request) {
       },
     });
 
-    await session.commitTransaction();
-
     return NextResponse.json({ salesEntry: salesEntry[0] }, { status: 201 });
   } catch (error) {
-    await session.abortTransaction();
+    if (session) {
+      try { await session.abortTransaction(); } catch {}
+    }
     console.error('Error creating sales entry:', error);
 
     if (error.name === 'ZodError') {
       return NextResponse.json(
-        { error: 'Validation error', details: error.errors },
+        { error: 'Validation error: ' + error.errors.map(e => e.message).join(', ') },
         { status: 400 }
       );
     }
@@ -140,7 +140,9 @@ export async function POST(request) {
       { status: 500 }
     );
   } finally {
-    session.endSession();
+    if (session) {
+      try { session.endSession(); } catch {}
+    }
   }
 }
 

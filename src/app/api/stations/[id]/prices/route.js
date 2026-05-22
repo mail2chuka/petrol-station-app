@@ -68,8 +68,7 @@ export async function GET(request, { params }) {
 
 // POST /api/stations/[id]/prices - Adjust fuel prices
 export async function POST(request, { params }) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let session = null;
 
   try {
     const currentUser = await requireAuth();
@@ -88,6 +87,9 @@ export async function POST(request, { params }) {
     const { id } = await params;
     const body = await request.json();
     const validatedData = priceAdjustmentSchema.parse(body);
+
+    session = await mongoose.startSession();
+    session.startTransaction();
 
     const station = await Station.findById(id).session(session);
     if (!station) {
@@ -250,21 +252,25 @@ export async function POST(request, { params }) {
       }
     });
   } catch (error) {
-    await session.abortTransaction();
+    if (session) {
+      try { await session.abortTransaction(); } catch {}
+    }
     console.error('Error adjusting price:', error);
-    
+
     if (error.name === 'ZodError') {
       return NextResponse.json(
         { error: 'Validation error', details: error.errors },
         { status: 400 }
       );
     }
-    
+
     return NextResponse.json(
       { error: error.message || 'Failed to adjust price' },
       { status: 500 }
     );
   } finally {
-    session.endSession();
+    if (session) {
+      try { session.endSession(); } catch {}
+    }
   }
 }
