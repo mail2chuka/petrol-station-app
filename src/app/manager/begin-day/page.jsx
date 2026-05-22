@@ -15,7 +15,6 @@ function BeginDayPageContent() {
   const searchParams = useSearchParams();
   const adminStationId = searchParams.get('stationId');
   const activeStationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
-  const [dispensers, setDispensers] = useState([]);
   const [station, setStation] = useState(null);
   const [supervisors, setSupervisors] = useState([]);
   const [assignments, setAssignments] = useState([]);
@@ -58,7 +57,6 @@ function BeginDayPageContent() {
       const activeDispensers = (dispensersData.dispensers || [])
         .filter((dispenser) => dispenser.isActive)
         .filter((dispenser) => openPumpIds.size === 0 || openPumpIds.has(dispenser.dispenserId));
-      setDispensers(activeDispensers);
       setSupervisors(usersData.users || []);
 
       // Initialize assignments
@@ -129,7 +127,6 @@ function BeginDayPageContent() {
       const data = await res.json();
 
       if (res.ok) {
-        alert('Day started successfully!');
         const nextUrl = adminStationId ? `/manager?stationId=${adminStationId}` : '/manager';
         router.push(nextUrl);
       } else {

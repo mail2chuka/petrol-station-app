@@ -16,6 +16,7 @@ import SalesEntry from '@/models/SalesEntry';
 import StockMovement from '@/models/StockMovement';
 import MeterReading from '@/models/MeterReading';
 import TankStockEntry from '@/models/TankStockEntry';
+import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
 
@@ -31,7 +32,8 @@ async function buildRows(stationId, from, to) {
   const { start, end } = buildDateRange(from, to);
   const stationObjectId = new mongoose.Types.ObjectId(stationId);
 
-  const [dayShifts, sales, stockIns, readings, tankEntries] = await Promise.all([
+  const [station, dayShifts, sales, stockIns, readings, tankEntries] = await Promise.all([
+    Station.findById(stationId).lean(),
     DayShift.aggregate([
       { $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } },
       { $sort: { date: 1 } },
@@ -43,6 +45,11 @@ async function buildRows(stationId, from, to) {
     MeterReading.aggregate([{ $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } }]),
     TankStockEntry.aggregate([{ $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } }]),
   ]);
+
+  const pumpFuelTypeMap = {};
+  for (const d of (station?.dispensers || [])) {
+    pumpFuelTypeMap[d.dispenserId] = d.fuelType;
+  }
 
   const rows = [];
 
@@ -59,7 +66,7 @@ async function buildRows(stationId, from, to) {
     }, {});
 
     const rttByFuel = dayReadings.reduce((acc, item) => {
-      const fuelType = item.pumpLabel?.toUpperCase().includes('AGO') ? 'AGO' : 'PMS';
+      const fuelType = pumpFuelTypeMap[item.pumpId] || (item.pumpLabel?.toUpperCase().includes('AGO') ? 'AGO' : 'PMS');
       acc[fuelType] = (acc[fuelType] || 0) + item.rtt;
       return acc;
     }, {});

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
 import Table from '@/components/Table';
 import Button from '@/components/Button';
@@ -12,9 +13,12 @@ function todayIso() {
   return new Date().toISOString().split('T')[0];
 }
 
-export default function SummaryBookPage() {
+function SummaryBookContent() {
   const { data: session } = useSession();
-  const stationId = session?.user?.stationId;
+  const searchParams = useSearchParams();
+  const adminStationId = searchParams.get('stationId');
+  const stationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
+
   const [from, setFrom] = useState(todayIso());
   const [to, setTo] = useState(todayIso());
   const [loading, setLoading] = useState(true);
@@ -53,15 +57,17 @@ export default function SummaryBookPage() {
 
   const columns = [
     { header: 'Date', field: 'date' },
+    { header: 'Tank', render: (r) => r.tankLabel || r.tankId || '-' },
+    { header: 'Product', field: 'product' },
     { header: 'Opening Time', render: (r) => (r.openingTime ? new Date(r.openingTime).toLocaleTimeString('en-NG') : '-') },
-    { header: 'Opening Stock', render: (r) => `${r.openingStock.toFixed(2)}L` },
-    { header: 'Stock In', render: (r) => `${r.stockIn.toFixed(2)}L` },
-    { header: 'Overage', render: (r) => `${r.overage.toFixed(2)}L` },
-    { header: 'Sales', render: (r) => `${r.sales.toFixed(2)}L` },
-    { header: 'Price', render: (r) => `₦${r.priceForDay.toFixed(2)}` },
-    { header: 'Total Amount', render: (r) => `₦${r.totalAmount.toFixed(2)}` },
-    { header: 'Shortage', render: (r) => `${r.shortage.toFixed(2)}L` },
-    { header: 'Closing Stock', render: (r) => `${r.closingStock.toFixed(2)}L` },
+    { header: 'Opening Stock', render: (r) => `${(r.openingStock ?? 0).toFixed(2)}L` },
+    { header: 'Stock In', render: (r) => `${(r.stockIn ?? 0).toFixed(2)}L` },
+    { header: 'Sales', render: (r) => `${(r.sales ?? 0).toFixed(2)}L` },
+    { header: 'Price', render: (r) => `₦${(r.priceForDay ?? 0).toFixed(2)}` },
+    { header: 'Total Amount', render: (r) => `₦${(r.totalAmount ?? 0).toFixed(2)}` },
+    { header: 'Shortage', render: (r) => `${(r.shortage ?? 0).toFixed(2)}L` },
+    { header: 'Overage', render: (r) => `${(r.overage ?? 0).toFixed(2)}L` },
+    { header: 'Closing Stock', render: (r) => `${(r.closingStock ?? 0).toFixed(2)}L` },
   ];
 
   return (
@@ -86,8 +92,25 @@ export default function SummaryBookPage() {
       </Card>
 
       <Card title="Summary Rows">
-        <Table columns={columns} data={rows} emptyMessage="No summary rows found for selected dates" />
+        {rows.length === 0 ? (
+          <div className="py-8 text-center text-sm text-gray-500">
+            <p className="font-medium">No data for this date range.</p>
+            <p className="mt-1 text-gray-400">
+              Summary rows appear after the manager ends the day and confirms closing stock for each tank.
+            </p>
+          </div>
+        ) : (
+          <Table columns={columns} data={rows} />
+        )}
       </Card>
     </div>
+  );
+}
+
+export default function SummaryBookPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <SummaryBookContent />
+    </Suspense>
   );
 }

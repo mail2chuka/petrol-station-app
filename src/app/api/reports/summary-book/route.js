@@ -6,6 +6,7 @@ import SalesEntry from '@/models/SalesEntry';
 import StockMovement from '@/models/StockMovement';
 import MeterReading from '@/models/MeterReading';
 import TankStockEntry from '@/models/TankStockEntry';
+import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
 
@@ -40,7 +41,8 @@ export async function GET(request) {
 
     const stationObjectId = new mongoose.Types.ObjectId(stationId);
 
-    const [dayShifts, sales, stockIns, readings, tankEntries] = await Promise.all([
+    const [station, dayShifts, sales, stockIns, readings, tankEntries] = await Promise.all([
+      Station.findById(stationId).lean(),
       DayShift.aggregate([
         { $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } },
         { $sort: { date: 1 } },
@@ -58,6 +60,12 @@ export async function GET(request) {
         { $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } },
       ]),
     ]);
+
+    // Build a reliable pumpId → fuelType map from the station's dispensers
+    const pumpFuelTypeMap = {};
+    for (const d of (station?.dispensers || [])) {
+      pumpFuelTypeMap[d.dispenserId] = d.fuelType;
+    }
 
     const rows = [];
 
@@ -89,7 +97,7 @@ export async function GET(request) {
       );
 
       const rttByFuel = dayReadings.reduce((acc, item) => {
-        const fuelType = item.pumpLabel?.toUpperCase().includes('AGO') ? 'AGO' : 'PMS';
+        const fuelType = pumpFuelTypeMap[item.pumpId] || (item.pumpLabel?.toUpperCase().includes('AGO') ? 'AGO' : 'PMS');
         acc[fuelType] = (acc[fuelType] || 0) + item.rtt;
         return acc;
       }, {});
