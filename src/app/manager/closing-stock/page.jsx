@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
 import Loading from '@/components/Loading';
+import DateCalendar from '@/components/DateCalendar';
 
 function todayStr() {
   return new Date().toISOString().split('T')[0];
@@ -26,6 +27,8 @@ function ClosingStockPageContent() {
   const [date, setDate] = useState(todayStr());
   const [station, setStation] = useState(null);
   const [tankStockEntries, setTankStockEntries] = useState([]);
+  const [markedDates, setMarkedDates] = useState({});
+  const [loadingMonth, setLoadingMonth] = useState(false);
 
   const [stockForms, setStockForms] = useState({});
   const [stockEditing, setStockEditing] = useState({});
@@ -35,8 +38,34 @@ function ClosingStockPageContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const fetchMonthMarks = useCallback(async (monthStr) => {
+    if (!activeStationId) return;
+    setLoadingMonth(true);
+    try {
+      const res = await fetch(`/api/tank-stock?stationId=${activeStationId}&month=${monthStr}`);
+      const data = await res.json();
+      if (!res.ok) return;
+      const hasClosure = {};
+      const hasSomething = {};
+      for (const e of data.entries || []) {
+        const d = new Date(e.date).toISOString().split('T')[0];
+        hasSomething[d] = true;
+        if (e.period === 'closing') hasClosure[d] = true;
+      }
+      const marks = {};
+      for (const d of Object.keys(hasSomething)) {
+        marks[d] = { total: 1, pending: hasClosure[d] ? 0 : 1 };
+      }
+      setMarkedDates(marks);
+    } catch {} finally { setLoadingMonth(false); }
+  }, [activeStationId]);
+
   useEffect(() => {
-    if (activeStationId) fetchData();
+    if (activeStationId) {
+      const m = new Date().toISOString().slice(0, 7);
+      fetchMonthMarks(m);
+      fetchData();
+    }
   }, [activeStationId, date]);
 
   const fetchData = async () => {
@@ -179,45 +208,41 @@ function ClosingStockPageContent() {
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Closing Stock</h1>
         <p className="text-gray-500 mt-1">
-          Record the measured stock remaining in each tank at end of day.
+          Record the measured stock remaining in each tank at end of day. Amber days have no closing entry yet.
         </p>
       </div>
 
-      {/* Date picker */}
-      <Card>
-        <div className="flex flex-col sm:flex-row gap-4 items-end">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-            <input
-              type="date"
-              className="input-modern"
-              value={date}
-              max={todayStr()}
-              onChange={e => setDate(e.target.value)}
-            />
-          </div>
-          <button
-            onClick={fetchData}
-            disabled={loading}
-            className="btn-modern btn-primary px-5 py-3 disabled:opacity-60"
-          >
-            {loading ? 'Loading…' : 'Refresh'}
-          </button>
-        </div>
-        {error && (
-          <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-            {error}
-          </div>
-        )}
-      </Card>
-
-      {loading && (
-        <div className="flex justify-center py-12">
-          <div className="spinner" />
-        </div>
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>
       )}
 
-      {!loading && station && (
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
+        {/* Calendar */}
+        <div className="space-y-2">
+          <DateCalendar
+            value={date}
+            onChange={(d) => setDate(d)}
+            onMonthChange={fetchMonthMarks}
+            markedDates={markedDates}
+            maxDate={todayStr()}
+          />
+          {loadingMonth && <p className="text-xs text-center text-gray-400">Loading month data…</p>}
+        </div>
+
+        {/* Stock content */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-800">
+              {new Date(date + 'T12:00:00').toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </h2>
+            <button onClick={fetchData} disabled={loading} className="text-sm text-ecana-maroon hover:underline font-medium disabled:opacity-50">
+              {loading ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
+
+          {loading && <div className="flex justify-center py-12"><div className="spinner" /></div>}
+
+          {!loading && station && (
         <>
           {allEntered && (
             <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2">
@@ -339,7 +364,9 @@ function ClosingStockPageContent() {
             )}
           </div>
         </>
-      )}
+          )}
+        </div>
+      </div>
     </div>
   );
 }

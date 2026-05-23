@@ -30,7 +30,11 @@ export async function GET(request) {
       query.status = status;
     }
 
-    if (date) {
+    const month = searchParams.get('month'); // YYYY-MM
+    if (month) {
+      const [y, m] = month.split('-').map(Number);
+      query.date = { $gte: new Date(y, m - 1, 1), $lte: new Date(y, m, 0, 23, 59, 59, 999) };
+    } else if (date) {
       const startDate = new Date(date);
       startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(date);
@@ -43,7 +47,7 @@ export async function GET(request) {
 
     const dayShifts = await DayShift.find(query)
       .sort({ date: -1 })
-      .limit(50);
+      .limit(searchParams.get('month') ? 31 : 50);
 
     return NextResponse.json({ dayShifts });
   } catch (error) {

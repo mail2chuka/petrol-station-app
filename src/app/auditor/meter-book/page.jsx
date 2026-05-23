@@ -1,50 +1,81 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Card from '@/components/Card';
 import Select from '@/components/Select';
-import Input from '@/components/Input';
-import Button from '@/components/Button';
-import Loading from '@/components/Loading';
+import DateCalendar from '@/components/DateCalendar';
+
+function todayStr() { return new Date().toISOString().split('T')[0]; }
 
 export default function MeterBookPage() {
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState('');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(todayStr());
   const [readings, setReadings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
+  const [markedDates, setMarkedDates] = useState({});
+  const [loadingMonth, setLoadingMonth] = useState(false);
 
   useEffect(() => {
-    fetchStations();
+    fetch('/api/stations')
+      .then(r => r.json())
+      .then(d => {
+        const list = d.stations || [];
+        setStations(list);
+        if (list.length > 0) setSelectedStation(list[0]._id);
+      })
+      .catch(() => {});
   }, []);
 
-  const fetchStations = async () => {
-    const res = await fetch('/api/stations');
-    const data = await res.json();
-    setStations(data.stations || []);
-    if (data.stations?.length > 0) setSelectedStation(data.stations[0]._id);
-  };
+  const fetchMonthMarks = useCallback(async (monthStr, stId) => {
+    const sid = stId || selectedStation;
+    if (!sid) return;
+    setLoadingMonth(true);
+    try {
+      const res = await fetch(`/api/meter-readings?stationId=${sid}&month=${monthStr}`);
+      const data = await res.json();
+      if (!res.ok) return;
+      const grouped = {};
+      for (const r of data.readings || []) {
+        const d = new Date(r.date).toISOString().split('T')[0];
+        if (!grouped[d]) grouped[d] = { total: 0, pending: 0 };
+        grouped[d].total += 1;
+        if (r.discrepancyFlag) grouped[d].pending += 1;
+      }
+      setMarkedDates(grouped);
+    } catch {} finally { setLoadingMonth(false); }
+  }, [selectedStation]);
 
-  const fetchReadings = async () => {
-    if (!selectedStation || !selectedDate) return;
+  const fetchReadings = useCallback(async (date, stId) => {
+    const sid = stId || selectedStation;
+    if (!sid || !date) return;
     setLoading(true);
     setFetched(false);
     try {
-      const res = await fetch(
-        `/api/meter-readings?stationId=${selectedStation}&date=${selectedDate}`
-      );
+      const res = await fetch(`/api/meter-readings?stationId=${sid}&date=${date}`);
       const data = await res.json();
       setReadings(data.readings || []);
       setFetched(true);
-    } catch (err) {
-      console.error('Error fetching meter readings:', err);
-    } finally {
-      setLoading(false);
-    }
+    } catch {} finally { setLoading(false); }
+  }, [selectedStation]);
+
+  useEffect(() => {
+    if (!selectedStation) return;
+    setMarkedDates({});
+    setReadings([]);
+    setFetched(false);
+    const m = new Date().toISOString().slice(0, 7);
+    fetchMonthMarks(m, selectedStation);
+    fetchReadings(selectedDate, selectedStation);
+  }, [selectedStation]);
+
+  const handleDateChange = (date) => {
+    setSelectedDate(date);
+    fetchReadings(date);
   };
 
-  const stationName = stations.find((s) => s._id === selectedStation)?.name || '';
+  const stationName = stations.find(s => s._id === selectedStation)?.name || '';
 
   return (
     <>
@@ -62,7 +93,7 @@ export default function MeterBookPage() {
           {readings.length > 0 && (
             <button
               onClick={() => window.print()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-all shadow-sm shrink-0"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-all shadow-sm shrink-0 print:hidden"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
@@ -72,101 +103,126 @@ export default function MeterBookPage() {
           )}
         </div>
 
-        <Card title="Filter" className="print:hidden">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Select
-              label="Station"
-              name="station"
-              value={selectedStation}
-              onChange={(e) => setSelectedStation(e.target.value)}
-              options={stations.map((s) => ({ value: s._id, label: s.name }))}
-            />
-            <Input
-              label="Date"
-              type="date"
-              name="date"
+        <div className="print:hidden max-w-xs">
+          <Select
+            label="Station"
+            name="station"
+            value={selectedStation}
+            onChange={e => setSelectedStation(e.target.value)}
+            options={stations.map(s => ({ value: s._id, label: s.name }))}
+          />
+        </div>
+
+        <div className="print:hidden grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
+          {/* Calendar */}
+          <div className="space-y-2">
+            <DateCalendar
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={handleDateChange}
+              onMonthChange={(m) => fetchMonthMarks(m, selectedStation)}
+              markedDates={markedDates}
+              maxDate={todayStr()}
             />
-            <div className="flex items-end">
-              <Button onClick={fetchReadings} disabled={loading} className="w-full">
-                {loading ? 'Loading...' : 'View Readings'}
-              </Button>
-            </div>
+            {loadingMonth && <p className="text-xs text-center text-gray-400">Loading month data…</p>}
           </div>
-        </Card>
 
-        {loading && <Loading />}
-
-        {fetched && !loading && readings.length === 0 && (
-          <p className="text-sm text-slate-500 text-center py-8">No meter readings found for this date.</p>
-        )}
-
-        {readings.length > 0 && !loading && (
-          <Card title={`Meter Readings — ${selectedDate}`}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase tracking-wide">
-                    <th className="pb-2 pr-4">Pump</th>
-                    <th className="pb-2 pr-4">Supervisor</th>
-                    <th className="pb-2 pr-4">Prev. Closing</th>
-                    <th className="pb-2 pr-4">Opening</th>
-                    <th className="pb-2 pr-4">Closing</th>
-                    <th className="pb-2 pr-4">RTT</th>
-                    <th className="pb-2 pr-4">Net Litres</th>
-                    <th className="pb-2">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {readings.map((r) => {
-                    const net = r.closing - r.opening - r.rtt;
-                    return (
-                      <tr key={r._id} className="border-b border-slate-100 last:border-0">
-                        <td className="py-2.5 pr-4 font-medium">{r.pumpLabel || r.pumpId}</td>
-                        <td className="py-2.5 pr-4 text-slate-600">{r.supervisorName}</td>
-                        <td className="py-2.5 pr-4 text-slate-500">{r.previousDayClosing ?? '—'}</td>
-                        <td className={`py-2.5 pr-4 font-semibold ${r.discrepancyFlag ? 'text-amber-700' : ''}`}>{r.opening}</td>
-                        <td className="py-2.5 pr-4">{r.closing}</td>
-                        <td className="py-2.5 pr-4">{r.rtt}</td>
-                        <td className="py-2.5 pr-4 font-semibold">{net.toFixed(2)}L</td>
-                        <td className="py-2.5">
-                          {r.discrepancyFlag ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
-                              ⚠ Discrepancy
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                              OK
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {/* Content */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-800">
+                {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </h2>
+              <button onClick={() => fetchReadings(selectedDate)} disabled={loading} className="text-sm text-ecana-maroon hover:underline font-medium disabled:opacity-50">
+                {loading ? 'Loading…' : 'Refresh'}
+              </button>
             </div>
 
-            {/* Discrepancy detail section */}
-            {readings.some((r) => r.discrepancyFlag) && (
-              <div className="mt-6 pt-4 border-t border-slate-200 space-y-3">
-                <p className="text-sm font-semibold text-amber-700">Discrepancy Details</p>
-                {readings.filter((r) => r.discrepancyFlag).map((r) => (
-                  <div key={r._id} className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-sm">
-                    <p className="font-medium text-amber-800">{r.pumpLabel || r.pumpId}</p>
-                    <p className="text-amber-700 text-xs mt-0.5">
-                      Previous closing: {r.previousDayClosing} → Today&apos;s opening: {r.opening} (diff: {(r.opening - r.previousDayClosing).toFixed(2)})
-                    </p>
-                    {r.discrepancyComment && (
-                      <p className="text-amber-700 text-xs mt-1">Comment: &ldquo;{r.discrepancyComment}&rdquo;</p>
-                    )}
-                  </div>
-                ))}
+            {loading && <div className="flex justify-center py-12"><div className="spinner" /></div>}
+
+            {fetched && !loading && readings.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                <svg className="w-10 h-10 mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                <p className="text-base font-medium">No meter readings for this date</p>
               </div>
             )}
-          </Card>
-        )}
+
+            {!fetched && !loading && (
+              <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                <svg className="w-10 h-10 mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                <p className="text-base font-medium">Select a marked day to view readings</p>
+              </div>
+            )}
+
+            {readings.length > 0 && !loading && (
+              <Card title={`Meter Readings — ${selectedDate}`}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase tracking-wide">
+                        <th className="pb-2 pr-4">Pump</th>
+                        <th className="pb-2 pr-4">Supervisor</th>
+                        <th className="pb-2 pr-4">Prev. Closing</th>
+                        <th className="pb-2 pr-4">Opening</th>
+                        <th className="pb-2 pr-4">Closing</th>
+                        <th className="pb-2 pr-4">RTT</th>
+                        <th className="pb-2 pr-4">Net Litres</th>
+                        <th className="pb-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {readings.map(r => {
+                        const net = r.closing - r.opening - r.rtt;
+                        return (
+                          <tr key={r._id} className="border-b border-slate-100 last:border-0">
+                            <td className="py-2.5 pr-4 font-medium">{r.pumpLabel || r.pumpId}</td>
+                            <td className="py-2.5 pr-4 text-slate-600">{r.supervisorName}</td>
+                            <td className="py-2.5 pr-4 text-slate-500">{r.previousDayClosing ?? '—'}</td>
+                            <td className={`py-2.5 pr-4 font-semibold ${r.discrepancyFlag ? 'text-amber-700' : ''}`}>{r.opening}</td>
+                            <td className="py-2.5 pr-4">{r.closing}</td>
+                            <td className="py-2.5 pr-4">{r.rtt}</td>
+                            <td className="py-2.5 pr-4 font-semibold">{net.toFixed(2)}L</td>
+                            <td className="py-2.5">
+                              {r.discrepancyFlag ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
+                                  ⚠ Discrepancy
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                  OK
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {readings.some(r => r.discrepancyFlag) && (
+                  <div className="mt-6 pt-4 border-t border-slate-200 space-y-3">
+                    <p className="text-sm font-semibold text-amber-700">Discrepancy Details</p>
+                    {readings.filter(r => r.discrepancyFlag).map(r => (
+                      <div key={r._id} className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-sm">
+                        <p className="font-medium text-amber-800">{r.pumpLabel || r.pumpId}</p>
+                        <p className="text-amber-700 text-xs mt-0.5">
+                          Previous closing: {r.previousDayClosing} → Today&apos;s opening: {r.opening} (diff: {(r.opening - r.previousDayClosing).toFixed(2)})
+                        </p>
+                        {r.discrepancyComment && (
+                          <p className="text-amber-700 text-xs mt-1">Comment: &ldquo;{r.discrepancyComment}&rdquo;</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+          </div>
+        </div>
       </div>
 
       <style>{`
