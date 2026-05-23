@@ -326,8 +326,10 @@ function AccountantEntriesContent() {
               <h2 className="text-lg font-semibold text-gray-800">{selectedLabel}</h2>
               {hasAnythingForDate && (
                 <p className="text-sm text-gray-500 mt-0.5">
-                  {records.length} collection{records.length !== 1 ? 's' : ''}
-                  {depositsForDate.length > 0 && ` · ${depositsForDate.length} bank deposit${depositsForDate.length !== 1 ? 's' : ''}`}
+                  {[
+                    records.length > 0 && `${records.length} collection${records.length !== 1 ? 's' : ''}`,
+                    depositsForDate.length > 0 && `${depositsForDate.length} bank deposit${depositsForDate.length !== 1 ? 's' : ''}`,
+                  ].filter(Boolean).join(' · ')}
                 </p>
               )}
             </div>
