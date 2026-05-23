@@ -267,9 +267,17 @@ function AccountantEntriesContent() {
   const approved = records.filter(r => r.managerReviewStatus === 'approved').length;
   const queried  = records.filter(r => r.managerReviewStatus === 'queried').length;
 
+  // Filter deposits to only those matching the selected date
+  const depositsForDate = deposits.filter(dep => {
+    const d = new Date(dep.date).toISOString().split('T')[0];
+    return d === selectedDate;
+  });
+
   const selectedLabel = selectedDate
     ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
     : '';
+
+  const hasAnythingForDate = records.length > 0 || depositsForDate.length > 0;
 
   if (!stationId) {
     return (
@@ -284,85 +292,9 @@ function AccountantEntriesContent() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Accountant Entries</h1>
         <p className="text-sm text-gray-600 mt-1">
-          Review payment records — approve confirmed collections or query discrepancies.
+          Select a date on the calendar to review payment collections and bank deposits.
           Amber dots mark days with pending entries.
         </p>
-      </div>
-
-      {/* Cash Deposits section */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-800">
-            Cash Deposits
-            {deposits.filter(d => d.status === 'pending').length > 0 && (
-              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                {deposits.filter(d => d.status === 'pending').length} pending
-              </span>
-            )}
-          </h2>
-          <button
-            onClick={fetchDeposits}
-            disabled={depositsLoading}
-            className="text-sm text-ecana-maroon hover:underline font-medium disabled:opacity-50"
-          >
-            {depositsLoading ? 'Loading…' : 'Refresh'}
-          </button>
-        </div>
-
-        {depositsError && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{depositsError}</div>
-        )}
-
-        {depositsLoading && (
-          <div className="flex justify-center py-6"><div className="spinner" /></div>
-        )}
-
-        {!depositsLoading && deposits.length === 0 && !depositsError && (
-          <p className="text-sm text-gray-400 py-3">No cash deposits recorded for this station.</p>
-        )}
-
-        {!depositsLoading && deposits.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {deposits.map(dep => {
-              const dStyle = DEPOSIT_STATUS_STYLES[dep.status] || DEPOSIT_STATUS_STYLES.pending;
-              const depDate = new Date(dep.date).toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-              return (
-                <div key={dep._id} className="card-modern p-4">
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div>
-                      <p className="font-bold text-gray-800">₦{fmt(dep.amount)}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{depDate}</p>
-                    </div>
-                    <span className={`shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${dStyle.pill}`}>
-                      {dStyle.label}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-600 mb-0.5">{dep.bankName}{dep.bankBranch ? ` — ${dep.bankBranch}` : ''}</p>
-                  <p className="text-xs text-gray-500 mb-2">By {dep.initiatedByAccountantName}</p>
-                  {dep.adminNote && (
-                    <p className="text-xs text-gray-500 italic border-l-2 border-gray-200 pl-2 mb-2">{dep.adminNote}</p>
-                  )}
-                  {dep.status === 'pending' && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => openDepositReview(dep, 'approve')}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 font-medium transition-colors"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => openDepositReview(dep, 'reject')}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 font-medium transition-colors"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
@@ -378,6 +310,12 @@ function AccountantEntriesContent() {
           {loadingMonth && (
             <p className="text-xs text-center text-gray-400">Loading month data…</p>
           )}
+          {depositsLoading && (
+            <p className="text-xs text-center text-gray-400">Loading deposits…</p>
+          )}
+          {depositsError && (
+            <p className="text-xs text-center text-red-500">{depositsError}</p>
+          )}
         </div>
 
         {/* Right: records for selected date */}
@@ -386,18 +324,19 @@ function AccountantEntriesContent() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-gray-800">{selectedLabel}</h2>
-              {records.length > 0 && (
+              {hasAnythingForDate && (
                 <p className="text-sm text-gray-500 mt-0.5">
-                  {records.length} record{records.length !== 1 ? 's' : ''} found
+                  {records.length} collection{records.length !== 1 ? 's' : ''}
+                  {depositsForDate.length > 0 && ` · ${depositsForDate.length} bank deposit${depositsForDate.length !== 1 ? 's' : ''}`}
                 </p>
               )}
             </div>
             <button
-              onClick={() => fetchRecords(selectedDate)}
-              disabled={loading}
+              onClick={() => { fetchRecords(selectedDate); fetchDeposits(); }}
+              disabled={loading || depositsLoading}
               className="text-sm text-ecana-maroon hover:underline font-medium disabled:opacity-50"
             >
-              {loading ? 'Loading…' : 'Refresh'}
+              {loading || depositsLoading ? 'Loading…' : 'Refresh'}
             </button>
           </div>
 
@@ -411,8 +350,11 @@ function AccountantEntriesContent() {
             <div className="flex justify-center py-12"><div className="spinner" /></div>
           )}
 
+          {/* Payment Collections */}
           {!loading && records.length > 0 && (
             <>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Payment Collections</p>
+
               {/* Summary tiles */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="card-modern p-3 text-center">
@@ -491,13 +433,67 @@ function AccountantEntriesContent() {
             </>
           )}
 
-          {!loading && records.length === 0 && !error && (
+          {/* Bank Deposits for selected date */}
+          {!depositsLoading && depositsForDate.length > 0 && (
+            <>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Bank Deposits</p>
+              <div className="space-y-3">
+                {depositsForDate.map(dep => {
+                  const dStyle = DEPOSIT_STATUS_STYLES[dep.status] || DEPOSIT_STATUS_STYLES.pending;
+                  return (
+                    <div key={dep._id} className="card-modern p-4">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div>
+                          <p className="font-bold text-gray-800">₦{fmt(dep.amount)}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">By {dep.initiatedByAccountantName}</p>
+                        </div>
+                        <span className={`shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${dStyle.pill}`}>
+                          {dStyle.label}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 mb-0.5">
+                        {dep.bankName}{dep.bankBranch ? ` — ${dep.bankBranch}` : ''}
+                      </p>
+                      {dep.accountNumber && (
+                        <p className="text-xs text-gray-500 mb-2">Acct: {dep.accountNumber}</p>
+                      )}
+                      {dep.adminNote && (
+                        <p className="text-xs text-gray-500 italic border-l-2 border-gray-200 pl-2 mb-2">
+                          {dep.adminNote}
+                          {dep.approvedByAdminName ? ` — ${dep.approvedByAdminName}` : ''}
+                        </p>
+                      )}
+                      {dep.status === 'pending' && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => openDepositReview(dep, 'approve')}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 font-medium transition-colors"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => openDepositReview(dep, 'reject')}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 font-medium transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Empty state — only when both sections have nothing */}
+          {!loading && !depositsLoading && !hasAnythingForDate && !error && (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <svg className="w-10 h-10 mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                   d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
-              <p className="text-base font-medium">No payment records for this date</p>
+              <p className="text-base font-medium">No entries for this date</p>
               <p className="text-sm mt-1">Select a marked day on the calendar to view records</p>
             </div>
           )}
