@@ -29,6 +29,12 @@ const STATUS_STYLES = {
   queried:  { pill: 'bg-red-100 text-red-700',      label: 'Queried' },
 };
 
+const DEPOSIT_STATUS_STYLES = {
+  pending:  { pill: 'bg-amber-100 text-amber-700',  label: 'Pending' },
+  approved: { pill: 'bg-green-100 text-green-700',  label: 'Approved' },
+  rejected: { pill: 'bg-red-100 text-red-700',      label: 'Rejected' },
+};
+
 function AccountantEntriesContent() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
@@ -44,7 +50,18 @@ function AccountantEntriesContent() {
   const [markedDates, setMarkedDates] = useState({});
   const [loadingMonth, setLoadingMonth] = useState(false);
 
-  // Review modal
+  // Cash deposits
+  const [deposits, setDeposits] = useState([]);
+  const [depositsLoading, setDepositsLoading] = useState(false);
+  const [depositsError, setDepositsError] = useState('');
+
+  // Deposit review modal
+  const [depositTarget, setDepositTarget] = useState(null);
+  const [depositNote, setDepositNote] = useState('');
+  const [depositReviewing, setDepositReviewing] = useState(false);
+  const [depositReviewError, setDepositReviewError] = useState('');
+
+  // Payment review modal
   const [reviewTarget, setReviewTarget] = useState(null);
   const [reviewNote, setReviewNote] = useState('');
   const [reviewing, setReviewing] = useState(false);
@@ -75,6 +92,26 @@ function AccountantEntriesContent() {
     }
   }, [stationId]);
 
+  // Fetch cash deposits for this station
+  const fetchDeposits = useCallback(async () => {
+    if (!stationId) return;
+    setDepositsLoading(true);
+    setDepositsError('');
+    try {
+      const res = await fetch(`/api/cash-deposits?stationId=${stationId}&limit=100`);
+      const data = await res.json();
+      if (!res.ok) {
+        setDepositsError(data.error || 'Failed to load cash deposits');
+      } else {
+        setDeposits(data.cashDeposits || []);
+      }
+    } catch {
+      setDepositsError('Failed to load cash deposits');
+    } finally {
+      setDepositsLoading(false);
+    }
+  }, [stationId]);
+
   // Fetch day records
   const fetchRecords = useCallback(async (date) => {
     if (!stationId || !date) return;
@@ -95,12 +132,13 @@ function AccountantEntriesContent() {
     }
   }, [stationId]);
 
-  // On mount: load current month marks + today's records
+  // On mount: load current month marks + today's records + deposits
   useEffect(() => {
     if (!stationId) return;
     fetchMonthMarks(currentMonthStr());
     fetchRecords(todayStr());
-  }, [stationId, fetchMonthMarks, fetchRecords]);
+    fetchDeposits();
+  }, [stationId, fetchMonthMarks, fetchRecords, fetchDeposits]);
 
   // When user picks a date on the calendar
   const handleDateChange = (date) => {
@@ -113,7 +151,50 @@ function AccountantEntriesContent() {
     fetchMonthMarks(monthStr);
   };
 
-  // Review actions
+  // Deposit review actions
+  function openDepositReview(deposit, action) {
+    setDepositTarget({ id: deposit._id, action, amount: deposit.amount, bankName: deposit.bankName });
+    setDepositNote('');
+    setDepositReviewError('');
+  }
+
+  function closeDepositReview() {
+    setDepositTarget(null);
+    setDepositNote('');
+    setDepositReviewError('');
+  }
+
+  async function submitDepositReview() {
+    if (!depositNote.trim()) {
+      setDepositReviewError('Please enter a note before submitting.');
+      return;
+    }
+    setDepositReviewing(true);
+    setDepositReviewError('');
+    try {
+      const res = await fetch(`/api/cash-deposits/${depositTarget.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: depositTarget.action === 'approve' ? 'approved' : 'rejected',
+          adminNote: depositNote.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDepositReviewError(data.error || 'Failed to submit review');
+        return;
+      }
+      closeDepositReview();
+      fetchDeposits();
+    } catch {
+      setDepositReviewError('Network error. Please try again.');
+    } finally {
+      setDepositReviewing(false);
+    }
+  }
+
+  // Payment review actions
   function openReview(id, action) {
     setReviewTarget({ id, action });
     setReviewNote('');
@@ -180,6 +261,82 @@ function AccountantEntriesContent() {
           Review payment records — approve confirmed collections or query discrepancies.
           Amber dots mark days with pending entries.
         </p>
+      </div>
+
+      {/* Cash Deposits section */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-800">
+            Cash Deposits
+            {deposits.filter(d => d.status === 'pending').length > 0 && (
+              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                {deposits.filter(d => d.status === 'pending').length} pending
+              </span>
+            )}
+          </h2>
+          <button
+            onClick={fetchDeposits}
+            disabled={depositsLoading}
+            className="text-sm text-ecana-maroon hover:underline font-medium disabled:opacity-50"
+          >
+            {depositsLoading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
+
+        {depositsError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{depositsError}</div>
+        )}
+
+        {depositsLoading && (
+          <div className="flex justify-center py-6"><div className="spinner" /></div>
+        )}
+
+        {!depositsLoading && deposits.length === 0 && !depositsError && (
+          <p className="text-sm text-gray-400 py-3">No cash deposits recorded for this station.</p>
+        )}
+
+        {!depositsLoading && deposits.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {deposits.map(dep => {
+              const dStyle = DEPOSIT_STATUS_STYLES[dep.status] || DEPOSIT_STATUS_STYLES.pending;
+              const depDate = new Date(dep.date).toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+              return (
+                <div key={dep._id} className="card-modern p-4">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div>
+                      <p className="font-bold text-gray-800">₦{fmt(dep.amount)}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{depDate}</p>
+                    </div>
+                    <span className={`shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${dStyle.pill}`}>
+                      {dStyle.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-0.5">{dep.bankName}{dep.bankBranch ? ` — ${dep.bankBranch}` : ''}</p>
+                  <p className="text-xs text-gray-500 mb-2">By {dep.initiatedByAccountantName}</p>
+                  {dep.adminNote && (
+                    <p className="text-xs text-gray-500 italic border-l-2 border-gray-200 pl-2 mb-2">{dep.adminNote}</p>
+                  )}
+                  {dep.status === 'pending' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openDepositReview(dep, 'approve')}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 font-medium transition-colors"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => openDepositReview(dep, 'reject')}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 font-medium transition-colors"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
@@ -321,7 +478,55 @@ function AccountantEntriesContent() {
         </div>
       </div>
 
-      {/* Review modal */}
+      {/* Deposit review modal */}
+      {depositTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close"
+            onClick={closeDepositReview}
+          />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-gray-900">
+              {depositTarget.action === 'approve' ? 'Approve Deposit' : 'Reject Deposit'}
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">
+              ₦{fmt(depositTarget.amount)} — {depositTarget.bankName}
+            </p>
+            <p className="mt-1 text-sm text-gray-500">
+              {depositTarget.action === 'approve'
+                ? 'Confirm this bank deposit is verified.'
+                : 'Explain why this deposit is being rejected.'}
+            </p>
+            <textarea
+              className="mt-4 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-gray-900 placeholder-slate-400 focus:border-ecana-maroon focus:outline-none focus:ring-4 focus:ring-ecana-maroon/10 resize-none"
+              rows={4}
+              placeholder={
+                depositTarget.action === 'approve'
+                  ? 'e.g. Deposit confirmed with bank statement.'
+                  : 'e.g. Amount does not match teller receipt — please resubmit.'
+              }
+              value={depositNote}
+              onChange={e => { setDepositNote(e.target.value); setDepositReviewError(''); }}
+              autoFocus
+            />
+            {depositReviewError && <p className="mt-2 text-sm text-red-600">{depositReviewError}</p>}
+            <div className="mt-4 flex gap-2">
+              <Button variant="secondary" onClick={closeDepositReview} disabled={depositReviewing}>Cancel</Button>
+              <Button
+                variant={depositTarget.action === 'approve' ? 'success' : 'danger'}
+                onClick={submitDepositReview}
+                isLoading={depositReviewing}
+              >
+                {depositTarget.action === 'approve' ? 'Approve' : 'Reject'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment review modal */}
       {reviewTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <button
