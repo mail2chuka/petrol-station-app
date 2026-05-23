@@ -17,9 +17,9 @@ export async function PATCH(request, { params }) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    if (currentUser.role !== ROLES.ADMIN) {
+    if (![ROLES.ADMIN, ROLES.MANAGER].includes(currentUser.role)) {
       return NextResponse.json(
-        { error: 'Only admins can approve or reject deposits' },
+        { error: 'Only manager/admin can approve or reject deposits' },
         { status: 403 }
       );
     }
@@ -30,6 +30,10 @@ export async function PATCH(request, { params }) {
     const cashDeposit = await CashDeposit.findById(id);
     if (!cashDeposit) {
       return NextResponse.json({ error: 'Cash deposit not found' }, { status: 404 });
+    }
+
+    if (currentUser.role === ROLES.MANAGER && currentUser.stationId !== cashDeposit.stationId.toString()) {
+      return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
     }
 
     cashDeposit.status = payload.status;

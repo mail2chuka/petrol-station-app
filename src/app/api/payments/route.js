@@ -145,6 +145,7 @@ export async function GET(request) {
     const stationId = searchParams.get('stationId');
     const supervisorId = searchParams.get('supervisorId');
     const date = searchParams.get('date');
+    const limit = Math.min(Number(searchParams.get('limit') || 500), 1000);
 
     let query = {};
 
@@ -152,7 +153,13 @@ export async function GET(request) {
     if (stationId) query.stationId = stationId;
     if (supervisorId) query.supervisorId = supervisorId;
 
-    if (date) {
+    const month = searchParams.get('month'); // YYYY-MM
+    if (month) {
+      const [y, m] = month.split('-').map(Number);
+      const start = new Date(y, m - 1, 1);
+      const end = new Date(y, m, 0, 23, 59, 59, 999);
+      query.date = { $gte: start, $lte: end };
+    } else if (date) {
       const start = new Date(date);
       start.setHours(0, 0, 0, 0);
       const end = new Date(date);
@@ -168,7 +175,7 @@ export async function GET(request) {
 
     const paymentRecords = await PaymentRecord.find(query)
       .sort({ createdAt: -1 })
-      .limit(100);
+      .limit(limit);
 
     return NextResponse.json({ paymentRecords });
   } catch (error) {

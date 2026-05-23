@@ -10,6 +10,12 @@ import Select from '@/components/Select';
 import Button from '@/components/Button';
 import Loading from '@/components/Loading';
 
+function fmtAmount(n) {
+  return typeof n === 'number'
+    ? n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '—';
+}
+
 export default function AdminDashboard() {
   const { data: session } = useSession();
   const [stats, setStats] = useState(null);
@@ -21,9 +27,27 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Pending deposits
+  const [pendingDeposits, setPendingDeposits] = useState([]);
+  const [depositReviewTarget, setDepositReviewTarget] = useState(null);
+  const [depositNote, setDepositNote] = useState('');
+  const [depositReviewing, setDepositReviewing] = useState(false);
+  const [depositReviewError, setDepositReviewError] = useState('');
+
   useEffect(() => {
     fetchStats();
+    fetchPendingDeposits();
   }, []);
+
+  const fetchPendingDeposits = async () => {
+    try {
+      const res = await fetch('/api/cash-deposits?status=pending&limit=50');
+      const data = await res.json();
+      if (res.ok) setPendingDeposits(data.cashDeposits || []);
+    } catch {
+      // silent
+    }
+  };
 
   const fetchStats = async () => {
     try {
@@ -52,6 +76,48 @@ export default function AdminDashboard() {
       setLoading(false);
     }
   };
+
+  function openDepositReview(deposit, action) {
+    setDepositReviewTarget({ deposit, action });
+    setDepositNote('');
+    setDepositReviewError('');
+  }
+
+  function closeDepositReview() {
+    setDepositReviewTarget(null);
+    setDepositNote('');
+    setDepositReviewError('');
+  }
+
+  async function submitDepositReview() {
+    if (!depositNote.trim()) {
+      setDepositReviewError('A note is required.');
+      return;
+    }
+    setDepositReviewing(true);
+    setDepositReviewError('');
+    try {
+      const res = await fetch(`/api/cash-deposits/${depositReviewTarget.deposit._id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: depositReviewTarget.action === 'approve' ? 'approved' : 'rejected',
+          adminNote: depositNote.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDepositReviewError(data.error || 'Failed to update deposit');
+        return;
+      }
+      closeDepositReview();
+      fetchPendingDeposits();
+    } catch {
+      setDepositReviewError('Network error. Please try again.');
+    } finally {
+      setDepositReviewing(false);
+    }
+  }
 
   const stationOptions = stations
     .filter((s) => s.isActive !== false)
@@ -289,6 +355,57 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
+      {/* Pending Cash Deposits */}
+      {pendingDeposits.length > 0 && (
+        <Card
+          title={
+            <span className="flex items-center gap-2">
+              Pending Cash Deposits
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-bold">
+                {pendingDeposits.length}
+              </span>
+            </span>
+          }
+          className="border-2 border-amber-200 shadow-md"
+        >
+          <div className="space-y-3">
+            {pendingDeposits.map(dep => (
+              <div key={dep._id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-amber-50 rounded-xl border border-amber-100">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-gray-800">{dep.stationName}</p>
+                    <span className="text-xs text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200">
+                      {new Date(dep.date).toLocaleDateString('en-NG')}
+                    </span>
+                  </div>
+                  <p className="text-xl font-bold text-gray-900 mt-1">₦{fmtAmount(dep.amount)}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {dep.bankName}{dep.bankBranch ? ` · ${dep.bankBranch}` : ''} · Acct: {dep.accountNumber}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Submitted by {dep.initiatedByAccountantName} · {new Date(dep.createdAt).toLocaleString('en-NG')}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => openDepositReview(dep, 'approve')}
+                    className="px-3 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 text-sm font-medium transition-colors"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => openDepositReview(dep, 'reject')}
+                    className="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 text-sm font-medium transition-colors"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card
           title="Recent Stations"
@@ -344,6 +461,58 @@ export default function AdminDashboard() {
           />
         </Card>
       </div>
+
+      {/* Deposit review modal */}
+      {depositReviewTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close"
+            onClick={closeDepositReview}
+          />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-gray-900">
+              {depositReviewTarget.action === 'approve' ? 'Approve Deposit' : 'Reject Deposit'}
+            </h2>
+            <div className="mt-2 p-3 bg-gray-50 rounded-xl text-sm text-gray-700 space-y-1">
+              <p><span className="font-medium">Station:</span> {depositReviewTarget.deposit.stationName}</p>
+              <p><span className="font-medium">Amount:</span> ₦{fmtAmount(depositReviewTarget.deposit.amount)}</p>
+              <p><span className="font-medium">Bank:</span> {depositReviewTarget.deposit.bankName}</p>
+            </div>
+            <p className="mt-3 text-sm text-gray-500">
+              {depositReviewTarget.action === 'approve'
+                ? 'Confirm this bank deposit has been verified.'
+                : 'Explain why this deposit is being rejected.'}
+            </p>
+            <textarea
+              className="mt-3 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-gray-900 placeholder-slate-400 focus:border-ecana-maroon focus:outline-none focus:ring-4 focus:ring-ecana-maroon/10 resize-none"
+              rows={3}
+              placeholder={
+                depositReviewTarget.action === 'approve'
+                  ? 'e.g. Deposit confirmed with bank statement.'
+                  : 'e.g. Amount does not match bank teller receipt.'
+              }
+              value={depositNote}
+              onChange={e => { setDepositNote(e.target.value); setDepositReviewError(''); }}
+              autoFocus
+            />
+            {depositReviewError && <p className="mt-2 text-sm text-red-600">{depositReviewError}</p>}
+            <div className="mt-4 flex gap-2">
+              <Button variant="secondary" onClick={closeDepositReview} disabled={depositReviewing}>
+                Cancel
+              </Button>
+              <Button
+                variant={depositReviewTarget.action === 'approve' ? 'success' : 'danger'}
+                onClick={submitDepositReview}
+                isLoading={depositReviewing}
+              >
+                {depositReviewTarget.action === 'approve' ? 'Approve' : 'Reject'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

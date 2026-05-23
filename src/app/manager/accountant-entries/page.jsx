@@ -1,14 +1,20 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
 import Button from '@/components/Button';
 import Loading from '@/components/Loading';
+import DateCalendar from '@/components/DateCalendar';
 
 function todayStr() {
   return new Date().toISOString().split('T')[0];
+}
+
+function currentMonthStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function fmt(n) {
@@ -18,9 +24,9 @@ function fmt(n) {
 }
 
 const STATUS_STYLES = {
-  pending:  { pill: 'bg-gray-100 text-gray-600',   label: 'Pending' },
+  pending:  { pill: 'bg-amber-100 text-amber-700',  label: 'Pending' },
   approved: { pill: 'bg-green-100 text-green-700',  label: 'Approved' },
-  queried:  { pill: 'bg-amber-100 text-amber-700',  label: 'Queried' },
+  queried:  { pill: 'bg-red-100 text-red-700',      label: 'Queried' },
 };
 
 function AccountantEntriesContent() {
@@ -29,21 +35,49 @@ function AccountantEntriesContent() {
   const adminStationId = searchParams.get('stationId');
   const stationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
 
-  const [date, setDate] = useState(todayStr());
+  const [selectedDate, setSelectedDate] = useState(todayStr());
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Calendar month marks: { [YYYY-MM-DD]: { pending, total } }
+  const [markedDates, setMarkedDates] = useState({});
+  const [loadingMonth, setLoadingMonth] = useState(false);
+
+  // Review modal
   const [reviewTarget, setReviewTarget] = useState(null);
   const [reviewNote, setReviewNote] = useState('');
   const [reviewing, setReviewing] = useState(false);
   const [reviewError, setReviewError] = useState('');
 
-  useEffect(() => {
-    if (stationId) fetchRecords();
-  }, [stationId, date]);
+  // Fetch month-level data for calendar marks
+  const fetchMonthMarks = useCallback(async (monthStr) => {
+    if (!stationId) return;
+    setLoadingMonth(true);
+    try {
+      const res = await fetch(`/api/payments?stationId=${stationId}&month=${monthStr}`);
+      const data = await res.json();
+      if (!res.ok) return;
+      const grouped = {};
+      for (const rec of data.paymentRecords || []) {
+        const d = new Date(rec.date).toISOString().split('T')[0];
+        if (!grouped[d]) grouped[d] = { pending: 0, total: 0 };
+        grouped[d].total += 1;
+        if ((rec.managerReviewStatus || 'pending') === 'pending') {
+          grouped[d].pending += 1;
+        }
+      }
+      setMarkedDates(prev => ({ ...prev, ...grouped }));
+    } catch {
+      // silent — calendar marks are decorative
+    } finally {
+      setLoadingMonth(false);
+    }
+  }, [stationId]);
 
-  async function fetchRecords() {
+  // Fetch day records
+  const fetchRecords = useCallback(async (date) => {
+    if (!stationId || !date) return;
     setLoading(true);
     setError('');
     try {
@@ -59,8 +93,27 @@ function AccountantEntriesContent() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [stationId]);
 
+  // On mount: load current month marks + today's records
+  useEffect(() => {
+    if (!stationId) return;
+    fetchMonthMarks(currentMonthStr());
+    fetchRecords(todayStr());
+  }, [stationId, fetchMonthMarks, fetchRecords]);
+
+  // When user picks a date on the calendar
+  const handleDateChange = (date) => {
+    setSelectedDate(date);
+    fetchRecords(date);
+  };
+
+  // When user navigates to a different month on the calendar
+  const handleMonthChange = (monthStr) => {
+    fetchMonthMarks(monthStr);
+  };
+
+  // Review actions
   function openReview(id, action) {
     setReviewTarget({ id, action });
     setReviewNote('');
@@ -92,7 +145,10 @@ function AccountantEntriesContent() {
         return;
       }
       closeReview();
-      await fetchRecords();
+      // Refresh both the day records and the month marks
+      await fetchRecords(selectedDate);
+      const m = selectedDate.slice(0, 7);
+      await fetchMonthMarks(m);
     } catch {
       setReviewError('Network error. Please try again.');
     } finally {
@@ -103,6 +159,10 @@ function AccountantEntriesContent() {
   const pending  = records.filter(r => (r.managerReviewStatus || 'pending') === 'pending').length;
   const approved = records.filter(r => r.managerReviewStatus === 'approved').length;
   const queried  = records.filter(r => r.managerReviewStatus === 'queried').length;
+
+  const selectedLabel = selectedDate
+    ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+    : '';
 
   if (!stationId) {
     return (
@@ -117,130 +177,149 @@ function AccountantEntriesContent() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Accountant Entries</h1>
         <p className="text-sm text-gray-600 mt-1">
-          Review payment records submitted by the accountant — approve confirmed collections or query discrepancies.
+          Review payment records — approve confirmed collections or query discrepancies.
+          Amber dots mark days with pending entries.
         </p>
       </div>
 
-      {/* Date picker */}
-      <Card>
-        <div className="flex flex-col sm:flex-row gap-4 items-end">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-            <input
-              type="date"
-              className="input-modern"
-              value={date}
-              max={todayStr()}
-              onChange={e => setDate(e.target.value)}
-            />
-          </div>
-          <button
-            onClick={fetchRecords}
-            disabled={loading}
-            className="btn-modern btn-primary px-5 py-3 disabled:opacity-60"
-          >
-            {loading ? 'Loading…' : 'Refresh'}
-          </button>
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
+        {/* Left: calendar */}
+        <div className="space-y-3">
+          <DateCalendar
+            value={selectedDate}
+            onChange={handleDateChange}
+            onMonthChange={handleMonthChange}
+            markedDates={markedDates}
+            maxDate={todayStr()}
+          />
+          {loadingMonth && (
+            <p className="text-xs text-center text-gray-400">Loading month data…</p>
+          )}
         </div>
-        {error && (
-          <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-            {error}
-          </div>
-        )}
-      </Card>
 
-      {loading && (
-        <div className="flex justify-center py-12"><div className="spinner" /></div>
-      )}
-
-      {!loading && records.length > 0 && (
-        <>
-          {/* Summary tiles */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="card-modern p-4 text-center">
-              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Pending</p>
-              <p className={`text-2xl font-bold ${pending > 0 ? 'text-amber-600' : 'text-gray-800'}`}>{pending}</p>
+        {/* Right: records for selected date */}
+        <div className="space-y-4">
+          {/* Selected date header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800">{selectedLabel}</h2>
+              {records.length > 0 && (
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {records.length} record{records.length !== 1 ? 's' : ''} found
+                </p>
+              )}
             </div>
-            <div className="card-modern p-4 text-center">
-              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Approved</p>
-              <p className="text-2xl font-bold text-green-700">{approved}</p>
-            </div>
-            <div className="card-modern p-4 text-center">
-              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Queried</p>
-              <p className={`text-2xl font-bold ${queried > 0 ? 'text-amber-700' : 'text-gray-800'}`}>{queried}</p>
-            </div>
+            <button
+              onClick={() => fetchRecords(selectedDate)}
+              disabled={loading}
+              className="text-sm text-ecana-maroon hover:underline font-medium disabled:opacity-50"
+            >
+              {loading ? 'Loading…' : 'Refresh'}
+            </button>
           </div>
 
-          {/* Records table */}
-          <Card title="Payment Records">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left border-b border-gray-200">
-                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide">Supervisor</th>
-                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide">Recorded By</th>
-                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Cash</th>
-                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">POS</th>
-                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Total</th>
-                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide">Status</th>
-                    <th className="pb-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {records.map(record => {
-                    const status = record.managerReviewStatus || 'pending';
-                    const style = STATUS_STYLES[status] || STATUS_STYLES.pending;
-                    return (
-                      <tr key={record._id}>
-                        <td className="py-3 pr-4">
-                          <p className="font-medium text-gray-800">{record.supervisorName}</p>
-                          {record.notes && (
-                            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[140px]">{record.notes}</p>
-                          )}
-                        </td>
-                        <td className="py-3 pr-4 text-gray-600 text-xs">{record.recordedByName}</td>
-                        <td className="py-3 pr-4 text-right text-gray-700">₦{fmt(record.cashReceived)}</td>
-                        <td className="py-3 pr-4 text-right text-gray-700">₦{fmt(record.posReceived)}</td>
-                        <td className="py-3 pr-4 text-right font-semibold text-gray-800">₦{fmt(record.totalReceived)}</td>
-                        <td className="py-3 pr-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${style.pill}`}>
-                            {style.label}
-                          </span>
-                          {record.managerReviewNote && (
-                            <p className="text-xs text-gray-400 mt-0.5 max-w-[160px] truncate">{record.managerReviewNote}</p>
-                          )}
-                        </td>
-                        <td className="py-3">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => openReview(record._id, 'approve')}
-                              className="text-xs px-3 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 font-medium transition-colors"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => openReview(record._id, 'query')}
-                              className="text-xs px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 font-medium transition-colors"
-                            >
-                              Query
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+              {error}
             </div>
-          </Card>
-        </>
-      )}
+          )}
 
-      {!loading && records.length === 0 && !error && (
-        <div className="text-center py-12 text-gray-400">
-          <p className="text-lg">No payment records for this date.</p>
+          {loading && (
+            <div className="flex justify-center py-12"><div className="spinner" /></div>
+          )}
+
+          {!loading && records.length > 0 && (
+            <>
+              {/* Summary tiles */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="card-modern p-3 text-center">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Pending</p>
+                  <p className={`text-2xl font-bold ${pending > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{pending}</p>
+                </div>
+                <div className="card-modern p-3 text-center">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Approved</p>
+                  <p className="text-2xl font-bold text-green-700">{approved}</p>
+                </div>
+                <div className="card-modern p-3 text-center">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Queried</p>
+                  <p className={`text-2xl font-bold ${queried > 0 ? 'text-red-600' : 'text-gray-400'}`}>{queried}</p>
+                </div>
+              </div>
+
+              {/* Records */}
+              <div className="space-y-3">
+                {records.map(record => {
+                  const status = record.managerReviewStatus || 'pending';
+                  const style = STATUS_STYLES[status] || STATUS_STYLES.pending;
+                  return (
+                    <div key={record._id} className="card-modern p-4">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div>
+                          <p className="font-semibold text-gray-800">{record.supervisorName}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            Recorded by {record.recordedByName}
+                            {record.notes && <> · <em>{record.notes}</em></>}
+                          </p>
+                        </div>
+                        <span className={`shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${style.pill}`}>
+                          {style.label}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 mb-3">
+                        <div>
+                          <p className="text-xs text-gray-500 mb-0.5">Cash</p>
+                          <p className="font-semibold text-gray-800">₦{fmt(record.cashReceived)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-0.5">POS</p>
+                          <p className="font-semibold text-gray-800">₦{fmt(record.posReceived)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-0.5">Total</p>
+                          <p className="font-bold text-gray-800">₦{fmt(record.totalReceived)}</p>
+                        </div>
+                      </div>
+
+                      {record.managerReviewNote && (
+                        <p className="text-xs text-gray-500 italic mb-3 border-l-2 border-gray-200 pl-2">
+                          {record.managerReviewNote} — {record.reviewedByManagerName}
+                        </p>
+                      )}
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => openReview(record._id, 'approve')}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 font-medium transition-colors"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => openReview(record._id, 'query')}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 font-medium transition-colors"
+                        >
+                          Query
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {!loading && records.length === 0 && !error && (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+              <svg className="w-10 h-10 mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              <p className="text-base font-medium">No payment records for this date</p>
+              <p className="text-sm mt-1">Select a marked day on the calendar to view records</p>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Review modal */}
       {reviewTarget && (
