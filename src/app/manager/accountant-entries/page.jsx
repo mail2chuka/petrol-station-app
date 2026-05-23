@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
@@ -47,8 +47,22 @@ function AccountantEntriesContent() {
   const [error, setError] = useState('');
 
   // Calendar month marks: { [YYYY-MM-DD]: { pending, total } }
-  const [markedDates, setMarkedDates] = useState({});
+  const [paymentMarks, setPaymentMarks] = useState({});
+  const [depositMarks, setDepositMarks] = useState({});
   const [loadingMonth, setLoadingMonth] = useState(false);
+
+  // Merge payment + deposit marks for the calendar
+  const markedDates = useMemo(() => {
+    const merged = { ...paymentMarks };
+    for (const [d, mark] of Object.entries(depositMarks)) {
+      if (merged[d]) {
+        merged[d] = { pending: merged[d].pending + mark.pending, total: merged[d].total + mark.total };
+      } else {
+        merged[d] = mark;
+      }
+    }
+    return merged;
+  }, [paymentMarks, depositMarks]);
 
   // Cash deposits
   const [deposits, setDeposits] = useState([]);
@@ -84,7 +98,7 @@ function AccountantEntriesContent() {
           grouped[d].pending += 1;
         }
       }
-      setMarkedDates(prev => ({ ...prev, ...grouped }));
+      setPaymentMarks(prev => ({ ...prev, ...grouped }));
     } catch {
       // silent — calendar marks are decorative
     } finally {
@@ -131,6 +145,18 @@ function AccountantEntriesContent() {
       setLoading(false);
     }
   }, [stationId]);
+
+  // Recompute deposit calendar marks whenever deposits list changes
+  useEffect(() => {
+    const marks = {};
+    for (const dep of deposits) {
+      const d = new Date(dep.date).toISOString().split('T')[0];
+      if (!marks[d]) marks[d] = { pending: 0, total: 0 };
+      marks[d].total += 1;
+      if (dep.status === 'pending') marks[d].pending += 1;
+    }
+    setDepositMarks(marks);
+  }, [deposits]);
 
   // On mount: load current month marks + today's records + deposits
   useEffect(() => {
