@@ -27,6 +27,7 @@ export async function GET(request) {
     const stationId = searchParams.get('stationId');
     const status = searchParams.get('status');
     const dateParam = searchParams.get('date');
+    const monthParam = searchParams.get('month'); // YYYY-MM
     const limit = Math.min(Number(searchParams.get('limit') || 100), 500);
 
     const query = {};
@@ -35,15 +36,31 @@ export async function GET(request) {
       query.status = status;
     }
 
-    if (dateParam) {
-      const d = new Date(dateParam);
+    // Use explicit UTC date boundaries to avoid timezone-related mismatches
+    if (monthParam) {
+      const [y, m] = monthParam.split('-').map(Number);
+      const lastDay = new Date(Date.UTC(y, m, 0)); // day-0 of next month = last day of this month
+      lastDay.setUTCHours(23, 59, 59, 999);
       query.date = {
-        $gte: new Date(d.getFullYear(), d.getMonth(), d.getDate()),
-        $lte: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999),
+        $gte: new Date(Date.UTC(y, m - 1, 1)),
+        $lte: lastDay,
+      };
+    } else if (dateParam) {
+      // Parse as UTC date to match how deposits are stored (new Date('YYYY-MM-DD') = UTC midnight)
+      query.date = {
+        $gte: new Date(dateParam + 'T00:00:00.000Z'),
+        $lte: new Date(dateParam + 'T23:59:59.999Z'),
       };
     }
 
-    const canChooseStation = [ROLES.ADMIN, ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR].includes(currentUser.role);
+    // Roles that can explicitly choose which station to query
+    const canChooseStation = [
+      ROLES.ADMIN,
+      ROLES.MANAGER,
+      ROLES.DAILY_AUDITOR,
+      ROLES.EXTERNAL_AUDITOR,
+    ].includes(currentUser.role);
+
     if (canChooseStation) {
       if (stationId) query.stationId = stationId;
     } else if (currentUser.stationId) {
@@ -51,7 +68,7 @@ export async function GET(request) {
     }
 
     const cashDeposits = await CashDeposit.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ date: -1, createdAt: -1 })
       .limit(limit);
 
     return NextResponse.json({ cashDeposits });
@@ -91,7 +108,7 @@ export async function POST(request) {
     const cashDeposit = await CashDeposit.create({
       stationId: payload.stationId,
       stationName: currentUser.stationName || stationUser?.stationName || 'Unknown Station',
-      date: new Date(payload.date),
+      date: new Date(payload.date + 'T00:00:00.000Z'), // store as UTC midnight to match GET filter
       amount: payload.amount,
       bankName: payload.bankName,
       bankBranch: payload.bankBranch || '',
