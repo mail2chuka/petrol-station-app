@@ -18,19 +18,33 @@ function fmt(n) {
     : '0.00';
 }
 
+function FlagPole() {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+      <path d="M2 1a.5.5 0 01.5.5v13a.5.5 0 01-1 0v-13A.5.5 0 012 1z" />
+      <path d="M2.5 2h10.5l-2.5 3.5 2.5 3.5H2.5z" />
+    </svg>
+  );
+}
+
 function DailyReportContent() {
   const searchParams = useSearchParams();
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState(searchParams.get('stationId') || '');
-  const [selectedDate, setSelectedDate] = useState(
-    searchParams.get('date') || todayStr()
-  );
+  const [selectedDate, setSelectedDate] = useState(searchParams.get('date') || todayStr());
   const [report, setReport] = useState(null);
   const [financialSummary, setFinancialSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [deposits, setDeposits] = useState([]);
   const [markedDates, setMarkedDates] = useState({});
   const [loadingMonth, setLoadingMonth] = useState(false);
+
+  // Flag modal state
+  const [flagModal, setFlagModal] = useState(null);
+  const [flagReason, setFlagReason] = useState('');
+  const [flagging, setFlagging] = useState(false);
+  const [flagError, setFlagError] = useState('');
 
   useEffect(() => {
     fetch('/api/stations')
@@ -60,6 +74,16 @@ function DailyReportContent() {
     } catch {} finally { setLoadingMonth(false); }
   }, [selectedStation]);
 
+  const fetchDeposits = useCallback(async (stId, date) => {
+    const sid = stId || selectedStation;
+    if (!sid || !date) return;
+    try {
+      const res = await fetch(`/api/cash-deposits?stationId=${sid}&date=${date}`);
+      const data = await res.json();
+      setDeposits(res.ok ? (data.cashDeposits || []) : []);
+    } catch { setDeposits([]); }
+  }, [selectedStation]);
+
   const fetchReport = useCallback(async (date, stId) => {
     const sid = stId || selectedStation;
     if (!sid || !date) return;
@@ -67,6 +91,7 @@ function DailyReportContent() {
     setError('');
     setReport(null);
     setFinancialSummary(null);
+    setDeposits([]);
     try {
       const [dailyRes, financialRes] = await Promise.all([
         fetch(`/api/reports/daily?stationId=${sid}&date=${date}`),
@@ -76,6 +101,7 @@ function DailyReportContent() {
       if (!dailyRes.ok) { setError(dailyData.error || 'Failed to fetch report'); return; }
       setReport(dailyData);
       setFinancialSummary(financialRes.ok ? (financialData.summary || null) : null);
+      fetchDeposits(sid, date);
     } catch { setError('Network error. Please try again.'); }
     finally { setLoading(false); }
   }, [selectedStation]);
@@ -85,6 +111,7 @@ function DailyReportContent() {
     setMarkedDates({});
     setReport(null);
     setError('');
+    setDeposits([]);
     fetchMonthMarks(currentMonthStr(), selectedStation);
     fetchReport(selectedDate, selectedStation);
   }, [selectedStation]);
@@ -94,13 +121,62 @@ function DailyReportContent() {
     fetchReport(date);
   };
 
+  const openFlag = (targetType, targetId, targetRef, severity = 'warning') => {
+    setFlagModal({ targetType, targetId: targetId || null, targetRef, severity });
+    setFlagReason('');
+    setFlagError('');
+  };
+
+  const submitFlag = async () => {
+    if (!flagReason.trim()) { setFlagError('Describe the issue first'); return; }
+    setFlagging(true);
+    setFlagError('');
+    try {
+      const res = await fetch('/api/flags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stationId: selectedStation,
+          targetType: flagModal.targetType,
+          targetId: flagModal.targetId,
+          targetRef: flagModal.targetRef,
+          severity: flagModal.severity,
+          reason: flagReason.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setFlagError(data.error || 'Failed to raise flag'); return; }
+      setFlagModal(null);
+      setFlagReason('');
+    } catch { setFlagError('Network error'); }
+    finally { setFlagging(false); }
+  };
+
+  const FlagBtn = ({ targetType, targetId, targetRef }) => (
+    <div className="flex items-center gap-0.5 print:hidden">
+      <button
+        onClick={() => openFlag(targetType, targetId, targetRef, 'warning')}
+        title="Raise warning flag"
+        className="p-1 rounded hover:bg-amber-50 text-amber-300 hover:text-amber-500 transition-colors"
+      >
+        <FlagPole />
+      </button>
+      <button
+        onClick={() => openFlag(targetType, targetId, targetRef, 'critical')}
+        title="Raise critical flag"
+        className="p-1 rounded hover:bg-red-50 text-red-300 hover:text-red-500 transition-colors"
+      >
+        <FlagPole />
+      </button>
+    </div>
+  );
+
   const stationName = stations.find(s => s._id === selectedStation)?.name || '';
   const stationCode = stations.find(s => s._id === selectedStation)?.code || '';
   const s = report?.summary;
 
   return (
     <>
-      {/* Print header */}
       <div className="hidden print:block mb-6">
         <h1 className="text-2xl font-bold">External Audit — Daily Report</h1>
         <p className="text-sm">{stationName} ({stationCode}) — {selectedDate}</p>
@@ -126,7 +202,6 @@ function DailyReportContent() {
           )}
         </div>
 
-        {/* Station selector */}
         <div className="print:hidden max-w-xs">
           <Select
             label="Station"
@@ -138,7 +213,6 @@ function DailyReportContent() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
-          {/* Calendar */}
           <div className="space-y-2 print:hidden">
             <DateCalendar
               value={selectedDate}
@@ -150,7 +224,6 @@ function DailyReportContent() {
             {loadingMonth && <p className="text-xs text-center text-gray-400">Loading month data…</p>}
           </div>
 
-          {/* Report panel */}
           <div className="space-y-4">
             <div className="flex items-center justify-between print:hidden">
               <h2 className="text-lg font-semibold text-gray-800">
@@ -161,10 +234,7 @@ function DailyReportContent() {
               </button>
             </div>
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm print:hidden">{error}</div>
-            )}
-
+            {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm print:hidden">{error}</div>}
             {loading && <div className="flex justify-center py-12 print:hidden"><div className="spinner" /></div>}
 
             {report && !loading && (
@@ -224,8 +294,8 @@ function DailyReportContent() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left border-b border-gray-200">
-                            {['Supervisor', 'Litres', 'Expected', 'Collected', 'Paid to Acct', 'Diff'].map((h, i) => (
-                              <th key={h} className={`pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide ${i > 0 ? 'text-right' : ''}`}>{h}</th>
+                            {['Supervisor', 'Litres', 'Expected', 'Collected', 'Paid to Acct', 'Diff', ''].map((h, i) => (
+                              <th key={i} className={`pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide ${i > 0 && i < 6 ? 'text-right' : ''}`}>{h}</th>
                             ))}
                           </tr>
                         </thead>
@@ -239,8 +309,11 @@ function DailyReportContent() {
                                 <td className="py-3 pr-4 text-right text-gray-700">₦{fmt(sv.totalExpected)}</td>
                                 <td className="py-3 pr-4 text-right text-gray-700">₦{fmt(sv.totalCollected)}</td>
                                 <td className="py-3 pr-4 text-right text-gray-700">₦{fmt(sv.totalPaymentReceived)}</td>
-                                <td className={`py-3 text-right font-semibold ${diff < 0 ? 'text-red-600' : diff > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                <td className={`py-3 pr-4 text-right font-semibold ${diff < 0 ? 'text-red-600' : diff > 0 ? 'text-green-600' : 'text-gray-500'}`}>
                                   {diff >= 0 ? '+' : ''}₦{fmt(diff)}
+                                </td>
+                                <td className="py-3">
+                                  <FlagBtn targetType="payment" targetId={null} targetRef={`${sv.supervisorName} — ${selectedDate}`} />
                                 </td>
                               </tr>
                             );
@@ -257,8 +330,8 @@ function DailyReportContent() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left border-b border-gray-200">
-                            {['Pump', 'Opening', 'Closing', 'RTT', 'Net Litres', 'Supervisor'].map((h, i) => (
-                              <th key={h} className={`pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide ${i > 0 && i < 5 ? 'text-right' : ''}`}>{h}</th>
+                            {['Pump', 'Opening', 'Closing', 'RTT', 'Net Litres', 'Supervisor', ''].map((h, i) => (
+                              <th key={i} className={`pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide ${i > 0 && i < 5 ? 'text-right' : ''}`}>{h}</th>
                             ))}
                           </tr>
                         </thead>
@@ -272,7 +345,10 @@ function DailyReportContent() {
                                 <td className="py-3 pr-4 text-right text-gray-700">{fmt(r.closing)}</td>
                                 <td className="py-3 pr-4 text-right text-gray-700">{fmt(r.rtt)}</td>
                                 <td className="py-3 pr-4 text-right font-semibold text-gray-800">{fmt(net)}</td>
-                                <td className="py-3 text-gray-600 text-xs">{r.supervisorName}</td>
+                                <td className="py-3 pr-4 text-gray-600 text-xs">{r.supervisorName}</td>
+                                <td className="py-3">
+                                  <FlagBtn targetType="meter_reading" targetId={r._id} targetRef={`Pump: ${r.pumpLabel || r.pumpId} — ${selectedDate}`} />
+                                </td>
                               </tr>
                             );
                           })}
@@ -292,7 +368,8 @@ function DailyReportContent() {
                             <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide">Period</th>
                             <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Stock (L)</th>
                             <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Variance</th>
-                            <th className="pb-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">By</th>
+                            <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide">By</th>
+                            <th className="pb-3" />
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -302,7 +379,10 @@ function DailyReportContent() {
                               <td className="py-3 pr-4"><span className={`badge ${e.period === 'opening' ? 'badge-info' : 'badge-warning'}`}>{e.period}</span></td>
                               <td className="py-3 pr-4 text-right font-semibold text-gray-800">{fmt(e.closingStockMeasured)}</td>
                               <td className={`py-3 pr-4 text-right font-semibold ${e.variance < 0 ? 'text-red-600' : e.variance > 0 ? 'text-green-600' : 'text-gray-500'}`}>{e.variance >= 0 ? '+' : ''}{fmt(e.variance)}</td>
-                              <td className="py-3 text-gray-600 text-xs">{e.supervisorName}</td>
+                              <td className="py-3 pr-4 text-gray-600 text-xs">{e.supervisorName}</td>
+                              <td className="py-3">
+                                <FlagBtn targetType="tank_stock" targetId={e._id} targetRef={`${e.tankLabel || e.tankId} ${e.period} — ${selectedDate}`} />
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -322,6 +402,36 @@ function DailyReportContent() {
                     </div>
                   )}
                 </Card>
+
+                <Card title="Bank Deposits">
+                  {deposits.length === 0 ? (
+                    <p className="text-sm text-amber-600">No bank deposits recorded for this day.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {deposits.map(dep => (
+                        <div key={dep._id} className="flex items-center justify-between gap-4 p-3 rounded-lg bg-gray-50 border border-gray-100">
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold text-gray-800">₦{fmt(dep.amount)}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{dep.bankName}{dep.bankBranch ? ` — ${dep.bankBranch}` : ''} · Acct: {dep.accountNumber}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">by {dep.initiatedByAccountantName}</p>
+                          </div>
+                          <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${
+                            dep.status === 'approved' ? 'bg-green-100 text-green-700' :
+                            dep.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                            'bg-amber-100 text-amber-700'
+                          }`}>
+                            {dep.status.charAt(0).toUpperCase() + dep.status.slice(1)}
+                          </span>
+                          <FlagBtn targetType="payment" targetId={dep._id} targetRef={`Deposit ₦${fmt(dep.amount)} — ${dep.bankName}`} />
+                        </div>
+                      ))}
+                      <div className="pt-2 border-t border-gray-100 flex justify-between text-sm font-semibold text-gray-700">
+                        <span>Total deposited</span>
+                        <span>₦{fmt(deposits.reduce((sum, d) => sum + d.amount, 0))}</span>
+                      </div>
+                    </div>
+                  )}
+                </Card>
               </>
             )}
 
@@ -336,6 +446,54 @@ function DailyReportContent() {
           </div>
         </div>
       </div>
+
+      {/* Flag modal */}
+      {flagModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div>
+              <h3 className="font-bold text-lg text-gray-900">Raise Flag</h3>
+              {flagModal.targetRef && <p className="text-sm text-gray-500 mt-1">{flagModal.targetRef}</p>}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setFlagModal(prev => ({ ...prev, severity: 'warning' }))}
+                className={`flex-1 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${flagModal.severity === 'warning' ? 'bg-amber-50 border-amber-400 text-amber-700' : 'border-gray-200 text-gray-500 hover:border-amber-200'}`}
+              >
+                ⚑ Warning
+              </button>
+              <button
+                onClick={() => setFlagModal(prev => ({ ...prev, severity: 'critical' }))}
+                className={`flex-1 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${flagModal.severity === 'critical' ? 'bg-red-50 border-red-400 text-red-700' : 'border-gray-200 text-gray-500 hover:border-red-200'}`}
+              >
+                ⚑ Critical
+              </button>
+            </div>
+            <textarea
+              className="w-full min-h-[90px] rounded-xl border-2 border-slate-200 p-3 text-sm focus:outline-none focus:border-ecana-maroon focus:ring-4 focus:ring-ecana-maroon/10 resize-none"
+              placeholder="Describe the issue…"
+              value={flagReason}
+              onChange={e => setFlagReason(e.target.value)}
+            />
+            {flagError && <p className="text-sm text-red-600">{flagError}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setFlagModal(null); setFlagReason(''); setFlagError(''); }}
+                className="px-4 py-2 text-sm rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitFlag}
+                disabled={flagging || !flagReason.trim()}
+                className={`px-4 py-2 text-sm rounded-xl font-semibold text-white transition-all disabled:opacity-50 ${flagModal.severity === 'critical' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-500 hover:bg-amber-600'}`}
+              >
+                {flagging ? 'Raising…' : 'Raise Flag'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @media print {

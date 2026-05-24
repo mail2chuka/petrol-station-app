@@ -23,7 +23,7 @@ const flagSchema = new mongoose.Schema(
     },
     raisedByUserRole: {
       type: String,
-      enum: ['daily_auditor', 'admin'],
+      enum: ['daily_auditor', 'external_auditor', 'admin'],
       required: true,
     },
     targetType: {

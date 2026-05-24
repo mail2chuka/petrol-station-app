@@ -61,9 +61,10 @@ export async function POST(request) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    if (currentUser.role !== ROLES.DAILY_AUDITOR) {
+    const canFlag = [ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR].includes(currentUser.role);
+    if (!canFlag) {
       return NextResponse.json(
-        { error: 'Only daily auditors can raise flags' },
+        { error: 'Only auditors can raise flags' },
         { status: 403 }
       );
     }

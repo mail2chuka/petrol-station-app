@@ -26,9 +26,8 @@ export async function GET(request) {
     if (stationId) query.stationId = stationId;
     if (date) query.date = date;
 
-    if (isAuditor) {
-      query.auditorId = currentUser.id;
-    }
+    // Auditors see all comments for the queried station+date (not just their own)
+    // so they can see each other's notes on the same report
 
     const comments = await AuditorComment.find(query)
       .sort({ createdAt: -1 })
