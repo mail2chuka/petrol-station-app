@@ -8,8 +8,13 @@ import Sidebar from '@/components/Sidebar';
 import MobileTabBar from '@/components/MobileTabBar';
 import Loading from '@/components/Loading';
 
-const dailyAuditorMenuItems = [
+const menuItems = [
   { label: 'Dashboard', href: '/daily-auditor' },
+  { label: 'Daily Report', href: '/auditor/daily' },
+  { label: 'Monthly Report', href: '/auditor/monthly' },
+  { label: 'Meter Book', href: '/auditor/meter-book' },
+  { label: 'Tank Stock', href: '/auditor/tank-stock' },
+  { label: 'Flags', href: '/auditor/flags' },
 ];
 
 export default function DailyAuditorLayout({ children }) {
@@ -18,12 +23,8 @@ export default function DailyAuditorLayout({ children }) {
 
   useEffect(() => {
     if (status === 'loading') return;
-
-    if (!session) {
-      router.push('/login');
-    } else if (session.user.role !== 'daily_auditor') {
-      router.push('/');
-    }
+    if (!session) router.push('/login');
+    else if (session.user.role !== 'daily_auditor') router.push('/');
   }, [session, status, router]);
 
   if (status === 'loading' || !session || session.user.role !== 'daily_auditor') {
@@ -38,14 +39,14 @@ export default function DailyAuditorLayout({ children }) {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       <Navbar />
       <div className="flex">
-        <Sidebar menuItems={dailyAuditorMenuItems} />
+        <Sidebar menuItems={menuItems} />
         <main className="flex-1 min-h-[calc(100vh-4rem)]">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-24 md:pb-8">
             {children}
           </div>
         </main>
       </div>
-      <MobileTabBar menuItems={dailyAuditorMenuItems} />
+      <MobileTabBar menuItems={menuItems} />
     </div>
   );
 }
