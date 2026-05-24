@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import Card from '@/components/Card';
 import Input from '@/components/Input';
 import Button from '@/components/Button';
-import Loading from '@/components/Loading';
+import DateCalendar from '@/components/DateCalendar';
 
-function formatCurrency(n) {
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function fmt(n) {
   return `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
 }
 
@@ -31,8 +35,9 @@ export default function CashDepositsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [date, setDate] = useState(today());
+  const [markedDates, setMarkedDates] = useState({});
   const [form, setForm] = useState({
-    date: new Date().toISOString().split('T')[0],
     amount: '',
     bankName: '',
     bankBranch: '',
@@ -40,21 +45,36 @@ export default function CashDepositsPage() {
     note: '',
   });
 
-  useEffect(() => {
-    if (session?.user?.stationId) fetchDeposits();
-  }, [session]);
+  const stationId = session?.user?.stationId;
 
-  const fetchDeposits = async () => {
+  const fetchDeposits = useCallback(async () => {
+    if (!stationId) return;
     try {
-      const res = await fetch(`/api/cash-deposits?stationId=${session.user.stationId}&limit=50`);
+      const res = await fetch(`/api/cash-deposits?stationId=${stationId}&limit=200`);
       const data = await res.json();
-      setDeposits(data.cashDeposits || []);
+      const all = data.cashDeposits || [];
+      setDeposits(all);
+
+      // Build month marks from all loaded deposits
+      const grouped = {};
+      for (const dep of all) {
+        const d = (dep.date || dep.createdAt || '').slice(0, 10);
+        if (!d) continue;
+        if (!grouped[d]) grouped[d] = { total: 0, pending: 0 };
+        grouped[d].total += 1;
+        if (dep.status === 'pending') grouped[d].pending += 1;
+      }
+      setMarkedDates(grouped);
     } catch (err) {
       console.error('Error fetching deposits:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [stationId]);
+
+  useEffect(() => {
+    if (stationId) fetchDeposits();
+  }, [session]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -77,8 +97,8 @@ export default function CashDepositsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          stationId: session.user.stationId,
-          date: form.date,
+          stationId,
+          date,
           amount: parseFloat(form.amount),
           bankName: form.bankName.trim(),
           bankBranch: form.bankBranch.trim(),
@@ -92,120 +112,150 @@ export default function CashDepositsPage() {
         return;
       }
       setSuccess('Deposit recorded and sent to admin for approval.');
-      setForm({ date: new Date().toISOString().split('T')[0], amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' });
+      setForm({ amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' });
       fetchDeposits();
-    } catch (err) {
+    } catch {
       setError('An error occurred. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading) return <Loading />;
+  // Filter deposits shown in history to those matching selected date
+  const depositsForDate = deposits.filter(d => (d.date || d.createdAt || '').slice(0, 10) === date);
+  const allDeposits = deposits.slice(0, 30);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Cash Deposits</h1>
-        <p className="text-sm text-slate-500 mt-1">Record cash deposits made to the bank. Deposits are sent to the admin for approval.</p>
+        <p className="text-sm text-slate-500 mt-1">Record cash deposits made to the bank. Select a date then fill in the deposit details.</p>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
       {success && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">{success}</div>}
 
-      <Card title="Record New Deposit">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Date"
-              type="date"
-              name="date"
-              value={form.date}
-              onChange={handleChange}
-              required
-            />
-            <Input
-              label="Amount (₦)"
-              type="number"
-              name="amount"
-              value={form.amount}
-              onChange={handleChange}
-              placeholder="0.00"
-              step="0.01"
-              min="0.01"
-              required
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Bank Name"
-              name="bankName"
-              value={form.bankName}
-              onChange={handleChange}
-              placeholder="e.g. First Bank"
-              required
-            />
-            <Input
-              label="Bank Branch (Optional)"
-              name="bankBranch"
-              value={form.bankBranch}
-              onChange={handleChange}
-              placeholder="e.g. Ikeja Branch"
-            />
-          </div>
-          <Input
-            label="Account Number"
-            name="accountNumber"
-            value={form.accountNumber}
-            onChange={handleChange}
-            placeholder="10-digit account number"
-            required
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        {/* Left: Calendar */}
+        <div className="w-full lg:w-80 shrink-0 space-y-3">
+          <DateCalendar
+            value={date}
+            onChange={setDate}
+            markedDates={markedDates}
+            maxDate={today()}
           />
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Note (Optional)</label>
-            <textarea
-              name="note"
-              value={form.note}
-              onChange={handleChange}
-              rows="2"
-              className="w-full px-4 py-3 text-sm text-slate-900 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-ecana-maroon focus:ring-4 focus:ring-ecana-maroon/10 transition-all resize-none"
-              placeholder="Any additional notes about this deposit..."
-            />
-          </div>
-          <Button type="submit" variant="primary" disabled={submitting}>
-            {submitting ? 'Recording...' : 'Record Deposit'}
-          </Button>
-        </form>
-      </Card>
+          <p className="text-xs text-gray-500 text-center">Amber = pending approval · Green = approved</p>
 
-      <Card title={`Deposit History (${deposits.length})`}>
-        {deposits.length === 0 ? (
-          <p className="text-sm text-slate-500 py-4 text-center">No deposits recorded yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {deposits.map((dep) => (
-              <div key={dep._id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="flex items-start justify-between gap-3">
+          {/* Deposits for selected date */}
+          {!loading && depositsForDate.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Deposits on {new Date(date + 'T12:00:00').toLocaleDateString('en-NG', { dateStyle: 'medium' })}
+              </p>
+              {depositsForDate.map((dep) => (
+                <div key={dep._id} className="flex items-center justify-between gap-2 py-1.5 border-b border-gray-100 last:border-0">
                   <div>
-                    <p className="font-semibold text-slate-900">{formatCurrency(dep.amount)}</p>
-                    <p className="text-sm text-slate-600 mt-0.5">{dep.bankName}{dep.bankBranch ? ` — ${dep.bankBranch}` : ''}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">Acc: {dep.accountNumber}</p>
+                    <p className="text-sm font-semibold text-gray-800">{fmt(dep.amount)}</p>
+                    <p className="text-xs text-gray-500">{dep.bankName}</p>
                   </div>
-                  <div className="text-right shrink-0">
-                    <StatusBadge status={dep.status} />
-                    <p className="text-xs text-slate-400 mt-1">{new Date(dep.date).toLocaleDateString('en-NG')}</p>
-                  </div>
+                  <StatusBadge status={dep.status} />
                 </div>
-                {dep.adminNote && (
-                  <p className="text-xs text-slate-500 mt-2 pt-2 border-t border-slate-200">
-                    Admin note: {dep.adminNote}
-                  </p>
-                )}
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right: Form + history */}
+        <div className="flex-1 min-w-0 space-y-4">
+          <Card title={`Record Deposit — ${new Date(date + 'T12:00:00').toLocaleDateString('en-NG', { dateStyle: 'long' })}`}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="Amount (₦)"
+                  type="number"
+                  name="amount"
+                  value={form.amount}
+                  onChange={handleChange}
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0.01"
+                  required
+                />
+                <Input
+                  label="Bank Name"
+                  name="bankName"
+                  value={form.bankName}
+                  onChange={handleChange}
+                  placeholder="e.g. First Bank"
+                  required
+                />
               </div>
-            ))}
-          </div>
-        )}
-      </Card>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="Bank Branch (Optional)"
+                  name="bankBranch"
+                  value={form.bankBranch}
+                  onChange={handleChange}
+                  placeholder="e.g. Ikeja Branch"
+                />
+                <Input
+                  label="Account Number"
+                  name="accountNumber"
+                  value={form.accountNumber}
+                  onChange={handleChange}
+                  placeholder="10-digit account number"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Note (Optional)</label>
+                <textarea
+                  name="note"
+                  value={form.note}
+                  onChange={handleChange}
+                  rows="2"
+                  className="w-full px-4 py-3 text-sm text-slate-900 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-ecana-maroon focus:ring-4 focus:ring-ecana-maroon/10 transition-all resize-none"
+                  placeholder="Any additional notes about this deposit..."
+                />
+              </div>
+              <Button type="submit" variant="primary" disabled={submitting}>
+                {submitting ? 'Recording...' : 'Record Deposit'}
+              </Button>
+            </form>
+          </Card>
+
+          <Card title={`Recent Deposit History (${allDeposits.length})`}>
+            {loading ? (
+              <div className="flex justify-center py-8"><div className="spinner" /></div>
+            ) : allDeposits.length === 0 ? (
+              <p className="text-sm text-slate-500 py-4 text-center">No deposits recorded yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {allDeposits.map((dep) => (
+                  <div key={dep._id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{fmt(dep.amount)}</p>
+                        <p className="text-sm text-slate-600 mt-0.5">{dep.bankName}{dep.bankBranch ? ` — ${dep.bankBranch}` : ''}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Acc: {dep.accountNumber}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <StatusBadge status={dep.status} />
+                        <p className="text-xs text-slate-400 mt-1">{new Date(dep.date).toLocaleDateString('en-NG')}</p>
+                      </div>
+                    </div>
+                    {dep.adminNote && (
+                      <p className="text-xs text-slate-500 mt-2 pt-2 border-t border-slate-200">
+                        Admin note: {dep.adminNote}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

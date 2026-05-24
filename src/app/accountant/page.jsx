@@ -1,158 +1,206 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 import Card from '@/components/Card';
-import Loading from '@/components/Loading';
+
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function fmt(n) {
+  return typeof n === 'number'
+    ? n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '0.00';
+}
 
 export default function AccountantDashboard() {
   const { data: session } = useSession();
   const [activeDayShift, setActiveDayShift] = useState(null);
-  const [todayPayments, setTodayPayments] = useState([]);
+  const [supervisors, setSupervisors] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [deposits, setDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchData();
-  }, [session]);
+  const stationId = session?.user?.stationId;
 
-  const fetchData = async () => {
-    if (!session?.user?.stationId) return;
-
+  const loadData = useCallback(async () => {
+    if (!stationId) return;
+    setLoading(true);
     try {
-      const [dayShiftRes, paymentsRes] = await Promise.all([
-        fetch(`/api/day-shifts?stationId=${session.user.stationId}&status=in_progress`),
-        fetch(`/api/payments?stationId=${session.user.stationId}`),
+      const [shiftRes, usersRes, paymentsRes, depositsRes] = await Promise.all([
+        fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
+        fetch(`/api/users?role=supervisor&stationId=${stationId}`),
+        fetch(`/api/payments?stationId=${stationId}&date=${today()}`),
+        fetch(`/api/cash-deposits?stationId=${stationId}&date=${today()}`),
       ]);
 
-      const dayShiftData = await dayShiftRes.json();
-      const paymentsData = await paymentsRes.json();
+      const [shiftData, usersData, paymentsData, depositsData] = await Promise.all([
+        shiftRes.json(), usersRes.json(), paymentsRes.json(), depositsRes.json(),
+      ]);
 
-      if (dayShiftData.dayShifts?.length > 0) {
-        setActiveDayShift(dayShiftData.dayShifts[0]);
-        
-        // Filter today's payments
-        const today = new Date().toISOString().split('T')[0];
-        const todaysPayments = paymentsData.paymentRecords?.filter(p => 
-          new Date(p.date).toISOString().split('T')[0] === today
-        ) || [];
-        setTodayPayments(todaysPayments);
-      }
-    } catch (error) {
-      console.error('Error fetching data:', error);
+      setActiveDayShift((shiftData.dayShifts || [])[0] || null);
+      setSupervisors(usersData.users || []);
+      setPayments(paymentsData.paymentRecords || []);
+      setDeposits(depositsData.cashDeposits || []);
+    } catch (err) {
+      console.error('Error fetching data:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [stationId]);
 
-  if (loading) return <Loading />;
+  useEffect(() => {
+    if (stationId) loadData();
+  }, [session]);
 
-  const totalCashToday = todayPayments.reduce((sum, p) => sum + p.cashReceived, 0);
-  const totalPosToday = todayPayments.reduce((sum, p) => sum + p.posReceived, 0);
-  const totalReceivedToday = totalCashToday + totalPosToday;
+  // Group payments by supervisorId
+  const collectedMap = {};
+  for (const p of payments) {
+    const sid = p.supervisorId?.toString();
+    if (!collectedMap[sid]) collectedMap[sid] = [];
+    collectedMap[sid].push(p);
+  }
+
+  const uncollectedSups = supervisors.filter(s => !collectedMap[s._id]?.length);
+  const allCollected = supervisors.length > 0 && uncollectedSups.length === 0;
+
+  const totalCash = payments.reduce((s, p) => s + (p.cashReceived || 0), 0);
+  const totalPos = payments.reduce((s, p) => s + (p.posReceived || 0), 0);
+  const totalCollected = totalCash + totalPos;
+  const totalDeposited = deposits.reduce((s, d) => s + (d.amount || 0), 0);
+
+  const todayLabel = new Date(today() + 'T12:00:00').toLocaleDateString('en-NG', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
 
   return (
     <div className="space-y-6">
-      <div className="bg-gradient-to-r from-white via-green-50 to-white rounded-2xl border-2 border-green-100 shadow-lg p-6 animate-fade-in">
-        <h1 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-600 to-ecana-blue">Accountant Dashboard</h1>
-        <p className="text-base text-gray-600 mt-2 font-medium">Monitor and record payment collections</p>
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-800">Accountant Dashboard</h1>
+        <p className="text-gray-500 mt-1">
+          Welcome, <span className="font-medium text-gray-700">{session?.user?.name || 'Accountant'}</span>. {todayLabel}.
+        </p>
       </div>
 
-      {!activeDayShift && (
-        <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 border-l-4 border-yellow-500 text-yellow-900 px-5 py-4 rounded-xl shadow-md animate-slide-in">
-          <p className="font-bold flex items-center gap-2">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"/>
-            </svg>
-            No Active Day
-          </p>
-          <p className="text-sm mt-1">Please wait for the manager to begin the day.</p>
-        </div>
-      )}
+      {loading ? (
+        <div className="flex justify-center py-16"><div className="spinner" /></div>
+      ) : (
+        <>
+          {/* No active shift */}
+          {!activeDayShift && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-4 rounded-xl">
+              <p className="font-semibold">No Active Day Shift</p>
+              <p className="text-sm mt-1">The manager has not started today's day yet. Collections can only be recorded once the day is open.</p>
+            </div>
+          )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-        <div className="group bg-gradient-to-br from-green-50 via-white to-green-100 rounded-2xl border-2 border-green-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-green-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
-          <div className="text-center relative z-10">
-            <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Cash Received Today</p>
-            <p className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-green-600 to-green-800">
-              ₦{totalCashToday.toFixed(2)}
-            </p>
-          </div>
-        </div>
-
-        <div className="group bg-gradient-to-br from-blue-50 via-white to-blue-100 rounded-2xl border-2 border-blue-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
-          <div className="text-center relative z-10">
-            <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">POS Received Today</p>
-            <p className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-blue-600 to-blue-800">
-              ₦{totalPosToday.toFixed(2)}
-            </p>
-          </div>
-        </div>
-
-        <div className="group bg-gradient-to-br from-purple-50 via-white to-purple-100 rounded-2xl border-2 border-purple-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-purple-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
-          <div className="text-center relative z-10">
-            <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Total Received Today</p>
-            <p className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-purple-600 to-purple-800">
-              ₦{totalReceivedToday.toFixed(2)}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card title="Welcome">
-          <p className="text-gray-700">
-            Welcome back, <strong>{session?.user?.name}</strong>!
-          </p>
-          <p className="text-gray-600 mt-2">
-            Use the sidebar to record payments received from supervisors.
-          </p>
-        </Card>
-
-        <Card title="Quick Actions">
-          <div className="space-y-2">
-            {activeDayShift && (
-              <a
-                href="/accountant/payments"
-                className="block p-3 bg-ecana-maroon-50 hover:bg-ecana-maroon-100 rounded-lg transition-colors"
-              >
-                <p className="font-medium text-ecana-maroon">Record Payment</p>
-                <p className="text-sm text-gray-600">Record cash and POS payments from supervisors</p>
-              </a>
-            )}
-            <a
-              href="/accountant/view-payments"
-              className="block p-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
-            >
-              <p className="font-medium text-green-700">View Payments</p>
-              <p className="text-sm text-gray-600">View all payment records</p>
-            </a>
-          </div>
-        </Card>
-      </div>
-
-      {todayPayments.length > 0 && (
-        <Card title="Today's Payment Records" className="mt-6">
-          <div className="space-y-2">
-            {todayPayments.map((payment, index) => (
-              <div key={index} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
-                <div>
-                  <p className="font-medium">{payment.supervisorName}</p>
-                  <p className="text-sm text-gray-600">
-                    {new Date(payment.createdAt).toLocaleTimeString()}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-gray-600">Cash: ₦{payment.cashReceived.toFixed(2)}</p>
-                  <p className="text-sm text-gray-600">POS: ₦{payment.posReceived.toFixed(2)}</p>
-                  <p className="font-medium text-ecana-maroon">Total: ₦{payment.totalReceived.toFixed(2)}</p>
-                </div>
+          {/* All collected banner */}
+          {activeDayShift && allCollected && (
+            <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-4 rounded-xl flex items-center gap-3">
+              <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" />
+              <div>
+                <p className="font-semibold">All Supervisors Collected — Day can be closed</p>
+                <p className="text-sm mt-0.5">All {supervisors.length} supervisor{supervisors.length !== 1 ? 's' : ''} have been collected from today.</p>
               </div>
-            ))}
+            </div>
+          )}
+
+          {/* Summary stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="card-modern p-5 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Cash Collected</p>
+              <p className="text-2xl font-bold text-gray-800">₦{fmt(totalCash)}</p>
+            </div>
+            <div className="card-modern p-5 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">POS Collected</p>
+              <p className="text-2xl font-bold text-gray-800">₦{fmt(totalPos)}</p>
+            </div>
+            <div className="card-modern p-5 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Collected</p>
+              <p className="text-2xl font-bold text-ecana-maroon">₦{fmt(totalCollected)}</p>
+            </div>
+            <div className="card-modern p-5 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Bank Deposits</p>
+              <p className="text-2xl font-bold text-green-700">₦{fmt(totalDeposited)}</p>
+            </div>
           </div>
-        </Card>
+
+          {/* Supervisor reconciliation status */}
+          {activeDayShift && supervisors.length > 0 && (
+            <Card title="Supervisor Collection Status">
+              <div className="divide-y divide-gray-100">
+                {supervisors.map(sup => {
+                  const records = collectedMap[sup._id] || [];
+                  const done = records.length > 0;
+                  const supTotal = records.reduce((s, p) => s + (p.totalReceived || 0), 0);
+                  return (
+                    <div key={sup._id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
+                      <div className="flex items-center gap-3">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${done ? 'bg-green-500' : 'bg-amber-400'}`} />
+                        <p className="font-medium text-gray-800 text-sm">{sup.name}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {done ? (
+                          <span className="text-sm font-semibold text-gray-700">₦{fmt(supTotal)}</span>
+                        ) : (
+                          <Link
+                            href="/accountant/payments"
+                            className="text-xs font-medium text-ecana-maroon hover:underline"
+                          >
+                            Collect →
+                          </Link>
+                        )}
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          done ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {done ? `${records.length} record${records.length !== 1 ? 's' : ''}` : 'Pending'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {uncollectedSups.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <Link
+                    href="/accountant/payments"
+                    className="inline-flex items-center text-sm font-medium text-white bg-ecana-maroon hover:bg-ecana-maroon/90 px-4 py-2 rounded-lg transition-colors"
+                  >
+                    Record Collections →
+                  </Link>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Quick actions */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Link
+              href="/accountant/payments"
+              className="card-modern p-5 block hover:shadow-md transition-shadow group"
+            >
+              <p className="font-semibold text-gray-800 group-hover:text-ecana-maroon transition-colors">Record Collections</p>
+              <p className="text-sm text-gray-500 mt-1">Collect cash and POS from each supervisor.</p>
+            </Link>
+            <Link
+              href="/accountant/deposits"
+              className="card-modern p-5 block hover:shadow-md transition-shadow group"
+            >
+              <p className="font-semibold text-gray-800 group-hover:text-ecana-maroon transition-colors">Bank Deposits</p>
+              <p className="text-sm text-gray-500 mt-1">Record cash deposited to the bank.</p>
+            </Link>
+            <Link
+              href="/accountant/view-payments"
+              className="card-modern p-5 block hover:shadow-md transition-shadow group"
+            >
+              <p className="font-semibold text-gray-800 group-hover:text-ecana-maroon transition-colors">Payment History</p>
+              <p className="text-sm text-gray-500 mt-1">Browse collections and deposits by date.</p>
+            </Link>
+          </div>
+        </>
       )}
     </div>
   );
