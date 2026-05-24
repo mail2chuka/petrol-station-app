@@ -34,6 +34,7 @@ function DailyReportContent() {
   const [savingComment, setSavingComment] = useState(false);
   const [commentStatus, setCommentStatus] = useState('');
   const [previousComments, setPreviousComments] = useState([]);
+  const [deposits, setDeposits] = useState([]);
   const [markedDates, setMarkedDates] = useState({});
   const [loadingMonth, setLoadingMonth] = useState(false);
 
@@ -75,6 +76,16 @@ function DailyReportContent() {
     } catch {}
   }, [selectedStation]);
 
+  const fetchDeposits = useCallback(async (stId, date) => {
+    const sid = stId || selectedStation;
+    if (!sid || !date) return;
+    try {
+      const res = await fetch(`/api/cash-deposits?stationId=${sid}&date=${date}`);
+      const data = await res.json();
+      setDeposits(res.ok ? (data.cashDeposits || []) : []);
+    } catch { setDeposits([]); }
+  }, [selectedStation]);
+
   const fetchReport = useCallback(async (date, stId) => {
     const sid = stId || selectedStation;
     if (!sid || !date) return;
@@ -82,6 +93,7 @@ function DailyReportContent() {
     setError('');
     setReport(null);
     setFinancialSummary(null);
+    setDeposits([]);
     try {
       const [dailyRes, financialRes] = await Promise.all([
         fetch(`/api/reports/daily?stationId=${sid}&date=${date}`),
@@ -91,6 +103,7 @@ function DailyReportContent() {
       if (!dailyRes.ok) { setError(dailyData.error || 'Failed to fetch report'); return; }
       setReport(dailyData);
       setFinancialSummary(financialRes.ok ? (financialData.summary || null) : null);
+      fetchDeposits(sid, date);
     } catch { setError('Network error. Please try again.'); }
     finally { setLoading(false); }
   }, [selectedStation]);
@@ -100,6 +113,7 @@ function DailyReportContent() {
     setMarkedDates({});
     setReport(null);
     setError('');
+    setDeposits([]);
     fetchMonthMarks(currentMonthStr(), selectedStation);
     fetchReport(selectedDate, selectedStation);
     fetchComments(selectedStation, selectedDate);
@@ -349,6 +363,35 @@ function DailyReportContent() {
                       <div><p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Cash</p><p className="text-lg font-bold text-gray-800">₦{fmt(s.totalPayments.cash)}</p></div>
                       <div><p className="text-xs text-gray-500 uppercase tracking-wide mb-1">POS</p><p className="text-lg font-bold text-gray-800">₦{fmt(s.totalPayments.pos)}</p></div>
                       <div><p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total</p><p className="text-lg font-bold text-gray-800">₦{fmt(s.totalPayments.cash + s.totalPayments.pos)}</p></div>
+                    </div>
+                  )}
+                </Card>
+
+                <Card title="Bank Deposits">
+                  {deposits.length === 0 ? (
+                    <p className="text-sm text-amber-600">No bank deposits recorded for this day.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {deposits.map(dep => (
+                        <div key={dep._id} className="flex items-center justify-between gap-4 p-3 rounded-lg bg-gray-50 border border-gray-100">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">₦{fmt(dep.amount)}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{dep.bankName}{dep.bankBranch ? ` — ${dep.bankBranch}` : ''} · Acct: {dep.accountNumber}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">by {dep.initiatedByAccountantName}</p>
+                          </div>
+                          <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${
+                            dep.status === 'approved' ? 'bg-green-100 text-green-700' :
+                            dep.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                            'bg-amber-100 text-amber-700'
+                          }`}>
+                            {dep.status.charAt(0).toUpperCase() + dep.status.slice(1)}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="pt-2 border-t border-gray-100 flex justify-between text-sm font-semibold text-gray-700">
+                        <span>Total deposited</span>
+                        <span>₦{fmt(deposits.reduce((sum, d) => sum + d.amount, 0))}</span>
+                      </div>
                     </div>
                   )}
                 </Card>

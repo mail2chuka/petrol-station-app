@@ -26,6 +26,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const stationId = searchParams.get('stationId');
     const status = searchParams.get('status');
+    const dateParam = searchParams.get('date');
     const limit = Math.min(Number(searchParams.get('limit') || 100), 500);
 
     const query = {};
@@ -34,7 +35,16 @@ export async function GET(request) {
       query.status = status;
     }
 
-    if (currentUser.role === ROLES.ADMIN) {
+    if (dateParam) {
+      const d = new Date(dateParam);
+      query.date = {
+        $gte: new Date(d.getFullYear(), d.getMonth(), d.getDate()),
+        $lte: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999),
+      };
+    }
+
+    const canChooseStation = [ROLES.ADMIN, ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR].includes(currentUser.role);
+    if (canChooseStation) {
       if (stationId) query.stationId = stationId;
     } else if (currentUser.stationId) {
       query.stationId = currentUser.stationId;
