@@ -15,6 +15,7 @@ function today() {
 export default function MeterReadingsPage() {
   const { data: session } = useSession();
   const [activeDayShift, setActiveDayShift] = useState(null);
+  const [pumps, setPumps] = useState([]); // { id, name, fuelType }
   const [existingReadings, setExistingReadings] = useState({});
   const [previousClosings, setPreviousClosings] = useState({});
   const [forms, setForms] = useState({});
@@ -48,17 +49,16 @@ export default function MeterReadingsPage() {
     if (!stationId) return;
     setLoading(true);
     try {
-      // Fetch the active day shift to get dispensers, plus any existing readings
+      // Fetch the in-progress shift by STATUS (never by date) — avoids UTC/local timezone mismatches.
+      // Also fetch readings for the selected date.
       const [shiftsRes, readingsRes] = await Promise.all([
-        fetch(`/api/day-shifts?stationId=${stationId}&date=${dateStr}`),
+        fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
         fetch(`/api/meter-readings?stationId=${stationId}&date=${dateStr}`),
       ]);
       const shiftsData = await shiftsRes.json();
       const readingsData = await readingsRes.json();
 
-      // Find in-progress day shift
-      const shifts = shiftsData.dayShifts || [];
-      const activeShift = shifts.find(s => s.status === 'in_progress') || shifts[0] || null;
+      const activeShift = (shiftsData.dayShifts || [])[0] || null;
       setActiveDayShift(activeShift);
 
       const readingsMap = {};
@@ -79,20 +79,44 @@ export default function MeterReadingsPage() {
       }
       setPreviousClosings(prevMap);
 
-      // Build form state for each dispenser in the shift
-      const dispensers = activeShift?.dispenserAssignments || [];
+      // Build the list of pumps to show:
+      // - If there's an active shift: use its dispenserAssignments (today's pumps)
+      // - If no active shift (past date view): derive pumps from the readings themselves
+      const shiftDispensers = activeShift?.dispenserAssignments || [];
+      const readingEntries = Object.values(readingsMap);
+
+      let pumpsToShow;
+      if (shiftDispensers.length > 0) {
+        pumpsToShow = shiftDispensers.map(d => ({
+          id: d.dispenserId,
+          name: d.dispenserName,
+          fuelType: d.fuelType,
+        }));
+      } else if (readingEntries.length > 0) {
+        // Historical view — derive pump list from the readings stored for that date
+        pumpsToShow = readingEntries.map(r => ({
+          id: r.pumpId,
+          name: r.pumpLabel || r.pumpId,
+          fuelType: '',
+        }));
+      } else {
+        pumpsToShow = [];
+      }
+
+      setPumps(pumpsToShow);
+
       const initialForms = {};
       const initialEditing = {};
-      for (const d of dispensers) {
-        const existing = readingsMap[d.dispenserId];
-        const prevClosing = prevMap[d.dispenserId];
-        initialForms[d.dispenserId] = {
+      for (const p of pumpsToShow) {
+        const existing = readingsMap[p.id];
+        const prevClosing = prevMap[p.id];
+        initialForms[p.id] = {
           opening: existing ? String(existing.opening) : (prevClosing != null ? String(prevClosing) : ''),
           closing: existing ? String(existing.closing) : '',
           rtt: existing ? String(existing.rtt) : '0',
           discrepancyComment: existing?.discrepancyComment || '',
         };
-        initialEditing[d.dispenserId] = !existing;
+        initialEditing[p.id] = !existing;
       }
       setForms(initialForms);
       setEditing(initialEditing);
@@ -144,22 +168,21 @@ export default function MeterReadingsPage() {
     setMessages(prev => ({ ...prev, [pumpId]: '' }));
   };
 
-  const submitReading = async (dispenser) => {
-    const f = forms[dispenser.dispenserId];
+  const submitReading = async (pump) => {
+    const f = forms[pump.id];
     if (!f) return;
 
     const openingVal = parseFloat(f.opening);
-    const closingVal = parseFloat(f.closing);
-    const prevClosing = previousClosings[dispenser.dispenserId];
+    const prevClosing = previousClosings[pump.id];
     const hasDiscrepancy = prevClosing != null && !isNaN(openingVal) && openingVal !== prevClosing;
 
     if (hasDiscrepancy && !f.discrepancyComment?.trim()) {
-      setMessages(prev => ({ ...prev, [dispenser.dispenserId]: 'Please explain why the opening reading differs from the previous closing.' }));
+      setMessages(prev => ({ ...prev, [pump.id]: 'Please explain why the opening reading differs from the previous closing.' }));
       return;
     }
 
-    setSubmitting(prev => ({ ...prev, [dispenser.dispenserId]: true }));
-    setMessages(prev => ({ ...prev, [dispenser.dispenserId]: '' }));
+    setSubmitting(prev => ({ ...prev, [pump.id]: true }));
+    setMessages(prev => ({ ...prev, [pump.id]: '' }));
 
     try {
       const res = await fetch('/api/meter-readings', {
@@ -167,8 +190,8 @@ export default function MeterReadingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           stationId,
-          pumpId: dispenser.dispenserId,
-          pumpLabel: dispenser.dispenserName,
+          pumpId: pump.id,
+          pumpLabel: pump.name,
           date,
           opening: parseFloat(f.opening) || 0,
           closing: parseFloat(f.closing) || 0,
@@ -178,19 +201,17 @@ export default function MeterReadingsPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setMessages(prev => ({ ...prev, [dispenser.dispenserId]: data.error || 'Failed to save' }));
+        setMessages(prev => ({ ...prev, [pump.id]: data.error || 'Failed to save' }));
       } else {
         await fetchData(date);
         fetchMonthMarks(date.slice(0, 7));
       }
     } catch {
-      setMessages(prev => ({ ...prev, [dispenser.dispenserId]: 'An error occurred.' }));
+      setMessages(prev => ({ ...prev, [pump.id]: 'An error occurred.' }));
     } finally {
-      setSubmitting(prev => ({ ...prev, [dispenser.dispenserId]: false }));
+      setSubmitting(prev => ({ ...prev, [pump.id]: false }));
     }
   };
-
-  const dispensers = activeDayShift?.dispenserAssignments || [];
 
   return (
     <div className="space-y-6">
@@ -218,20 +239,19 @@ export default function MeterReadingsPage() {
         <div className="flex-1 min-w-0 space-y-4">
           {loading ? (
             <div className="flex justify-center py-16"><div className="spinner" /></div>
-          ) : !activeDayShift ? (
+          ) : pumps.length === 0 ? (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">
-              No active day shift for this date. The manager must begin the day before readings can be entered.
-            </div>
-          ) : dispensers.length === 0 ? (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">
-              No pumps were activated for today. Ask the manager to begin the day and select pumps.
+              {activeDayShift
+                ? 'No pumps were activated for today. Ask the manager to begin the day and select pumps.'
+                : 'No active day shift and no readings recorded for this date.'}
             </div>
           ) : (
-            dispensers.map((dispenser) => {
-              const f = forms[dispenser.dispenserId] || {};
-              const existing = existingReadings[dispenser.dispenserId];
-              const prevClosing = previousClosings[dispenser.dispenserId];
-              const isEditing = editing[dispenser.dispenserId];
+            pumps.map((pump) => {
+              const f = forms[pump.id] || {};
+              const existing = existingReadings[pump.id];
+              const prevClosing = previousClosings[pump.id];
+              const isEditing = editing[pump.id];
+              const canEdit = !!activeDayShift; // only allow input when day is open
 
               const openingVal = parseFloat(f.opening);
               const hasDiscrepancy = prevClosing != null && !isNaN(openingVal) && openingVal !== prevClosing;
@@ -248,9 +268,9 @@ export default function MeterReadingsPage() {
 
               return (
                 <Card
-                  key={dispenser.dispenserId}
-                  title={dispenser.dispenserName || dispenser.dispenserId}
-                  subtitle={`${dispenser.fuelType}${existing ? ` · Last saved: ${savedAt}` : ' · Not yet submitted'}`}
+                  key={pump.id}
+                  title={pump.name || pump.id}
+                  subtitle={`${pump.fuelType}${existing ? ` · Last saved: ${savedAt}` : ' · Not yet submitted'}`}
                 >
                   {prevClosing != null && (
                     <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
@@ -295,9 +315,11 @@ export default function MeterReadingsPage() {
                       )}
 
                       <div className="flex justify-end">
-                        <Button variant="secondary" size="sm" onClick={() => startEditing(dispenser.dispenserId)}>
-                          Edit
-                        </Button>
+                        {canEdit && (
+                          <Button variant="secondary" size="sm" onClick={() => startEditing(pump.id)}>
+                            Edit
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -307,7 +329,7 @@ export default function MeterReadingsPage() {
                           label="Opening Reading"
                           type="number"
                           value={f.opening || ''}
-                          onChange={e => updateForm(dispenser.dispenserId, 'opening', e.target.value)}
+                          onChange={e => updateForm(pump.id, 'opening', e.target.value)}
                           min="0"
                           step="0.01"
                         />
@@ -315,7 +337,7 @@ export default function MeterReadingsPage() {
                           label="Closing Reading"
                           type="number"
                           value={f.closing || ''}
-                          onChange={e => updateForm(dispenser.dispenserId, 'closing', e.target.value)}
+                          onChange={e => updateForm(pump.id, 'closing', e.target.value)}
                           min="0"
                           step="0.01"
                         />
@@ -323,7 +345,7 @@ export default function MeterReadingsPage() {
                           label="RTT (Return to Tank)"
                           type="number"
                           value={f.rtt || ''}
-                          onChange={e => updateForm(dispenser.dispenserId, 'rtt', e.target.value)}
+                          onChange={e => updateForm(pump.id, 'rtt', e.target.value)}
                           min="0"
                           step="0.01"
                         />
@@ -353,7 +375,7 @@ export default function MeterReadingsPage() {
                           </label>
                           <textarea
                             value={f.discrepancyComment || ''}
-                            onChange={e => updateForm(dispenser.dispenserId, 'discrepancyComment', e.target.value)}
+                            onChange={e => updateForm(pump.id, 'discrepancyComment', e.target.value)}
                             rows="2"
                             className="w-full px-4 py-3 text-sm border-2 border-amber-300 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 resize-none"
                             placeholder="Explain why the opening reading differs from the previous closing..."
@@ -361,9 +383,9 @@ export default function MeterReadingsPage() {
                         </div>
                       )}
 
-                      {messages[dispenser.dispenserId] && (
-                        <p className={`mt-2 text-sm ${messages[dispenser.dispenserId].includes('error') || messages[dispenser.dispenserId].includes('Failed') || messages[dispenser.dispenserId].includes('Please') ? 'text-red-600' : 'text-green-600'}`}>
-                          {messages[dispenser.dispenserId]}
+                      {messages[pump.id] && (
+                        <p className={`mt-2 text-sm ${messages[pump.id].includes('error') || messages[pump.id].includes('Failed') || messages[pump.id].includes('Please') ? 'text-red-600' : 'text-green-600'}`}>
+                          {messages[pump.id]}
                         </p>
                       )}
 
@@ -371,17 +393,17 @@ export default function MeterReadingsPage() {
                         <Button
                           variant="primary"
                           size="sm"
-                          onClick={() => submitReading(dispenser)}
-                          disabled={submitting[dispenser.dispenserId] || !f.closing}
+                          onClick={() => submitReading(pump)}
+                          disabled={submitting[pump.id] || !f.closing}
                         >
-                          {submitting[dispenser.dispenserId] ? 'Saving...' : existing ? 'Update Reading' : 'Save Reading'}
+                          {submitting[pump.id] ? 'Saving...' : existing ? 'Update Reading' : 'Save Reading'}
                         </Button>
                         {existing && (
                           <Button
                             variant="secondary"
                             size="sm"
-                            onClick={() => cancelEditing(dispenser.dispenserId)}
-                            disabled={submitting[dispenser.dispenserId]}
+                            onClick={() => cancelEditing(pump.id)}
+                            disabled={submitting[pump.id]}
                           >
                             Cancel
                           </Button>
