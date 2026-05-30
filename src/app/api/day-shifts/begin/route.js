@@ -48,10 +48,23 @@ export async function POST(request) {
 
     await autoCloseExpiredInProgressShifts({ stationId: validatedData.stationId, session });
 
-    const submittedPrices = {
-      PMS: Number(validatedData.pricesAtStart.PMS),
-      AGO: Number(validatedData.pricesAtStart.AGO),
-    };
+    // Build submitted prices from dynamic availableProducts
+    const availableProducts = station.availableProducts?.length
+      ? station.availableProducts
+      : ['PMS', 'AGO'];
+
+    const submittedPrices = {};
+    for (const product of availableProducts) {
+      const val = Number(validatedData.pricesAtStart[product]);
+      if (!val || val <= 0) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          { error: `Invalid price for ${product}` },
+          { status: 400 }
+        );
+      }
+      submittedPrices[product] = val;
+    }
 
     // Check if there's already an active day
     const existingActiveDay = await DayShift.findOne({
@@ -94,14 +107,14 @@ export async function POST(request) {
         tankLabel: mappedTank?.label || dispenser.tankId || '',
         supervisorId: null,
         supervisorName: '',
-        initialReading: assignment.initialReading,
+        initialReading: 0,
         totalLiters: 0,
       });
     }
 
     const openingPriceChanges = [];
-    for (const fuelType of ['PMS', 'AGO']) {
-      const previousPrice = Number(station.currentPrices?.[fuelType] || 0);
+    for (const fuelType of availableProducts) {
+      const previousPrice = Number(station.currentPrices?.get?.(fuelType) ?? station.currentPrices?.[fuelType] ?? 0);
       const newPrice = submittedPrices[fuelType];
 
       if (previousPrice !== newPrice) {
@@ -130,8 +143,13 @@ export async function POST(request) {
       }
     }
 
-    station.currentPrices.PMS = submittedPrices.PMS;
-    station.currentPrices.AGO = submittedPrices.AGO;
+    // Update station prices for all available products
+    if (!station.currentPrices || typeof station.currentPrices.set !== 'function') {
+      station.currentPrices = new Map();
+    }
+    for (const [ft, price] of Object.entries(submittedPrices)) {
+      station.currentPrices.set(ft, price);
+    }
     await station.save({ session });
 
     if (openingPriceChanges.length > 0) {

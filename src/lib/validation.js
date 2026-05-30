@@ -17,7 +17,7 @@ export const userSchema = z.object({
     ROLES.DAILY_AUDITOR,
     ROLES.MANAGER,
     ROLES.SUPERVISOR,
-    ROLES.ACCOUNTANT,
+    ROLES.CASHIER,
   ]),
   stationId: z.string().optional(),
 });
@@ -34,14 +34,14 @@ export const stationSchema = z.object({
 // Price Adjustment Schema
 export const priceAdjustmentSchema = z.object({
   stationId: z.string(),
-  fuelType: z.enum([FUEL_TYPES.PMS, FUEL_TYPES.AGO]),
+  fuelType: z.enum(Object.values(FUEL_TYPES)),
   price: z.number().positive('Price must be positive'),
 });
 
 // Stock Receipt Schema
 export const stockReceiptSchema = z.object({
   stationId: z.string(),
-  fuelType: z.enum([FUEL_TYPES.PMS, FUEL_TYPES.AGO]),
+  fuelType: z.enum(Object.values(FUEL_TYPES)),
   tank: z.string().optional(),
   quantity: z.number().positive('Quantity must be positive'),
   expectedQuantity: z.number().positive('Expected quantity must be positive'),
@@ -56,18 +56,14 @@ export const stockReceiptSchema = z.object({
     .optional(),
 });
 
-// Begin Day Schema
+// Begin Day Schema — prices are dynamic per station's availableProducts
 export const beginDaySchema = z.object({
   stationId: z.string(),
   date: z.string(),
-  pricesAtStart: z.object({
-    PMS: z.number().positive('PMS price must be positive'),
-    AGO: z.number().positive('AGO price must be positive'),
-  }),
+  pricesAtStart: z.record(z.string(), z.number().positive('Price must be positive')),
   dispensers: z.array(z.object({
     dispenserId: z.string(),
-    fuelType: z.enum([FUEL_TYPES.PMS, FUEL_TYPES.AGO]),
-    initialReading: z.number().min(0, 'Initial reading cannot be negative'),
+    fuelType: z.enum(Object.values(FUEL_TYPES)),
   })),
 });
 

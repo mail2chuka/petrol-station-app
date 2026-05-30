@@ -80,7 +80,7 @@ const dayShiftSchema = new mongoose.Schema(
         },
         initialReading: {
           type: Number,
-          required: true,
+          default: 0,
         },
         finalReading: {
           type: Number,
@@ -91,27 +91,20 @@ const dayShiftSchema = new mongoose.Schema(
         },
       },
     ],
-    // Price snapshots for the day
+    // Price snapshots for the day — keyed by fuel type string (e.g. PMS, AGO, DPK, LPG)
     pricesAtStart: {
-      PMS: {
-        type: Number,
-        required: true,
-      },
-      AGO: {
-        type: Number,
-        required: true,
-      },
+      type: Map,
+      of: Number,
+      default: () => ({}),
     },
-    // Totals
+    // Totals per fuel type
     totalSales: {
-      PMS: {
+      type: Map,
+      of: new mongoose.Schema({
         liters: { type: Number, default: 0 },
         amount: { type: Number, default: 0 },
-      },
-      AGO: {
-        liters: { type: Number, default: 0 },
-        amount: { type: Number, default: 0 },
-      },
+      }, { _id: false }),
+      default: () => ({}),
     },
     totalPayments: {
       cash: { type: Number, default: 0 },

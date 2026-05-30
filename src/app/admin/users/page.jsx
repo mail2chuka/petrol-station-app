@@ -103,7 +103,7 @@ export default function UsersPage() {
   const roleOptions = [
     { value: 'admin', label: 'Admin' },
     { value: 'manager', label: 'Manager' },
-    { value: 'accountant', label: 'Accountant' },
+    { value: 'cashier', label: 'Cashier' },
     { value: 'supervisor', label: 'Supervisor' },
     { value: 'daily_auditor', label: 'Daily Auditor' },
     { value: 'external_auditor', label: 'External Auditor' },

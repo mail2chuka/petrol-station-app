@@ -5,13 +5,22 @@ export const ROLES = {
   DAILY_AUDITOR: 'daily_auditor',
   MANAGER: 'manager',
   SUPERVISOR: 'supervisor',
-  ACCOUNTANT: 'accountant',
+  CASHIER: 'cashier',
 };
 
 // Fuel Types
 export const FUEL_TYPES = {
-  PMS: 'PMS', // Petrol
-  AGO: 'AGO', // Diesel
+  PMS: 'PMS',   // Premium Motor Spirit (Petrol)
+  AGO: 'AGO',   // Automotive Gas Oil (Diesel)
+  DPK: 'DPK',   // Dual Purpose Kerosene
+  LPG: 'LPG',   // Liquefied Petroleum Gas
+};
+
+export const FUEL_TYPE_LABELS = {
+  PMS: 'PMS (Petrol)',
+  AGO: 'AGO (Diesel)',
+  DPK: 'DPK (Kerosene)',
+  LPG: 'LPG (Gas)',
 };
 
 // Payment Methods

@@ -9,7 +9,7 @@ const ALLOWED_ROLES = [
   ROLES.DAILY_AUDITOR,
   ROLES.MANAGER,
   ROLES.SUPERVISOR,
-  ROLES.ACCOUNTANT,
+  ROLES.CASHIER,
 ];
 
 const userSchema = new mongoose.Schema(

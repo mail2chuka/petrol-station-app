@@ -26,8 +26,8 @@ export function getDefaultRouteForUser(user) {
   switch (role) {
     case 'manager':
       return '/manager';
-    case 'accountant':
-      return '/accountant';
+    case 'cashier':
+      return '/cashier';
     case 'supervisor':
       return '/supervisor';
     case 'daily_auditor':

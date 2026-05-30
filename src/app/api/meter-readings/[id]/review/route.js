@@ -4,6 +4,7 @@ import connectDB from '@/lib/db';
 import MeterReading from '@/models/MeterReading';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { notifySupervisorMeterReview } from '@/lib/notifications';
 
 const reviewSchema = z.object({
   action: z.enum(['approve', 'query']),
@@ -39,6 +40,19 @@ export async function PATCH(request, { params }) {
     reading.reviewedAt = new Date();
 
     await reading.save();
+
+    // Notify the supervisor of the review result
+    await notifySupervisorMeterReview({
+      supervisorId: reading.supervisorId,
+      stationId: reading.stationId,
+      stationName: reading.stationName,
+      managerName: currentUser.name,
+      pumpLabel: reading.pumpLabel || reading.pumpId,
+      action: payload.action,
+      note: payload.note,
+      readingId: reading._id,
+    });
+
     return NextResponse.json({ reading });
   } catch (error) {
     console.error('Error reviewing meter reading:', error);

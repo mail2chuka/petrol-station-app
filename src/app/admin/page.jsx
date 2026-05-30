@@ -68,7 +68,7 @@ export default function AdminDashboard() {
       setStats({
         totalStations: allStations.filter((s) => s.isActive !== false).length,
         totalUsers: allUsers.length,
-        staff: allUsers.filter(u => ['manager', 'accountant', 'supervisor'].includes(u.role) && u.isActive !== false).length,
+        staff: allUsers.filter(u => ['manager', 'cashier', 'supervisor'].includes(u.role) && u.isActive !== false).length,
       });
     } catch (error) {
       console.error('Error fetching stats:', error);

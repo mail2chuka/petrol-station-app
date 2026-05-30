@@ -15,7 +15,7 @@ const managerMenuItems = [
   { label: 'Begin Day', href: '/manager/begin-day' },
   { label: 'Open Pumps', href: '/manager/open-pumps' },
   { label: 'Supervisor Entries', href: '/manager/supervisor-entries' },
-  { label: 'Accountant Entries', href: '/manager/accountant-entries' },
+  { label: 'Cashier Entries', href: '/manager/cashier-entries' },
   { label: 'Summary Book', href: '/manager/summary-book' },
   { label: 'End Day', href: '/manager/end-day' },
   { label: 'Stock In', href: '/manager/stock' },

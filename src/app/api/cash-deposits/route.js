@@ -6,6 +6,7 @@ import User from '@/models/User';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/audit';
 import { ROLES } from '@/lib/constants';
+import { notifyAdminDepositSubmitted } from '@/lib/notifications';
 
 const createCashDepositSchema = z.object({
   stationId: z.string().min(1),
@@ -87,9 +88,9 @@ export async function POST(request) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    if (currentUser.role !== ROLES.ACCOUNTANT) {
+    if (currentUser.role !== ROLES.CASHIER) {
       return NextResponse.json(
-        { error: 'Only accountants can initiate deposits' },
+        { error: 'Only cashiers can initiate deposits' },
         { status: 403 }
       );
     }
@@ -113,8 +114,8 @@ export async function POST(request) {
       bankName: payload.bankName,
       bankBranch: payload.bankBranch || '',
       accountNumber: payload.accountNumber,
-      initiatedByAccountantId: currentUser.id,
-      initiatedByAccountantName: currentUser.name,
+      initiatedByCashierId: currentUser.id,
+      initiatedByCashierName: currentUser.name,
       status: 'pending',
       adminNote: payload.note || null,
     });
@@ -133,6 +134,16 @@ export async function POST(request) {
         bankName: cashDeposit.bankName,
         status: cashDeposit.status,
       },
+    });
+
+    // Notify admin that a new deposit awaits approval
+    await notifyAdminDepositSubmitted({
+      stationId: cashDeposit.stationId,
+      stationName: cashDeposit.stationName,
+      cashierName: currentUser.name,
+      amount: cashDeposit.amount,
+      bankName: cashDeposit.bankName,
+      depositId: cashDeposit._id,
     });
 
     return NextResponse.json({ cashDeposit }, { status: 201 });

@@ -6,7 +6,7 @@ import Table from '@/components/Table';
 import Input from '@/components/Input';
 import Loading from '@/components/Loading';
 
-const STAFF_ROLES = ['manager', 'accountant', 'supervisor'];
+const STAFF_ROLES = ['manager', 'cashier', 'supervisor'];
 
 export default function StaffPage() {
   const [users, setUsers] = useState([]);
@@ -71,7 +71,7 @@ export default function StaffPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
         <div>
           <h1 className="text-xl sm:text-3xl font-bold text-gray-900">Staff</h1>
-          <p className="text-sm text-gray-600 mt-1">Managers, accountants, and supervisors.</p>
+          <p className="text-sm text-gray-600 mt-1">Managers, cashiers, and supervisors.</p>
         </div>
       </div>
 

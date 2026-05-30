@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import { FUEL_TYPES } from '@/lib/constants';
 
+const ALL_FUEL_TYPES = Object.values(FUEL_TYPES);
+
 const stationSchema = new mongoose.Schema(
   {
     name: {
@@ -21,46 +23,43 @@ const stationSchema = new mongoose.Schema(
       required: [true, 'Location is required'],
       trim: true,
     },
-    currentPrices: {
-      PMS: {
-        type: Number,
-        default: 0,
-      },
-      AGO: {
-        type: Number,
-        default: 0,
-      },
+    // Which products this station sells (admin-configurable)
+    availableProducts: {
+      type: [String],
+      enum: ALL_FUEL_TYPES,
+      default: ['PMS', 'AGO'],
     },
+    // Prices per product (keyed by fuel type string)
+    currentPrices: {
+      type: Map,
+      of: Number,
+      default: () => ({ PMS: 0, AGO: 0 }),
+    },
+    // Stock per product (keyed by fuel type string)
     currentStock: {
-      PMS: {
-        type: Number,
-        default: 0,
-      },
-      AGO: {
-        type: Number,
-        default: 0,
-      },
+      type: Map,
+      of: Number,
+      default: () => ({ PMS: 0, AGO: 0 }),
     },
       tanks: [
         {
           _id: {
             type: String,
-            required: true, // Unique tank identifier (e.g., "PMS-1", "AGO-1")
+            required: true,
           },
           label: {
             type: String,
-            required: true, // Display name (e.g., "Premium Motor Spirit Tank 1")
+            required: true,
           },
           product: {
             type: String,
-            enum: ['PMS', 'AGO'],
+            enum: ALL_FUEL_TYPES,
             required: true,
           },
           capacity: {
             type: Number,
             required: true,
             min: 1,
-            // Capacity in litres
           },
           isActive: {
             type: Boolean,
@@ -94,12 +93,12 @@ const stationSchema = new mongoose.Schema(
           required: true,
         },
           tankId: {
-            type: String, // Reference to tanks[*]._id
+            type: String,
             default: null,
           },
         fuelType: {
           type: String,
-          enum: Object.values(FUEL_TYPES),
+          enum: ALL_FUEL_TYPES,
           required: true,
         },
         isActive: {

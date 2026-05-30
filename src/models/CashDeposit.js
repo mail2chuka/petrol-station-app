@@ -33,12 +33,12 @@ const cashDepositSchema = new mongoose.Schema(
       required: [true, 'Account number is required'],
       trim: true,
     },
-    initiatedByAccountantId: {
+    initiatedByCashierId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Accountant ID is required'],
+      required: [true, 'Cashier ID is required'],
     },
-    initiatedByAccountantName: {
+    initiatedByCashierName: {
       type: String,
       required: true,
     },
@@ -82,7 +82,7 @@ const cashDepositSchema = new mongoose.Schema(
 // Indexes for fast queries
 cashDepositSchema.index({ stationId: 1, date: -1 });
 cashDepositSchema.index({ stationId: 1, status: 1, createdAt: -1 });
-cashDepositSchema.index({ initiatedByAccountantId: 1, date: -1 });
+cashDepositSchema.index({ initiatedByCashierId: 1, date: -1 });
 
 if (mongoose.models.CashDeposit) {
   delete mongoose.models.CashDeposit;

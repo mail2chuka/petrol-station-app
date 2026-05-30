@@ -5,6 +5,7 @@ import MeterReading from '@/models/MeterReading';
 import PumpOpening from '@/models/PumpOpening';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { notifyAdminMeterDiscrepancy } from '@/lib/notifications';
 
 const meterReadingSchema = z.object({
   stationId: z.string(),
@@ -127,6 +128,20 @@ export async function POST(request) {
       },
       { new: true, upsert: true, runValidators: true }
     );
+
+    // Notify admin if opening meter differs from previous closing
+    if (openingEdited) {
+      await notifyAdminMeterDiscrepancy({
+        stationId: payload.stationId,
+        stationName: currentUser.stationName || 'Unknown Station',
+        supervisorName: currentUser.name,
+        pumpLabel: openPump.pumpLabel || payload.pumpId,
+        opening: payload.opening,
+        previousClosing: previousDayClosing,
+        comment: payload.discrepancyComment?.trim() || '',
+        readingId: reading._id,
+      });
+    }
 
     return NextResponse.json({ reading }, { status: 201 });
   } catch (error) {

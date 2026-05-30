@@ -5,6 +5,7 @@ import CashDeposit from '@/models/CashDeposit';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/audit';
 import { ROLES } from '@/lib/constants';
+import { notifyCashierDepositStatus } from '@/lib/notifications';
 
 const updateStatusSchema = z.object({
   status: z.enum(['approved', 'rejected']),
@@ -46,6 +47,18 @@ export async function PATCH(request, { params }) {
     }
 
     await cashDeposit.save();
+
+    // Notify the cashier of the approval/rejection
+    await notifyCashierDepositStatus({
+      cashierId: cashDeposit.initiatedByCashierId,
+      stationId: cashDeposit.stationId,
+      stationName: cashDeposit.stationName,
+      adminName: currentUser.name,
+      amount: cashDeposit.amount,
+      status: payload.status,
+      note: payload.adminNote,
+      depositId: cashDeposit._id,
+    });
 
     await createAuditLog({
       userId: currentUser.id,

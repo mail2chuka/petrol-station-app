@@ -18,10 +18,10 @@ export async function POST(request) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    // Only accountants can record payments
-    if (currentUser.role !== ROLES.ACCOUNTANT) {
+    // Only cashiers can record payments
+    if (currentUser.role !== ROLES.CASHIER) {
       return NextResponse.json(
-        { error: 'Only accountants can record payments' },
+        { error: 'Only cashiers can record payments' },
         { status: 403 }
       );
     }
@@ -52,7 +52,7 @@ export async function POST(request) {
       );
     }
 
-    // Verify accountant belongs to the same station
+    // Verify cashier belongs to the same station
     if (currentUser.stationId !== dayShift.stationId.toString()) {
       await session.abortTransaction();
       return NextResponse.json(
