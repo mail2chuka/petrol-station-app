@@ -79,26 +79,35 @@ export async function POST(request) {
     const totalAmount = validatedData.cashAmount + validatedData.posAmount;
     const discrepancy = totalAmount - expectedAmount;
 
-    const salesEntry = await SalesEntry.create([{
-      dayShiftId: dayShift._id,
-      stationId: dayShift.stationId,
-      stationName: dayShift.stationName,
-      date: dayShift.date,
-      supervisorId: currentUser.id,
-      supervisorName: currentUser.name,
-      dispenserId: validatedData.dispenserId,
-      dispenserName: assignment.dispenserName,
-      fuelType: assignment.fuelType,
-      liters: validatedData.liters,
-      pricePerLiter,
-      expectedAmount,
-      cashAmount: validatedData.cashAmount,
-      posAmount: validatedData.posAmount,
-      totalAmount,
-      discrepancy,
-      enteredBy: currentUser.id,
-      enteredByName: currentUser.name,
-    }], { session, ordered: true });
+    // Upsert: one entry per supervisor+dispenser+dayShift
+    const salesEntry = await SalesEntry.findOneAndUpdate(
+      {
+        dayShiftId: dayShift._id,
+        dispenserId: validatedData.dispenserId,
+        supervisorId: currentUser.id,
+      },
+      {
+        dayShiftId: dayShift._id,
+        stationId: dayShift.stationId,
+        stationName: dayShift.stationName,
+        date: dayShift.date,
+        supervisorId: currentUser.id,
+        supervisorName: currentUser.name,
+        dispenserId: validatedData.dispenserId,
+        dispenserName: assignment.dispenserName,
+        fuelType: assignment.fuelType,
+        liters: validatedData.liters,
+        pricePerLiter,
+        expectedAmount,
+        cashAmount: validatedData.cashAmount,
+        posAmount: validatedData.posAmount,
+        totalAmount,
+        discrepancy,
+        enteredBy: currentUser.id,
+        enteredByName: currentUser.name,
+      },
+      { new: true, upsert: true, runValidators: true, session }
+    );
 
     await session.commitTransaction();
 
@@ -121,7 +130,7 @@ export async function POST(request) {
       },
     });
 
-    return NextResponse.json({ salesEntry: salesEntry[0] }, { status: 201 });
+    return NextResponse.json({ salesEntry }, { status: 201 });
   } catch (error) {
     if (session) {
       try { await session.abortTransaction(); } catch {}
