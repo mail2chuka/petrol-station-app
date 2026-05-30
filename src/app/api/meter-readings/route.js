@@ -2,14 +2,15 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import connectDB from '@/lib/db';
 import MeterReading from '@/models/MeterReading';
-import PumpOpening from '@/models/PumpOpening';
+import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
-import { ROLES } from '@/lib/constants';
+import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { notifyAdminMeterDiscrepancy } from '@/lib/notifications';
 
 const meterReadingSchema = z.object({
   stationId: z.string(),
   pumpId: z.string(),
+  pumpLabel: z.string().optional(),
   date: z.string(),
   opening: z.number().min(0),
   closing: z.number().min(0),
@@ -74,19 +75,25 @@ export async function POST(request) {
     const startDate = new Date(payload.date + 'T00:00:00.000Z');
     const endDate = new Date(payload.date + 'T23:59:59.999Z');
 
-    const opening = await PumpOpening.findOne({
+    // Verify there is an active day shift and the pump is in it
+    const activeShift = await DayShift.findOne({
       stationId: payload.stationId,
-      date: { $gte: startDate, $lte: endDate },
+      status: DAY_STATUS.IN_PROGRESS,
     });
 
-    if (!opening) {
-      return NextResponse.json({ error: 'Manager must open pumps for the day first' }, { status: 409 });
+    if (!activeShift) {
+      return NextResponse.json({ error: 'No active day shift. The manager must begin the day first.' }, { status: 409 });
     }
 
-    const openPump = opening.pumps.find(p => p._id === payload.pumpId);
-    if (!openPump) {
-      return NextResponse.json({ error: 'This pump is not in today open-pumps list' }, { status: 409 });
+    const shiftDispenser = activeShift.dispenserAssignments?.find(
+      d => d.dispenserId === payload.pumpId
+    );
+    if (!shiftDispenser) {
+      return NextResponse.json({ error: 'This pump is not active for today\'s shift.' }, { status: 409 });
     }
+
+    // Use the dispenser name from shift if not provided
+    const pumpLabel = payload.pumpLabel || shiftDispenser.dispenserName || payload.pumpId;
 
     const previousReading = await MeterReading.findOne({
       stationId: payload.stationId,
@@ -111,7 +118,7 @@ export async function POST(request) {
         stationId: payload.stationId,
         stationName: currentUser.stationName || 'Unknown Station',
         pumpId: payload.pumpId,
-        pumpLabel: openPump.pumpLabel || payload.pumpId,
+        pumpLabel: pumpLabel,
         date: startDate,
         opening: payload.opening,
         closing: payload.closing,
@@ -131,7 +138,7 @@ export async function POST(request) {
         stationId: payload.stationId,
         stationName: currentUser.stationName || 'Unknown Station',
         supervisorName: currentUser.name,
-        pumpLabel: openPump.pumpLabel || payload.pumpId,
+        pumpLabel: pumpLabel,
         opening: payload.opening,
         previousClosing: previousDayClosing,
         comment: payload.discrepancyComment?.trim() || '',
