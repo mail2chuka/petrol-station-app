@@ -4,6 +4,7 @@ import connectDB from '@/lib/db';
 import DayShift from '@/models/DayShift';
 import Station from '@/models/Station';
 import PriceHistory from '@/models/PriceHistory';
+import PumpOpening from '@/models/PumpOpening';
 import { requireAuth } from '@/lib/auth';
 import { beginDaySchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
@@ -65,6 +66,9 @@ export async function POST(request) {
       }
       submittedPrices[product] = val;
     }
+
+    const dayStart = new Date(validatedData.date + 'T00:00:00.000Z');
+    const dayEnd = new Date(validatedData.date + 'T23:59:59.999Z');
 
     // Check if there's already an active day
     const existingActiveDay = await DayShift.findOne({
@@ -156,10 +160,13 @@ export async function POST(request) {
       await PriceHistory.create(openingPriceChanges, { session, ordered: true });
     }
 
+    // Use strict UTC midnight so date never shifts due to server timezone
+    const dayDate = new Date(validatedData.date + 'T00:00:00.000Z');
+
     const dayShift = await DayShift.create([{
       stationId: validatedData.stationId,
       stationName: station.name,
-      date: new Date(validatedData.date),
+      date: dayDate,
       status: DAY_STATUS.IN_PROGRESS,
       startedBy: currentUser.id,
       startedByName: currentUser.name,
@@ -167,6 +174,30 @@ export async function POST(request) {
       dispenserAssignments,
       pricesAtStart: submittedPrices,
     }], { session, ordered: true });
+
+    // Auto-create PumpOpening for selected dispensers so supervisors can enter readings immediately
+    const pumpOpeningPumps = dispenserAssignments.map(a => ({
+      _id: a.dispenserId,
+      pumpLabel: a.dispenserName,
+      openedAt: new Date(),
+      addedLate: false,
+    }));
+
+    await PumpOpening.findOneAndUpdate(
+      { stationId: validatedData.stationId, date: { $gte: dayDate, $lte: new Date(validatedData.date + 'T23:59:59.999Z') } },
+      {
+        $setOnInsert: {
+          stationId: validatedData.stationId,
+          stationName: station.name,
+          date: dayDate,
+          openedByManagerId: currentUser.id,
+          openedByManagerName: currentUser.name,
+          pumps: pumpOpeningPumps,
+          dayClosed: false,
+        },
+      },
+      { new: true, upsert: true, session }
+    );
 
     await session.commitTransaction();
 

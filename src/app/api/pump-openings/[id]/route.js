@@ -64,10 +64,9 @@ export async function PATCH(request, { params }) {
         return NextResponse.json({ error: 'Pump not currently in today open list' }, { status: 400 });
       }
 
-      const startDate = new Date(opening.date);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(opening.date);
-      endDate.setHours(23, 59, 59, 999);
+      const dateStr = opening.date.toISOString().split('T')[0];
+      const startDate = new Date(dateStr + 'T00:00:00.000Z');
+      const endDate = new Date(dateStr + 'T23:59:59.999Z');
 
       const existingReading = await MeterReading.findOne({
         stationId: opening.stationId,

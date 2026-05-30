@@ -33,11 +33,10 @@ export async function GET(request) {
 
     const query = { stationId };
     if (date) {
-      const startDate = new Date(date);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(date);
-      endDate.setHours(23, 59, 59, 999);
-      query.date = { $gte: startDate, $lte: endDate };
+      query.date = {
+        $gte: new Date(date + 'T00:00:00.000Z'),
+        $lte: new Date(date + 'T23:59:59.999Z'),
+      };
     }
 
     const openings = await PumpOpening.find(query).sort({ date: -1, createdAt: -1 });
@@ -70,10 +69,8 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Station not found' }, { status: 404 });
     }
 
-    const startDate = new Date(validatedData.date);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(validatedData.date);
-    endDate.setHours(23, 59, 59, 999);
+    const startDate = new Date(validatedData.date + 'T00:00:00.000Z');
+    const endDate = new Date(validatedData.date + 'T23:59:59.999Z');
 
     const activeDay = await DayShift.findOne({
       stationId: validatedData.stationId,
@@ -110,7 +107,7 @@ export async function POST(request) {
         $setOnInsert: {
           stationId: validatedData.stationId,
           stationName: station.name,
-          date: startDate,
+          date: startDate, // UTC midnight
           openedByManagerId: currentUser.id,
           openedByManagerName: currentUser.name,
           pumps,

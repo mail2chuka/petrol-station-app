@@ -35,11 +35,10 @@ export async function GET(request) {
       const [y, m] = month.split('-').map(Number);
       query.date = { $gte: new Date(y, m - 1, 1), $lte: new Date(y, m, 0, 23, 59, 59, 999) };
     } else if (date) {
-      const startDate = new Date(date);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(date);
-      endDate.setHours(23, 59, 59, 999);
-      query.date = { $gte: startDate, $lte: endDate };
+      query.date = {
+        $gte: new Date(date + 'T00:00:00.000Z'),
+        $lte: new Date(date + 'T23:59:59.999Z'),
+      };
     }
 
     // Ensure previous-day open shifts are automatically ended after midnight.
