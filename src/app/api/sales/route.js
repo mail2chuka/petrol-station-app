@@ -74,7 +74,10 @@ export async function POST(request) {
       .sort({ effectiveDate: -1, createdAt: -1 })
       .session(session);
 
-    const pricePerLiter = effectiveApprovedPrice?.newPrice ?? dayShift.pricesAtStart[assignment.fuelType];
+    const startPrice = dayShift.pricesAtStart instanceof Map
+      ? dayShift.pricesAtStart.get(assignment.fuelType)
+      : dayShift.pricesAtStart?.[assignment.fuelType];
+    const pricePerLiter = effectiveApprovedPrice?.newPrice ?? startPrice ?? 0;
     const expectedAmount = validatedData.liters * pricePerLiter;
     const totalAmount = validatedData.cashAmount + validatedData.posAmount;
     const discrepancy = totalAmount - expectedAmount;

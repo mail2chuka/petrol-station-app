@@ -1,339 +1,383 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import Card from '@/components/Card';
 import Input from '@/components/Input';
-import Select from '@/components/Select';
 import Button from '@/components/Button';
-import Loading from '@/components/Loading';
 
-function formatCurrency(amount) {
-  if (amount === null || amount === undefined || isNaN(amount)) return '₦0.00';
-  return `₦${Number(amount).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const emptyForm = (dispensers) => ({
-  dispenserId: dispensers.length === 1 ? dispensers[0].dispenserId : '',
-  liters: '',
-  cashAmount: '',
-  posAmount: '',
-});
+function fmt(n) {
+  return `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 export default function RecordSalesPage() {
   const { data: session } = useSession();
+  const stationId = session?.user?.stationId;
+
   const [activeDayShift, setActiveDayShift] = useState(null);
-  const [dispensers, setDispensers] = useState([]);
-  const [formData, setFormData] = useState({ dispenserId: '', liters: '', cashAmount: '', posAmount: '' });
+  const [dispensers, setDispensers] = useState([]);      // dispenserAssignments from shift
+  const [meterReadings, setMeterReadings] = useState({}); // { dispenserId: reading }
+  const [existingSales, setExistingSales] = useState({});  // { dispenserId: salesEntry }
+  const [forms, setForms] = useState({});                  // { dispenserId: { liters, cash, pos } }
+  const [editing, setEditing] = useState({});              // { dispenserId: bool }
+  const [submitting, setSubmitting] = useState({});
+  const [messages, setMessages] = useState({});
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
 
-  /* Display/edit state */
-  const [submittedSale, setSubmittedSale] = useState(null); // non-null = show display card
-  const [editSaleId, setEditSaleId] = useState(null);       // non-null = editing existing sale
-
-  useEffect(() => {
-    fetchData();
-  }, [session]);
-
-  const fetchData = async () => {
-    if (!session?.user?.stationId) return;
+  const loadData = useCallback(async () => {
+    if (!stationId) return;
+    setLoading(true);
     try {
-      const res = await fetch(`/api/day-shifts?stationId=${session.user.stationId}&status=in_progress`);
-      const data = await res.json();
-      if (data.dayShifts?.length > 0) {
-        const dayShift = data.dayShifts[0];
-        setActiveDayShift(dayShift);
-        const assignments = dayShift.dispenserAssignments || [];
-        setDispensers(assignments);
-        setFormData(emptyForm(assignments));
+      const [shiftRes, salesRes, readingsRes] = await Promise.all([
+        fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
+        fetch(`/api/sales?stationId=${stationId}&supervisorId=${session.user.id}`),
+        fetch(`/api/meter-readings?stationId=${stationId}&date=${today()}`),
+      ]);
+      const [shiftData, salesData, readingsData] = await Promise.all([
+        shiftRes.json(), salesRes.json(), readingsRes.json(),
+      ]);
+
+      const shift = (shiftData.dayShifts || [])[0] || null;
+      setActiveDayShift(shift);
+
+      const assignments = shift?.dispenserAssignments || [];
+      setDispensers(assignments);
+
+      // Map sales by dispenserId
+      const salesMap = {};
+      for (const s of (salesData.salesEntries || [])) {
+        if (shift && s.dayShiftId === shift._id) {
+          salesMap[s.dispenserId] = s;
+        }
       }
-    } catch {
-      setError('Failed to load data');
+      setExistingSales(salesMap);
+
+      // Map meter readings by pumpId (dispenserId)
+      const readingsMap = {};
+      for (const r of (readingsData.readings || [])) {
+        readingsMap[r.pumpId] = r;
+      }
+      setMeterReadings(readingsMap);
+
+      // Build form state — pre-fill liters from meter reading if no existing sale
+      const initialForms = {};
+      const initialEditing = {};
+      for (const d of assignments) {
+        const existing = salesMap[d.dispenserId];
+        const reading = readingsMap[d.dispenserId];
+        const suggestedLiters = reading
+          ? Math.max(0, (reading.closing || 0) - (reading.opening || 0) - (reading.rtt || 0))
+          : null;
+
+        initialForms[d.dispenserId] = existing
+          ? { liters: String(existing.liters), cash: String(existing.cashAmount), pos: String(existing.posAmount) }
+          : { liters: suggestedLiters != null ? suggestedLiters.toFixed(2) : '', cash: '', pos: '' };
+
+        initialEditing[d.dispenserId] = !existing;
+      }
+      setForms(initialForms);
+      setEditing(initialEditing);
+      setMessages({});
+    } catch (err) {
+      console.error('Error loading sales data:', err);
     } finally {
       setLoading(false);
     }
+  }, [stationId, session?.user?.id]);
+
+  useEffect(() => {
+    if (stationId) loadData();
+  }, [session]);
+
+  const updateForm = (dispId, field, value) => {
+    setForms(prev => ({ ...prev, [dispId]: { ...prev[dispId], [field]: value } }));
   };
 
-  const handleChange = (e) => {
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  const startEditing = (dispId) => {
+    const existing = existingSales[dispId];
+    if (existing) {
+      setForms(prev => ({
+        ...prev,
+        [dispId]: { liters: String(existing.liters), cash: String(existing.cashAmount), pos: String(existing.posAmount) },
+      }));
+    }
+    setEditing(prev => ({ ...prev, [dispId]: true }));
+    setMessages(prev => ({ ...prev, [dispId]: '' }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setSubmitting(true);
+  const cancelEditing = (dispId) => {
+    setEditing(prev => ({ ...prev, [dispId]: false }));
+    setMessages(prev => ({ ...prev, [dispId]: '' }));
+  };
 
-    const isEditing = !!editSaleId;
-    const url = isEditing ? `/api/sales/${editSaleId}` : '/api/sales';
-    const method = isEditing ? 'PATCH' : 'POST';
+  const submitSale = async (dispenser) => {
+    const f = forms[dispenser.dispenserId] || {};
+    const liters = parseFloat(f.liters);
+    const cash = parseFloat(f.cash) || 0;
+    const pos = parseFloat(f.pos) || 0;
 
-    const body = isEditing
-      ? {
-          liters: parseFloat(formData.liters),
-          cashAmount: parseFloat(formData.cashAmount) || 0,
-          posAmount: parseFloat(formData.posAmount) || 0,
-        }
-      : {
-          dayShiftId: activeDayShift._id,
-          dispenserId: formData.dispenserId,
-          liters: parseFloat(formData.liters),
-          cashAmount: parseFloat(formData.cashAmount) || 0,
-          posAmount: parseFloat(formData.posAmount) || 0,
-        };
+    if (!liters || liters <= 0) {
+      setMessages(prev => ({ ...prev, [dispenser.dispenserId]: 'Enter a valid liters amount.' }));
+      return;
+    }
+
+    setSubmitting(prev => ({ ...prev, [dispenser.dispenserId]: true }));
+    setMessages(prev => ({ ...prev, [dispenser.dispenserId]: '' }));
 
     try {
-      const res = await fetch(url, {
-        method,
+      const res = await fetch('/api/sales', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          dayShiftId: activeDayShift._id,
+          dispenserId: dispenser.dispenserId,
+          liters,
+          cashAmount: cash,
+          posAmount: pos,
+        }),
       });
       const data = await res.json();
-
-      if (res.ok) {
-        setSubmittedSale(data.salesEntry);
-        setEditSaleId(null);
-        setFormData(emptyForm(dispensers));
+      if (!res.ok) {
+        setMessages(prev => ({ ...prev, [dispenser.dispenserId]: data.error || 'Failed to save' }));
       } else {
-        setError(data.error || 'Failed to record sale');
+        await loadData();
       }
     } catch {
-      setError('An error occurred. Please try again.');
+      setMessages(prev => ({ ...prev, [dispenser.dispenserId]: 'An error occurred.' }));
     } finally {
-      setSubmitting(false);
+      setSubmitting(prev => ({ ...prev, [dispenser.dispenserId]: false }));
     }
   };
 
-  const handleEdit = () => {
-    if (!submittedSale) return;
-    setEditSaleId(submittedSale._id);
-    setFormData({
-      dispenserId: submittedSale.dispenserId || '',
-      liters: String(submittedSale.liters),
-      cashAmount: String(submittedSale.cashAmount),
-      posAmount: String(submittedSale.posAmount),
-    });
-    setSubmittedSale(null);
-    setError('');
-  };
-
-  const handleRecordAnother = () => {
-    setSubmittedSale(null);
-    setEditSaleId(null);
-    setFormData(emptyForm(dispensers));
-    setError('');
-  };
-
-  const handleCancelEdit = () => {
-    setEditSaleId(null);
-    setFormData(emptyForm(dispensers));
-    setError('');
-  };
-
-  if (loading) return <Loading />;
-
-  if (!activeDayShift) {
+  if (loading) {
     return (
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-6">Record Sales</h1>
-        <Card>
-          <p className="text-sm text-amber-700">
-            No active day shift. Please wait for the manager to begin the day.
-          </p>
-        </Card>
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-slate-900">Record Sales</h1>
+        <div className="flex justify-center py-16"><div className="spinner" /></div>
       </div>
     );
   }
 
-  const selectedDispenser = dispensers.find((d) => d.dispenserId === formData.dispenserId);
-  const totalAmount = (parseFloat(formData.cashAmount) || 0) + (parseFloat(formData.posAmount) || 0);
+  if (!activeDayShift) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-slate-900">Record Sales</h1>
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-4 rounded-xl text-sm">
+          No active day shift. The manager must begin the day before sales can be recorded.
+        </div>
+      </div>
+    );
+  }
+
+  const totalSalesLiters = Object.values(existingSales).reduce((s, e) => s + (e.liters || 0), 0);
+  const totalSalesCash = Object.values(existingSales).reduce((s, e) => s + (e.cashAmount || 0), 0);
+  const totalSalesPos = Object.values(existingSales).reduce((s, e) => s + (e.posAmount || 0), 0);
+  const recordedCount = Object.keys(existingSales).length;
 
   return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-6">Record Sales</h1>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Record Sales</h1>
+          <p className="text-sm text-slate-500 mt-1">Enter liters sold and payment breakdown for each pump.</p>
+        </div>
+        <button
+          onClick={loadData}
+          className="text-xs text-gray-500 hover:text-ecana-maroon border border-gray-200 rounded-lg px-3 py-1.5 hover:border-ecana-maroon transition-colors"
+        >
+          Refresh
+        </button>
+      </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl mb-4 text-sm">
-          {error}
+      {/* Summary bar — only shown once some sales are recorded */}
+      {recordedCount > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="card-modern p-4 text-center">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Pumps Done</p>
+            <p className="text-2xl font-bold text-gray-800">{recordedCount}/{dispensers.length}</p>
+          </div>
+          <div className="card-modern p-4 text-center">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Liters</p>
+            <p className="text-2xl font-bold text-gray-800">{totalSalesLiters.toFixed(1)} L</p>
+          </div>
+          <div className="card-modern p-4 text-center">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Cash</p>
+            <p className="text-xl font-bold text-gray-800">{fmt(totalSalesCash)}</p>
+          </div>
+          <div className="card-modern p-4 text-center">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">POS</p>
+            <p className="text-xl font-bold text-gray-800">{fmt(totalSalesPos)}</p>
+          </div>
         </div>
       )}
 
-      {/* ── DISPLAY MODE: sale just recorded ── */}
-      {submittedSale ? (
-        <Card title="Sale Recorded">
-          <div className="space-y-4">
-            {/* Dispenser info */}
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-sm shrink-0">
-                ✓
-              </div>
-              <div>
-                <p className="font-semibold text-slate-900">
-                  {submittedSale.dispenserName}
-                  <span className="mx-2 text-slate-300">•</span>
-                  <span className="text-slate-600">{submittedSale.fuelType}</span>
-                </p>
-                <p className="text-sm text-slate-500">
-                  {new Date(submittedSale.createdAt || Date.now()).toLocaleTimeString('en-NG', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </p>
-              </div>
-            </div>
-
-            {/* Figures */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: 'Liters', value: `${Number(submittedSale.liters).toFixed(2)} L`, highlight: false },
-                { label: 'Cash', value: formatCurrency(submittedSale.cashAmount), highlight: false },
-                { label: 'POS', value: formatCurrency(submittedSale.posAmount), highlight: false },
-                { label: 'Total', value: formatCurrency(submittedSale.totalAmount), highlight: true },
-              ].map(({ label, value, highlight }) => (
-                <div
-                  key={label}
-                  className={`rounded-xl p-3 ${highlight ? 'bg-emerald-50 border border-emerald-100' : 'bg-slate-50'}`}
-                >
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-0.5">
-                    {label}
-                  </p>
-                  <p
-                    className={`text-lg font-bold ${
-                      highlight ? 'text-emerald-700' : 'text-slate-900'
-                    }`}
-                  >
-                    {value}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-2 pt-1">
-              <Button variant="primary" size="sm" onClick={handleRecordAnother}>
-                Record Another Sale
-              </Button>
-              <Button variant="secondary" size="sm" onClick={handleEdit}>
-                Edit This Sale
-              </Button>
-            </div>
-          </div>
-        </Card>
+      {dispensers.length === 0 ? (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">
+          No pumps were activated for today&apos;s shift. Ask the manager to begin day with active pumps.
+        </div>
       ) : (
-        /* ── FORM MODE: new sale or editing existing ── */
-        <Card title={editSaleId ? 'Edit Sale' : 'Sales Entry'}>
-          {editSaleId && (
-            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-              Editing an existing sale. Changes will update the original record.
-            </div>
-          )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {!editSaleId && (
-              <Select
-                label="Dispenser"
-                name="dispenserId"
-                value={formData.dispenserId}
-                onChange={handleChange}
-                options={[
-                  { value: '', label: 'Select dispenser...' },
-                  ...dispensers.map((d) => ({
-                    value: d.dispenserId,
-                    label: `${d.dispenserName} (${d.fuelType})`,
-                  })),
-                ]}
-                required
-              />
-            )}
+        <div className="space-y-4">
+          {dispensers.map((dispenser) => {
+            const existing = existingSales[dispenser.dispenserId];
+            const reading = meterReadings[dispenser.dispenserId];
+            const isEditing = editing[dispenser.dispenserId];
+            const f = forms[dispenser.dispenserId] || {};
 
-            {editSaleId && (
-              <div className="p-3 bg-slate-50 rounded-xl text-sm">
-                <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Dispenser</p>
-                <p className="font-semibold text-slate-900">
-                  {dispensers.find((d) => d.dispenserId === formData.dispenserId)?.dispenserName ||
-                    formData.dispenserId}
-                </p>
-              </div>
-            )}
+            const suggestedLiters = reading
+              ? Math.max(0, (reading.closing || 0) - (reading.opening || 0) - (reading.rtt || 0))
+              : null;
 
-            {!editSaleId && selectedDispenser && (
-              <div className="p-4 bg-ecana-blue/5 rounded-xl border border-ecana-blue/20">
-                <p className="text-xs text-slate-500 uppercase tracking-wide">Selected Dispenser</p>
-                <p className="font-semibold text-slate-900 mt-1">
-                  {selectedDispenser.dispenserName}
-                  <span className="mx-2 text-slate-300">•</span>
-                  <span className="text-ecana-blue">{selectedDispenser.fuelType}</span>
-                </p>
-              </div>
-            )}
+            const cashVal = parseFloat(f.cash) || 0;
+            const posVal = parseFloat(f.pos) || 0;
+            const litersVal = parseFloat(f.liters) || 0;
+            const liveTotal = cashVal + posVal;
 
-            <Input
-              label="Liters Sold"
-              type="number"
-              name="liters"
-              value={formData.liters}
-              onChange={handleChange}
-              placeholder="0.00"
-              step="0.01"
-              min="0.01"
-              required
-            />
+            const priceEntry = activeDayShift?.pricesAtStart;
+            const pricePerLiter = priceEntry instanceof Map
+              ? priceEntry.get(dispenser.fuelType)
+              : priceEntry?.[dispenser.fuelType];
+            const expectedAmt = litersVal * (pricePerLiter || 0);
 
-            <Input
-              label="Cash Amount (₦)"
-              type="number"
-              name="cashAmount"
-              value={formData.cashAmount}
-              onChange={handleChange}
-              placeholder="0.00"
-              step="0.01"
-              min="0"
-            />
+            const savedAt = existing
+              ? new Date(existing.updatedAt || existing.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })
+              : null;
 
-            <Input
-              label="POS Amount (₦)"
-              type="number"
-              name="posAmount"
-              value={formData.posAmount}
-              onChange={handleChange}
-              placeholder="0.00"
-              step="0.01"
-              min="0"
-            />
-
-            {totalAmount > 0 && (
-              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
-                <p className="text-xs text-slate-500 uppercase tracking-wide">Total Amount</p>
-                <p className="text-2xl font-bold text-emerald-600 mt-1">
-                  {formatCurrency(totalAmount)}
-                </p>
-              </div>
-            )}
-
-            <div className="flex gap-2 pt-2">
-              <Button
-                type="submit"
-                variant="primary"
-                isLoading={submitting}
-                size="lg"
-                className="flex-1"
+            return (
+              <Card
+                key={dispenser.dispenserId}
+                title={dispenser.dispenserName}
+                subtitle={`${dispenser.fuelType}${existing ? ` · Saved at ${savedAt}` : ' · Not yet recorded'}`}
               >
-                {editSaleId ? 'Update Sale' : 'Record Sale'}
-              </Button>
-              {editSaleId && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="lg"
-                  onClick={handleCancelEdit}
-                  disabled={submitting}
-                >
-                  Cancel
-                </Button>
-              )}
-            </div>
-          </form>
-        </Card>
+                {/* Meter reading hint */}
+                {reading && (
+                  <div className="mb-4 flex items-center gap-2 text-sm text-slate-500 bg-slate-50 rounded-xl px-3 py-2">
+                    <svg className="w-4 h-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    <span>
+                      Meter reading: {reading.opening} → {reading.closing} (RTT {reading.rtt ?? 0})
+                      <span className="mx-1.5 text-slate-300">·</span>
+                      <span className="font-semibold text-slate-700">Net: {suggestedLiters?.toFixed(2)} L</span>
+                    </span>
+                  </div>
+                )}
+
+                {/* Display mode */}
+                {existing && !isEditing ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { label: 'Liters Sold', value: `${Number(existing.liters).toFixed(2)} L`, highlight: false },
+                        { label: 'Cash', value: fmt(existing.cashAmount), highlight: false },
+                        { label: 'POS', value: fmt(existing.posAmount), highlight: false },
+                        { label: 'Total', value: fmt(existing.totalAmount), highlight: true },
+                      ].map(({ label, value, highlight }) => (
+                        <div key={label} className={`rounded-xl p-3 ${highlight ? 'bg-emerald-50 border border-emerald-100' : 'bg-slate-50'}`}>
+                          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-0.5">{label}</p>
+                          <p className={`text-lg font-bold ${highlight ? 'text-emerald-700' : 'text-slate-900'}`}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {existing.discrepancy !== 0 && (
+                      <div className={`px-3 py-2 rounded-lg text-sm font-medium ${existing.discrepancy < 0 ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+                        {existing.discrepancy < 0 ? 'Short' : 'Over'} by {fmt(Math.abs(existing.discrepancy))}
+                        {pricePerLiter ? ` (expected ${fmt(existing.expectedAmount)} at ₦${pricePerLiter}/L)` : ''}
+                      </div>
+                    )}
+
+                    <div className="flex justify-end">
+                      <Button variant="secondary" size="sm" onClick={() => startEditing(dispenser.dispenserId)}>
+                        Edit
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Input mode */
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <Input
+                          label={suggestedLiters != null ? `Liters Sold (meter: ${suggestedLiters.toFixed(2)} L)` : 'Liters Sold'}
+                          type="number"
+                          value={f.liters || ''}
+                          onChange={e => updateForm(dispenser.dispenserId, 'liters', e.target.value)}
+                          placeholder="0.00"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+                      <Input
+                        label="Cash Received (₦)"
+                        type="number"
+                        value={f.cash || ''}
+                        onChange={e => updateForm(dispenser.dispenserId, 'cash', e.target.value)}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                      />
+                      <Input
+                        label="POS Received (₦)"
+                        type="number"
+                        value={f.pos || ''}
+                        onChange={e => updateForm(dispenser.dispenserId, 'pos', e.target.value)}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+
+                    {/* Live totals preview */}
+                    {(cashVal > 0 || posVal > 0 || litersVal > 0) && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-xs text-slate-500 uppercase tracking-wide mb-0.5">Total Payment</p>
+                          <p className="text-lg font-bold text-slate-900">{fmt(liveTotal)}</p>
+                        </div>
+                        {pricePerLiter && litersVal > 0 && (
+                          <div className={`rounded-xl p-3 ${Math.abs(liveTotal - expectedAmt) < 0.01 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
+                            <p className="text-xs text-slate-500 uppercase tracking-wide mb-0.5">Expected ({fmt(pricePerLiter)}/L)</p>
+                            <p className="text-lg font-bold text-slate-900">{fmt(expectedAmt)}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {messages[dispenser.dispenserId] && (
+                      <p className="text-sm text-red-600">{messages[dispenser.dispenserId]}</p>
+                    )}
+
+                    <div className="flex gap-2">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => submitSale(dispenser)}
+                        disabled={submitting[dispenser.dispenserId] || !f.liters}
+                      >
+                        {submitting[dispenser.dispenserId] ? 'Saving...' : existing ? 'Update Sale' : 'Save Sale'}
+                      </Button>
+                      {existing && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => cancelEditing(dispenser.dispenserId)}
+                          disabled={submitting[dispenser.dispenserId]}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
       )}
     </div>
   );
