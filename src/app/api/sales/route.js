@@ -120,7 +120,7 @@ export async function POST(request) {
       userRole: currentUser.role,
       action: AUDIT_ACTIONS.RECORD_SALE,
       resource: AUDIT_RESOURCES.SALES_ENTRY,
-      resourceId: salesEntry[0]._id.toString(),
+      resourceId: salesEntry._id.toString(),
       stationId: dayShift.stationId,
       stationName: dayShift.stationName,
       details: {
