@@ -46,7 +46,7 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
     const val = parseFloat(openingVal);
     if (isNaN(val) || val < 0) { setError('Enter a valid opening reading.'); return; }
     if (liveDiscrepancy && !comment.trim()) {
-      setError('A comment is required because the opening differs from the previous closing.');
+      setError('Please state why the opening reading differs from the previous day\'s closing stock.');
       return;
     }
     setSaving(true); setError('');
