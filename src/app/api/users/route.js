@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import User from '@/models/User';
 import Station from '@/models/Station';
-import { requireAdmin } from '@/lib/auth';
+import { requireAdmin, requireAuth } from '@/lib/auth';
 import { userSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
+import { ROLES } from '@/lib/constants';
 
 function slugifyLoginId(input) {
   const normalized = String(input || '')
@@ -28,10 +29,12 @@ async function generateUniqueLoginId(UserModel, seed) {
   return candidate;
 }
 
-// GET /api/users - List all users
+// GET /api/users - List users
+// Admin: sees all users with full filters
+// Manager/Cashier/Supervisor: can only fetch users at their own station (read-only, no inactive)
 export async function GET(request) {
   try {
-    const currentUser = await requireAdmin();
+    const currentUser = await requireAuth();
     await connectDB();
 
     const { searchParams } = new URL(request.url);
@@ -39,6 +42,19 @@ export async function GET(request) {
     const stationId = searchParams.get('stationId');
     const includeInactive = searchParams.get('includeInactive') === 'true';
 
+    const isAdmin = currentUser.role === ROLES.ADMIN;
+
+    // Non-admin: restricted to their own station, no inactive users, read-only subset
+    if (!isAdmin) {
+      const query = { isActive: true };
+      if (role) query.role = role;
+      // Always scope to own station for non-admins
+      query.stationId = currentUser.stationId;
+      const users = await User.find(query).select('name email role stationId stationName isActive loginId').sort({ name: 1 });
+      return NextResponse.json({ users });
+    }
+
+    // Admin path — full access
     const query = includeInactive ? {} : { isActive: true };
     if (role) query.role = role;
     if (stationId) query.stationId = stationId;

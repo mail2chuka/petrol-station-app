@@ -101,11 +101,60 @@ export async function POST(request, { params }) {
       }
     }
 
-    // Calculate totals from existing sales and payment records
+    // Validate: cashier must have collected from every supervisor who made sales,
+    // and the total collected must match the total expected sales amount.
     const [salesEntries, paymentRecords] = await Promise.all([
       SalesEntry.find({ dayShiftId: dayShift._id }).session(session),
       PaymentRecord.find({ dayShiftId: dayShift._id }).session(session),
     ]);
+
+    // Group sales by supervisor
+    const salesBySupervisor = {};
+    for (const sale of salesEntries) {
+      const sid = sale.supervisorId.toString();
+      if (!salesBySupervisor[sid]) {
+        salesBySupervisor[sid] = { name: sale.supervisorName, expectedTotal: 0 };
+      }
+      salesBySupervisor[sid].expectedTotal += sale.totalAmount || 0;
+    }
+
+    // Group payments by supervisor
+    const paymentsBySupervisor = {};
+    for (const p of paymentRecords) {
+      const sid = p.supervisorId.toString();
+      if (!paymentsBySupervisor[sid]) paymentsBySupervisor[sid] = 0;
+      paymentsBySupervisor[sid] += p.totalReceived || 0;
+    }
+
+    // Check: every supervisor with sales must have a payment record
+    const missingPayments = [];
+    const mismatchedPayments = [];
+    for (const [sid, info] of Object.entries(salesBySupervisor)) {
+      const collected = paymentsBySupervisor[sid] ?? 0;
+      if (collected === 0) {
+        missingPayments.push(info.name);
+      } else if (Math.abs(collected - info.expectedTotal) > 0.01) {
+        mismatchedPayments.push(
+          `${info.name}: expected ₦${info.expectedTotal.toLocaleString('en-NG', { minimumFractionDigits: 2 })} but cashier collected ₦${collected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
+        );
+      }
+    }
+
+    if (missingPayments.length > 0) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: `Cashier has not recorded payment collection from: ${missingPayments.join(', ')}. The day cannot be ended until all supervisor payments are collected.` },
+        { status: 400 }
+      );
+    }
+
+    if (mismatchedPayments.length > 0) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: `Payment collected does not match supervisor sales:\n${mismatchedPayments.join('\n')}\nResolve the discrepancy before ending the day.` },
+        { status: 400 }
+      );
+    }
 
     // Build totalSales dynamically — supports PMS, AGO, DPK, LPG etc.
     const totalSales = {};

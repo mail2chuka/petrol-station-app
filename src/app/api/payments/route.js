@@ -84,6 +84,8 @@ export async function POST(request) {
       cashReceived: validatedData.cashReceived,
       posReceived: validatedData.posReceived,
       totalReceived,
+      posTerminalId: body.posTerminalId || null,
+      posTerminalLabel: body.posTerminalLabel || null,
       recordedBy: currentUser.id,
       recordedByName: currentUser.name,
       notes: body.notes || '',
