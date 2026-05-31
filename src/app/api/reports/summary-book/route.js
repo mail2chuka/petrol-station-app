@@ -96,12 +96,6 @@ export async function GET(request) {
         {}
       );
 
-      const rttByFuel = dayReadings.reduce((acc, item) => {
-        const fuelType = pumpFuelTypeMap[item.pumpId] || (item.pumpLabel?.toUpperCase().includes('AGO') ? 'AGO' : 'PMS');
-        acc[fuelType] = (acc[fuelType] || 0) + item.rtt;
-        return acc;
-      }, {});
-
       for (const tank of dayTankEntries) {
         const openingStock = tank.openingStock || 0;
         const stockIn = dayStockIns
@@ -110,10 +104,14 @@ export async function GET(request) {
           .reduce((sum, d) => sum + d.litres, 0);
 
         const fuelType = tank.product;
-        const salesLitres = (salesByFuel[fuelType] || 0) - (rttByFuel[fuelType] || 0);
+        // Sales liters from SalesEntry are already NET (supervisor enters closing-opening-rtt).
+        // Do NOT subtract RTT again here — that would double-deduct it.
+        const salesLitres = salesByFuel[fuelType] || 0;
         const priceForDay = dayShift.pricesAtStart?.[fuelType] || 0;
         const totalAmount = priceForDay * salesLitres;
         const closingStock = tank.closingStockManager ?? tank.closingStockMeasured ?? 0;
+        // expectedClosing = opening + received - net_sold
+        // RTT cancels out: net_sold = gross_dispensed - RTT, and RTT goes back to tank
         const expectedClosing = openingStock + stockIn - salesLitres;
         const shortage = Math.max(0, expectedClosing - closingStock);
         const overage = Math.max(0, closingStock - expectedClosing);
@@ -146,7 +144,7 @@ export async function GET(request) {
         'Opening Stock',
         'Stock In',
         'Overage',
-        'Sales (= Dispensed - RTT)',
+        'Net Sales (Litres Sold)',
         'Price for the Day',
         'Total Amount (= Price x Sales)',
         'Shortage',

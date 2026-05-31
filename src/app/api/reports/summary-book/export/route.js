@@ -65,12 +65,6 @@ async function buildRows(stationId, from, to) {
       return acc;
     }, {});
 
-    const rttByFuel = dayReadings.reduce((acc, item) => {
-      const fuelType = pumpFuelTypeMap[item.pumpId] || (item.pumpLabel?.toUpperCase().includes('AGO') ? 'AGO' : 'PMS');
-      acc[fuelType] = (acc[fuelType] || 0) + item.rtt;
-      return acc;
-    }, {});
-
     for (const tank of dayTankEntries) {
       const openingStock = tank.openingStock || 0;
       const stockIn = dayStockIns
@@ -79,7 +73,8 @@ async function buildRows(stationId, from, to) {
         .reduce((sum, d) => sum + d.litres, 0);
 
       const fuelType = tank.product;
-      const salesLitres = (salesByFuel[fuelType] || 0) - (rttByFuel[fuelType] || 0);
+      // Sales liters are already net (RTT excluded by supervisor). Do not subtract RTT again.
+      const salesLitres = salesByFuel[fuelType] || 0;
       const priceForDay = dayShift.pricesAtStart?.[fuelType] || 0;
       const totalAmount = priceForDay * salesLitres;
       const closingStock = tank.closingStockManager ?? tank.closingStockMeasured ?? 0;
