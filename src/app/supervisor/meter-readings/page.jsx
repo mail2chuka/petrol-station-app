@@ -166,32 +166,33 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
             />
 
             {liveDiscrepancy && (
-              <div className="space-y-2">
-                <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-                  <svg className="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                  </svg>
-                  <span>
-                    Opening <strong>{parseFloat(openingVal)}</strong> differs from previous closing <strong>{prevClosing}</strong>.
-                    A comment is required.
-                  </span>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-amber-700 mb-1">
-                    Reason for discrepancy <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    value={comment}
-                    onChange={e => { setComment(e.target.value); setError(''); }}
-                    rows={2}
-                    className="w-full px-4 py-3 text-sm border-2 border-amber-300 rounded-xl focus:outline-none focus:border-amber-500 resize-none"
-                    placeholder="e.g. Pump was reset overnight, reading reset to zero..."
-                  />
-                </div>
+              <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+                <svg className="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                <span>
+                  It was observed that opening reading differs from previous day&apos;s closing stock, state why below.
+                </span>
               </div>
             )}
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {liveDiscrepancy && (
+              <div>
+                <label className="block text-sm font-medium text-amber-700 mb-1.5">
+                  Reason for discrepancy <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={comment}
+                  onChange={e => { setComment(e.target.value); setError(''); }}
+                  rows={3}
+                  autoFocus={false}
+                  className="w-full px-4 py-3 text-sm border-2 border-amber-400 rounded-xl focus:outline-none focus:border-amber-600 focus:ring-4 focus:ring-amber-100 resize-none bg-white"
+                  placeholder="e.g. Pump was reset overnight, reading carries over from previous day..."
+                />
+              </div>
+            )}
+
+            {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
 
             <div className="flex gap-2">
               <Button variant="primary" size="sm" onClick={saveOpening} disabled={saving}>
