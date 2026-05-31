@@ -13,7 +13,7 @@ function fmt(n) {
 }
 
 function today() {
-  return new Date().toISOString().split('T')[0];
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
 }
 
 export default function RecordPaymentsPage() {

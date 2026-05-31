@@ -80,7 +80,7 @@ function BeginDayPageContent() {
     const selectedDispensers = dispensers.filter(d => selected.has(d.dispenserId));
     return {
       stationId: activeStationId,
-      date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })(),
+      date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date()),
       pricesAtStart: pricesObj,
       dispensers: selectedDispensers.map(d => ({ dispenserId: d.dispenserId, fuelType: d.fuelType })),
     };

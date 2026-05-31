@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Card from '@/components/Card';
 
 function today() {
-  return new Date().toISOString().split('T')[0];
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
 }
 
 function fmt(n) {

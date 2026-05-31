@@ -8,8 +8,7 @@ import Button from '@/components/Button';
 import DateCalendar from '@/components/DateCalendar';
 
 function today() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
 }
 
 function fmtTime(dt) {

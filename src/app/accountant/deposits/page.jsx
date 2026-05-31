@@ -8,7 +8,7 @@ import Button from '@/components/Button';
 import DateCalendar from '@/components/DateCalendar';
 
 function today() {
-  return new Date().toISOString().split('T')[0];
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
 }
 
 function fmt(n) {
