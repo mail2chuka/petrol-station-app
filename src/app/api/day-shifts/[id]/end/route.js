@@ -48,12 +48,11 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Day is not in progress' }, { status: 400 });
     }
 
-    // Date range for today's shift
+    // Date range for today's shift — use UTC boundaries to avoid timezone mismatches
     const shiftDate = new Date(dayShift.date);
-    const startDate = new Date(shiftDate);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(shiftDate);
-    endDate.setHours(23, 59, 59, 999);
+    const dateStr = shiftDate.toISOString().split('T')[0];
+    const startDate = new Date(dateStr + 'T00:00:00.000Z');
+    const endDate = new Date(dateStr + 'T23:59:59.999Z');
 
     // Load station and active tanks
     const station = await Station.findById(dayShift.stationId).session(session);
@@ -93,9 +92,12 @@ export async function POST(request, { params }) {
 
     for (const assignment of dayShift.dispenserAssignments) {
       const reading = readingsByPumpId[assignment.dispenserId];
-      if (reading) {
+      if (reading && reading.closing != null) {
         assignment.finalReading = reading.closing;
-        assignment.totalLiters = Math.max(0, reading.closing - assignment.initialReading - reading.rtt);
+        // Use reading.opening (what supervisor entered) — NOT initialReading (always 0 now)
+        const openingForCalc = reading.opening ?? 0;
+        const rtt = reading.rtt ?? 0;
+        assignment.totalLiters = Math.max(0, reading.closing - openingForCalc - rtt);
       }
     }
 
@@ -105,51 +107,60 @@ export async function POST(request, { params }) {
       PaymentRecord.find({ dayShiftId: dayShift._id }).session(session),
     ]);
 
-    const totalSales = {
-      PMS: { liters: 0, amount: 0 },
-      AGO: { liters: 0, amount: 0 },
-    };
-    let totalCollected = 0; // sum of what supervisors actually collected (cash + POS per sale)
+    // Build totalSales dynamically — supports PMS, AGO, DPK, LPG etc.
+    const totalSales = {};
+    let totalCollected = 0;
     salesEntries.forEach(sale => {
+      if (!totalSales[sale.fuelType]) totalSales[sale.fuelType] = { liters: 0, amount: 0 };
       totalSales[sale.fuelType].liters += sale.liters;
       totalSales[sale.fuelType].amount += sale.expectedAmount;
       totalCollected += (sale.totalAmount || 0);
     });
 
-    // Payment records track what the accountant received from supervisors (separate from discrepancy)
     const totalPayments = {
       cash: paymentRecords.reduce((sum, p) => sum + p.cashReceived, 0),
       pos: paymentRecords.reduce((sum, p) => sum + p.posReceived, 0),
     };
 
-    // Discrepancy = supervisor collections vs expected revenue from liters sold
-    const expectedAmount = totalSales.PMS.amount + totalSales.AGO.amount;
+    const expectedAmount = Object.values(totalSales).reduce((s, v) => s + v.amount, 0);
     const actualAmount = totalCollected;
     const discrepancy = actualAmount - expectedAmount;
 
     // Update station.currentStock from manager-measured closing tank entries
-    for (const fuelType of ['PMS', 'AGO']) {
-      const previousStock = station.currentStock[fuelType];
+    // currentStock is a Map — use .get()/.set()
+    const availableProducts = station.availableProducts?.length
+      ? station.availableProducts
+      : ['PMS', 'AGO'];
+
+    if (!(station.currentStock instanceof Map)) {
+      station.currentStock = new Map(Object.entries(station.currentStock || {}));
+    }
+
+    for (const fuelType of availableProducts) {
+      const previousStock = station.currentStock.get(fuelType) ?? 0;
       const closingTotal = closingEntries
         .filter(e => e.product === fuelType)
         .reduce((sum, e) => sum + e.closingStockMeasured, 0);
 
-      station.currentStock[fuelType] = closingTotal;
+      station.currentStock.set(fuelType, closingTotal);
+      station.markModified('currentStock');
 
-      await StockMovement.create([{
-        stationId: station._id,
-        stationName: station.name,
-        date: shiftDate,
-        fuelType,
-        movementType: 'sale',
-        quantity: closingTotal - previousStock,
-        previousStock,
-        newStock: closingTotal,
-        recordedBy: currentUser.id,
-        recordedByName: currentUser.name,
-        referenceId: dayShift._id,
-        notes: `End of day closing stock for ${shiftDate.toISOString().split('T')[0]}`,
-      }], { session, ordered: true });
+      if (closingEntries.some(e => e.product === fuelType)) {
+        await StockMovement.create([{
+          stationId: station._id,
+          stationName: station.name,
+          date: shiftDate,
+          fuelType,
+          movementType: 'sale',
+          quantity: closingTotal - previousStock,
+          previousStock,
+          newStock: closingTotal,
+          recordedBy: currentUser.id,
+          recordedByName: currentUser.name,
+          referenceId: dayShift._id,
+          notes: `End of day closing stock for ${shiftDate.toISOString().split('T')[0]}`,
+        }], { session, ordered: true });
+      }
     }
 
     await station.save({ session });
