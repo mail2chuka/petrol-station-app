@@ -38,6 +38,14 @@ const paymentRecordSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    // Multiple POS entries — one per bank/terminal used
+    posEntries: [
+      {
+        bank: { type: String, required: true },
+        amount: { type: Number, required: true, min: 0 },
+        terminalId: { type: String, default: null }, // optional physical terminal ID
+      },
+    ],
     posReceived: {
       type: Number,
       required: true,
@@ -46,20 +54,6 @@ const paymentRecordSchema = new mongoose.Schema(
     totalReceived: {
       type: Number,
       required: true,
-    },
-    method: {
-      type: String,
-      enum: ['cash', 'pos'],
-      default: null,
-    },
-    posTerminalId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'POSTerminal',
-      default: null,
-    },
-    posTerminalLabel: {
-      type: String,
-      default: null,
     },
     recordedBy: {
       type: mongoose.Schema.Types.ObjectId,

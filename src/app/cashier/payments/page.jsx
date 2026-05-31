@@ -7,6 +7,20 @@ import Input from '@/components/Input';
 import Select from '@/components/Select';
 import Button from '@/components/Button';
 
+const NIGERIAN_BANKS = [
+  'Access Bank', 'Citibank', 'Ecobank', 'Fidelity Bank', 'First Bank',
+  'First City Monument Bank (FCMB)', 'Globus Bank', 'GTBank', 'Heritage Bank',
+  'Keystone Bank', 'Kuda Bank', 'Moniepoint', 'OPay', 'Palmpay', 'Polaris Bank',
+  'Providus Bank', 'Stanbic IBTC', 'Standard Chartered', 'Sterling Bank',
+  'SunTrust Bank', 'Titan Trust Bank', 'UBA', 'Union Bank', 'Unity Bank',
+  'VFD Microfinance Bank', 'Wema Bank', 'Zenith Bank', 'Other',
+];
+
+const BANK_OPTIONS = [
+  { value: '', label: 'Select bank...' },
+  ...NIGERIAN_BANKS.map(b => ({ value: b, label: b })),
+];
+
 function fmt(n) {
   return typeof n === 'number'
     ? n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -18,17 +32,220 @@ function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function emptyPosEntry() {
+  return { bank: '', amount: '', terminalId: '' };
+}
+
+// POS entry row component
+function PosEntryRow({ entry, index, onChange, onRemove }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px_120px_auto] gap-2 items-end">
+      <Select
+        label={index === 0 ? 'Bank' : undefined}
+        value={entry.bank}
+        onChange={e => onChange(index, 'bank', e.target.value)}
+        options={BANK_OPTIONS}
+      />
+      <Input
+        label={index === 0 ? 'Amount (₦)' : undefined}
+        type="number"
+        value={entry.amount}
+        onChange={e => onChange(index, 'amount', e.target.value)}
+        placeholder="0.00"
+        step="0.01"
+        min="0"
+      />
+      <Input
+        label={index === 0 ? 'Terminal ID (opt.)' : undefined}
+        value={entry.terminalId}
+        onChange={e => onChange(index, 'terminalId', e.target.value)}
+        placeholder="e.g. 1234567"
+      />
+      <button
+        type="button"
+        onClick={() => onRemove(index)}
+        className={`${index === 0 ? 'self-end' : ''} px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium`}
+        aria-label="Remove"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
+// One collection form for a supervisor
+function CollectionForm({ sup, supSales, activeDayShift, onSubmitted }) {
+  const [cash, setCash] = useState('');
+  const [posEntries, setPosEntries] = useState([emptyPosEntry()]);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const posTotal = posEntries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+  const grandTotal = (parseFloat(cash) || 0) + posTotal;
+  const expected = supSales?.total ?? null;
+  const isMatch = expected !== null && Math.abs(grandTotal - expected) < 0.01;
+
+  const updatePosEntry = (index, field, value) => {
+    setPosEntries(prev => prev.map((e, i) => i === index ? { ...e, [field]: value } : e));
+    setError('');
+  };
+
+  const addPosEntry = () => setPosEntries(prev => [...prev, emptyPosEntry()]);
+
+  const removePosEntry = (index) => {
+    if (posEntries.length === 1) {
+      setPosEntries([emptyPosEntry()]);
+    } else {
+      setPosEntries(prev => prev.filter((_, i) => i !== index));
+    }
+  };
+
+  const submit = async () => {
+    const cashAmt = parseFloat(cash) || 0;
+    const validPos = posEntries.filter(e => e.bank && parseFloat(e.amount) > 0);
+
+    if (cashAmt === 0 && validPos.length === 0) {
+      setError('Enter a cash amount or at least one POS entry.');
+      return;
+    }
+    const invalidPos = posEntries.filter(e => parseFloat(e.amount) > 0 && !e.bank);
+    if (invalidPos.length > 0) {
+      setError('Select a bank for each POS entry that has an amount.');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dayShiftId: activeDayShift._id,
+          supervisorId: sup._id,
+          cashReceived: cashAmt,
+          posEntries: validPos.map(e => ({
+            bank: e.bank,
+            amount: parseFloat(e.amount),
+            terminalId: e.terminalId || null,
+          })),
+          notes,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || 'Failed to record.'); return; }
+      setCash(''); setPosEntries([emptyPosEntry()]); setNotes('');
+      onSubmitted();
+    } catch {
+      setError('An error occurred.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-amber-100 p-4 bg-amber-50/30 space-y-4">
+      {/* Expected amounts from supervisor's sales */}
+      {supSales && (
+        <div className="p-3 bg-white rounded-xl border border-amber-200 text-sm">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Expected from {sup.name}&apos;s sales</p>
+          <div className="flex flex-wrap gap-4">
+            <div><p className="text-xs text-gray-400">Cash sales</p><p className="font-semibold text-gray-800">₦{fmt(supSales.cash)}</p></div>
+            <div><p className="text-xs text-gray-400">POS sales</p><p className="font-semibold text-gray-800">₦{fmt(supSales.pos)}</p></div>
+            <div><p className="text-xs text-gray-400">Total</p><p className="font-bold text-ecana-maroon">₦{fmt(supSales.total)}</p></div>
+          </div>
+        </div>
+      )}
+
+      {/* Cash */}
+      <div>
+        <Input
+          label="Cash Received (₦)"
+          type="number"
+          value={cash}
+          onChange={e => { setCash(e.target.value); setError(''); }}
+          placeholder="0.00"
+          step="0.01"
+          min="0"
+        />
+      </div>
+
+      {/* POS entries */}
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-slate-700">
+          POS Payments <span className="text-xs font-normal text-slate-400">(add one row per bank)</span>
+        </p>
+        {posEntries.map((entry, i) => (
+          <PosEntryRow
+            key={i}
+            entry={entry}
+            index={i}
+            onChange={updatePosEntry}
+            onRemove={removePosEntry}
+          />
+        ))}
+        <button
+          type="button"
+          onClick={addPosEntry}
+          className="flex items-center gap-1.5 text-sm text-ecana-maroon hover:underline font-medium"
+        >
+          <span className="text-lg leading-none">+</span> Add another bank / POS terminal
+        </button>
+      </div>
+
+      {/* Live totals */}
+      {(parseFloat(cash) > 0 || posTotal > 0) && (
+        <div className="p-3 bg-white rounded-xl border border-gray-200 text-sm space-y-1.5">
+          <div className="flex justify-between text-gray-600">
+            <span>Cash</span><span>₦{fmt(parseFloat(cash) || 0)}</span>
+          </div>
+          {posEntries.filter(e => parseFloat(e.amount) > 0).map((e, i) => (
+            <div key={i} className="flex justify-between text-gray-600">
+              <span>{e.bank || 'POS'}{e.terminalId ? ` (${e.terminalId})` : ''}</span>
+              <span>₦{fmt(parseFloat(e.amount))}</span>
+            </div>
+          ))}
+          <div className="flex justify-between font-bold text-gray-900 pt-1.5 border-t border-gray-200">
+            <span>Grand Total</span><span>₦{fmt(grandTotal)}</span>
+          </div>
+          {expected !== null && (
+            <div className={`flex justify-between text-sm font-semibold ${isMatch ? 'text-green-600' : 'text-amber-700'}`}>
+              <span>{isMatch ? '✓ Matches supervisor sales' : `Difference: ₦${fmt(Math.abs(grandTotal - expected))}`}</span>
+              <span>Expected: ₦{fmt(expected)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Notes */}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1.5">Notes (Optional)</label>
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          rows={2}
+          className="w-full px-4 py-3 text-sm border-2 border-slate-200 rounded-xl focus:outline-none focus:border-ecana-maroon resize-none"
+          placeholder="Any notes about this collection..."
+        />
+      </div>
+
+      {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
+
+      <Button variant="primary" onClick={submit} disabled={saving}>
+        {saving ? 'Recording...' : 'Record Collection'}
+      </Button>
+    </div>
+  );
+}
+
 export default function RecordPaymentsPage() {
   const { data: session } = useSession();
   const [activeDayShift, setActiveDayShift] = useState(null);
   const [supervisors, setSupervisors] = useState([]);
-  const [salesBySupervisor, setSalesBySupervisor] = useState({});   // { supervisorId: totalAmount }
-  const [collectedMap, setCollectedMap] = useState({});              // { supervisorId: [PaymentRecord] }
-  const [posTerminals, setPosTerminals] = useState([]);
+  const [salesBySupervisor, setSalesBySupervisor] = useState({});
+  const [collectedMap, setCollectedMap] = useState({});
   const [expandedId, setExpandedId] = useState(null);
-  const [forms, setForms] = useState({});
-  const [submitting, setSubmitting] = useState({});
-  const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
   const [globalError, setGlobalError] = useState('');
 
@@ -39,25 +256,20 @@ export default function RecordPaymentsPage() {
     setLoading(true);
     setGlobalError('');
     try {
-      const [shiftRes, usersRes, paymentsRes, terminalsRes] = await Promise.all([
+      const [shiftRes, usersRes, paymentsRes] = await Promise.all([
         fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
         fetch(`/api/users?role=supervisor&stationId=${stationId}`),
         fetch(`/api/payments?stationId=${stationId}&date=${today()}`),
-        fetch(`/api/pos-terminals?stationId=${stationId}`),
       ]);
 
-      const [shiftData, usersData, paymentsData, terminalsData] = await Promise.all([
-        shiftRes.json(), usersRes.json(), paymentsRes.json(), terminalsRes.json(),
+      const [shiftData, usersData, paymentsData] = await Promise.all([
+        shiftRes.json(), usersRes.json(), paymentsRes.json(),
       ]);
 
       const shift = (shiftData.dayShifts || [])[0] || null;
       setActiveDayShift(shift);
+      setSupervisors(usersData.users || []);
 
-      const sups = usersData.users || [];
-      setSupervisors(sups);
-      setPosTerminals(terminalsData.terminals || []);
-
-      // Build payment map
       const map = {};
       for (const p of (paymentsData.paymentRecords || [])) {
         const sid = p.supervisorId?.toString();
@@ -66,7 +278,6 @@ export default function RecordPaymentsPage() {
       }
       setCollectedMap(map);
 
-      // Fetch today's sales per supervisor so cashier can see what each supervisor should hand over
       if (shift) {
         const salesRes = await fetch(`/api/sales?stationId=${stationId}&dayShiftId=${shift._id}`);
         const salesData = await salesRes.json();
@@ -80,89 +291,21 @@ export default function RecordPaymentsPage() {
         }
         setSalesBySupervisor(salesMap);
       }
-
-      const initForms = {};
-      for (const sup of sups) {
-        initForms[sup._id] = { cash: '', pos: '', posTerminalId: '', notes: '' };
-      }
-      setForms(initForms);
-    } catch (err) {
-      console.error('Error loading data:', err);
+    } catch {
       setGlobalError('Failed to load data. Please refresh.');
     } finally {
       setLoading(false);
     }
   }, [stationId]);
 
-  useEffect(() => {
-    if (stationId) loadData();
-  }, [session]);
+  useEffect(() => { if (stationId) loadData(); }, [session]);
 
-  const handleFormChange = (supId, field, value) => {
-    setForms(prev => ({ ...prev, [supId]: { ...prev[supId], [field]: value } }));
-    setErrors(prev => ({ ...prev, [supId]: '' }));
-  };
-
-  const submitCollection = async (formKey, realSupId) => {
-    const f = forms[formKey] || {};
-    const cash = parseFloat(f.cash) || 0;
-    const pos = parseFloat(f.pos) || 0;
-
-    if (cash === 0 && pos === 0) {
-      setErrors(prev => ({ ...prev, [formKey]: 'Enter cash or POS amount.' }));
-      return;
-    }
-    if (pos > 0 && !f.posTerminalId) {
-      setErrors(prev => ({ ...prev, [formKey]: 'Select the POS terminal used for the POS payment.' }));
-      return;
-    }
-    if (!activeDayShift) {
-      setErrors(prev => ({ ...prev, [formKey]: 'No active day shift.' }));
-      return;
-    }
-
-    const selectedTerminal = posTerminals.find(t => t._id === f.posTerminalId);
-
-    setSubmitting(prev => ({ ...prev, [formKey]: true }));
-    setErrors(prev => ({ ...prev, [formKey]: '' }));
-
-    try {
-      const res = await fetch('/api/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dayShiftId: activeDayShift._id,
-          supervisorId: realSupId,
-          cashReceived: cash,
-          posReceived: pos,
-          posTerminalId: selectedTerminal?._id || null,
-          posTerminalLabel: selectedTerminal?.label || null,
-          notes: f.notes || '',
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setErrors(prev => ({ ...prev, [formKey]: data.error || 'Failed to record payment.' }));
-        return;
-      }
-      setForms(prev => ({ ...prev, [formKey]: { cash: '', pos: '', posTerminalId: '', notes: '' } }));
-      setExpandedId(null);
-      await loadData();
-    } catch {
-      setErrors(prev => ({ ...prev, [formKey]: 'An error occurred.' }));
-    } finally {
-      setSubmitting(prev => ({ ...prev, [formKey]: false }));
-    }
-  };
-
-  if (loading) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 mb-6">Record Collections</h1>
-        <div className="flex justify-center py-16"><div className="spinner" /></div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div>
+      <h1 className="text-2xl font-bold text-slate-900 mb-6">Record Collections</h1>
+      <div className="flex justify-center py-16"><div className="spinner" /></div>
+    </div>
+  );
 
   const collectedSups = supervisors.filter(s => collectedMap[s._id]?.length > 0);
   const uncollectedSups = supervisors.filter(s => !collectedMap[s._id]?.length);
@@ -171,28 +314,17 @@ export default function RecordPaymentsPage() {
   const totalCash = Object.values(collectedMap).flat().reduce((s, p) => s + (p.cashReceived || 0), 0);
   const totalPos = Object.values(collectedMap).flat().reduce((s, p) => s + (p.posReceived || 0), 0);
 
-  const terminalOptions = [
-    { value: '', label: 'Select POS terminal...' },
-    ...posTerminals.map(t => ({ value: t._id, label: `${t.label} (${t.provider})` })),
-  ];
-
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Record Collections</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Collect from each supervisor. POS payments require selecting the terminal used.
-          </p>
+          <p className="text-sm text-slate-500 mt-1">Collect from each supervisor — add one POS row per bank used.</p>
         </div>
-        <button onClick={loadData} className="self-start sm:self-auto text-xs text-gray-500 hover:text-ecana-maroon border border-gray-200 rounded-lg px-3 py-1.5 hover:border-ecana-maroon transition-colors">
-          Refresh
-        </button>
+        <button onClick={loadData} className="text-xs text-gray-500 hover:text-ecana-maroon border border-gray-200 rounded-lg px-3 py-1.5 transition-colors">Refresh</button>
       </div>
 
-      {globalError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{globalError}</div>
-      )}
+      {globalError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{globalError}</div>}
 
       {!activeDayShift && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-4 rounded-xl">
@@ -206,29 +338,24 @@ export default function RecordPaymentsPage() {
           <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" />
           <div>
             <p className="font-semibold">All Supervisors Collected</p>
-            <p className="text-sm mt-0.5">Total: ₦{fmt(totalCash + totalPos)} (Cash: ₦{fmt(totalCash)} · POS: ₦{fmt(totalPos)})</p>
+            <p className="text-sm mt-0.5">Cash: ₦{fmt(totalCash)} · POS: ₦{fmt(totalPos)} · Total: ₦{fmt(totalCash + totalPos)}</p>
           </div>
         </div>
       )}
 
       {activeDayShift && supervisors.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="card-modern p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Supervisors</p>
-            <p className="text-2xl font-bold text-gray-800">{supervisors.length}</p>
-          </div>
-          <div className="card-modern p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Collected</p>
-            <p className="text-2xl font-bold text-green-700">{collectedSups.length}</p>
-          </div>
-          <div className="card-modern p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Pending</p>
-            <p className={`text-2xl font-bold ${uncollectedSups.length > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{uncollectedSups.length}</p>
-          </div>
-          <div className="card-modern p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Today</p>
-            <p className="text-xl font-bold text-ecana-maroon">₦{fmt(totalCash + totalPos)}</p>
-          </div>
+          {[
+            { label: 'Supervisors', val: supervisors.length, color: '' },
+            { label: 'Collected', val: collectedSups.length, color: 'text-green-700' },
+            { label: 'Pending', val: uncollectedSups.length, color: uncollectedSups.length > 0 ? 'text-amber-600' : '' },
+            { label: 'Total Today', val: `₦${fmt(totalCash + totalPos)}`, color: 'text-ecana-maroon', small: true },
+          ].map(({ label, val, color, small }) => (
+            <div key={label} className="card-modern p-4 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</p>
+              <p className={`${small ? 'text-xl' : 'text-2xl'} font-bold ${color || 'text-gray-800'}`}>{val}</p>
+            </div>
+          ))}
         </div>
       )}
 
@@ -236,103 +363,35 @@ export default function RecordPaymentsPage() {
       {activeDayShift && uncollectedSups.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-amber-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-500" />
-            Pending Collection ({uncollectedSups.length})
+            <span className="w-2 h-2 rounded-full bg-amber-500" /> Pending ({uncollectedSups.length})
           </h2>
           <div className="space-y-3">
-            {uncollectedSups.map((sup) => {
-              const isExpanded = expandedId === sup._id;
-              const f = forms[sup._id] || {};
-              const cash = parseFloat(f.cash) || 0;
-              const pos = parseFloat(f.pos) || 0;
+            {uncollectedSups.map(sup => {
+              const isOpen = expandedId === sup._id;
               const supSales = salesBySupervisor[sup._id];
-
               return (
                 <div key={sup._id} className="bg-white border-2 border-amber-200 rounded-2xl overflow-hidden">
                   <div className="flex items-center justify-between p-4">
-                    <div className="flex items-center gap-3">
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
-                      <div>
-                        <p className="font-semibold text-gray-800">{sup.name}</p>
-                        {supSales
-                          ? <p className="text-xs text-gray-500">Sales: ₦{fmt(supSales.total)} (Cash ₦{fmt(supSales.cash)} · POS ₦{fmt(supSales.pos)})</p>
-                          : <p className="text-xs text-gray-400">No sales recorded yet</p>
-                        }
-                      </div>
+                    <div>
+                      <p className="font-semibold text-gray-800">{sup.name}</p>
+                      {supSales
+                        ? <p className="text-xs text-gray-500">Sales: ₦{fmt(supSales.total)}</p>
+                        : <p className="text-xs text-gray-400">No sales recorded yet</p>}
                     </div>
                     <button
-                      onClick={() => setExpandedId(isExpanded ? null : sup._id)}
-                      className={`text-sm font-medium px-4 py-1.5 rounded-lg transition-colors ${isExpanded ? 'bg-gray-100 text-gray-600' : 'bg-ecana-maroon text-white hover:bg-ecana-maroon/90'}`}
+                      onClick={() => setExpandedId(isOpen ? null : sup._id)}
+                      className={`text-sm font-medium px-4 py-1.5 rounded-lg transition-colors ${isOpen ? 'bg-gray-100 text-gray-600' : 'bg-ecana-maroon text-white hover:bg-ecana-maroon/90'}`}
                     >
-                      {isExpanded ? 'Cancel' : 'Collect →'}
+                      {isOpen ? 'Cancel' : 'Collect →'}
                     </button>
                   </div>
-
-                  {isExpanded && (
-                    <div className="border-t border-amber-100 p-4 bg-amber-50/40 space-y-3">
-                      {supSales && (
-                        <div className="p-3 bg-white rounded-xl border border-amber-200 text-sm">
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Expected from {sup.name}</p>
-                          <div className="flex gap-6">
-                            <div><p className="text-xs text-gray-400">Cash</p><p className="font-semibold text-gray-800">₦{fmt(supSales.cash)}</p></div>
-                            <div><p className="text-xs text-gray-400">POS</p><p className="font-semibold text-gray-800">₦{fmt(supSales.pos)}</p></div>
-                            <div><p className="text-xs text-gray-400">Total</p><p className="font-bold text-ecana-maroon">₦{fmt(supSales.total)}</p></div>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <Input label="Cash Received (₦)" type="number" value={f.cash}
-                          onChange={e => handleFormChange(sup._id, 'cash', e.target.value)}
-                          placeholder="0.00" step="0.01" min="0" />
-                        <Input label="POS Received (₦)" type="number" value={f.pos}
-                          onChange={e => handleFormChange(sup._id, 'pos', e.target.value)}
-                          placeholder="0.00" step="0.01" min="0" />
-                      </div>
-
-                      {/* POS terminal selector — required when POS amount > 0 */}
-                      {pos > 0 && (
-                        <div>
-                          <Select
-                            label="POS Terminal Used *"
-                            value={f.posTerminalId || ''}
-                            onChange={e => handleFormChange(sup._id, 'posTerminalId', e.target.value)}
-                            options={posTerminals.length > 0 ? terminalOptions : [{ value: '', label: '— No POS terminals configured —' }]}
-                          />
-                          {posTerminals.length === 0 && (
-                            <p className="text-xs text-amber-700 mt-1">Ask admin to add POS terminals in station settings.</p>
-                          )}
-                        </div>
-                      )}
-
-                      {(cash > 0 || pos > 0) && (
-                        <div className="p-3 bg-white rounded-xl border border-amber-200 text-sm">
-                          <div className="flex justify-between text-gray-600"><span>Cash</span><span>₦{fmt(cash)}</span></div>
-                          <div className="flex justify-between text-gray-600 mt-1"><span>POS</span><span>₦{fmt(pos)}</span></div>
-                          {supSales && (
-                            <div className={`flex justify-between mt-1 font-medium ${Math.abs(cash + pos - supSales.total) < 0.01 ? 'text-green-600' : 'text-amber-700'}`}>
-                              <span>{Math.abs(cash + pos - supSales.total) < 0.01 ? '✓ Matches sales' : `Difference: ₦${fmt(Math.abs(cash + pos - supSales.total))}`}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between font-bold text-gray-900 mt-2 pt-2 border-t border-gray-200">
-                            <span>Total Collecting</span><span>₦{fmt(cash + pos)}</span>
-                          </div>
-                        </div>
-                      )}
-
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Notes (Optional)</label>
-                        <textarea value={f.notes} onChange={e => handleFormChange(sup._id, 'notes', e.target.value)}
-                          rows={2} className="w-full px-4 py-3 text-sm border-2 border-slate-200 rounded-xl focus:outline-none focus:border-ecana-maroon resize-none"
-                          placeholder="Any notes..." />
-                      </div>
-
-                      {errors[sup._id] && <p className="text-sm text-red-600">{errors[sup._id]}</p>}
-
-                      <Button variant="primary" onClick={() => submitCollection(sup._id, sup._id)} disabled={submitting[sup._id]}>
-                        {submitting[sup._id] ? 'Recording...' : 'Record Collection'}
-                      </Button>
-                    </div>
+                  {isOpen && (
+                    <CollectionForm
+                      sup={sup}
+                      supSales={salesBySupervisor[sup._id] || null}
+                      activeDayShift={activeDayShift}
+                      onSubmitted={() => { setExpandedId(null); loadData(); }}
+                    />
                   )}
                 </div>
               );
@@ -345,29 +404,28 @@ export default function RecordPaymentsPage() {
       {collectedSups.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500" />
-            Collected ({collectedSups.length})
+            <span className="w-2 h-2 rounded-full bg-green-500" /> Collected ({collectedSups.length})
           </h2>
           <div className="space-y-3">
-            {collectedSups.map((sup) => {
+            {collectedSups.map(sup => {
               const records = collectedMap[sup._id] || [];
               const supCash = records.reduce((s, p) => s + (p.cashReceived || 0), 0);
               const supPos = records.reduce((s, p) => s + (p.posReceived || 0), 0);
               const supTotal = supCash + supPos;
               const supSales = salesBySupervisor[sup._id];
               const isMatch = !supSales || Math.abs(supTotal - supSales.total) < 0.01;
+              const isOpen = expandedId === `extra-${sup._id}`;
 
               return (
                 <div key={sup._id} className={`bg-white border rounded-2xl p-4 ${isMatch ? 'border-green-200' : 'border-amber-300'}`}>
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start justify-between gap-4 mb-3">
                     <div className="flex items-center gap-3">
                       <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-0.5 ${isMatch ? 'bg-green-500' : 'bg-amber-500'}`} />
                       <div>
                         <p className="font-semibold text-gray-800">{sup.name}</p>
-                        <p className="text-xs text-gray-400">{records.length} collection{records.length !== 1 ? 's' : ''}</p>
                         {!isMatch && supSales && (
                           <p className="text-xs text-amber-700 font-medium">
-                            Sales: ₦{fmt(supSales.total)} · Collected: ₦{fmt(supTotal)} · Diff: ₦{fmt(Math.abs(supTotal - supSales.total))}
+                            Diff: ₦{fmt(Math.abs(supTotal - supSales.total))} (Sales: ₦{fmt(supSales.total)})
                           </p>
                         )}
                       </div>
@@ -378,51 +436,44 @@ export default function RecordPaymentsPage() {
                     </div>
                   </div>
 
-                  {records.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
-                      {records.map((r, i) => (
-                        <div key={r._id || i} className="flex items-center justify-between text-xs text-gray-500">
-                          <span>
-                            {new Date(r.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
-                            {r.posTerminalLabel ? ` · POS: ${r.posTerminalLabel}` : ''}
-                            {r.notes ? ` · ${r.notes}` : ''}
-                          </span>
-                          <span className="font-medium text-gray-700">₦{fmt(r.totalReceived)}</span>
+                  {/* Breakdown per record */}
+                  <div className="space-y-2">
+                    {records.map((r, ri) => (
+                      <div key={r._id || ri} className="text-xs bg-slate-50 rounded-lg px-3 py-2 space-y-0.5">
+                        <div className="flex justify-between text-gray-600">
+                          <span>{new Date(r.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span className="font-semibold text-gray-800">₦{fmt(r.totalReceived)}</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        {r.cashReceived > 0 && (
+                          <div className="flex justify-between text-gray-500">
+                            <span>Cash</span><span>₦{fmt(r.cashReceived)}</span>
+                          </div>
+                        )}
+                        {(r.posEntries || []).map((pe, pi) => (
+                          <div key={pi} className="flex justify-between text-gray-500">
+                            <span>{pe.bank}{pe.terminalId ? ` (${pe.terminalId})` : ''}</span>
+                            <span>₦{fmt(pe.amount)}</span>
+                          </div>
+                        ))}
+                        {r.notes && <p className="text-gray-400 italic">{r.notes}</p>}
+                      </div>
+                    ))}
+                  </div>
 
                   {activeDayShift && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
-                      {expandedId === `extra-${sup._id}` ? (
-                        <div className="space-y-3">
-                          <p className="text-xs font-medium text-gray-600">Record additional collection</p>
-                          <div className="grid grid-cols-2 gap-3">
-                            <Input label="Cash (₦)" type="number" value={forms[`extra-${sup._id}`]?.cash || ''}
-                              onChange={e => handleFormChange(`extra-${sup._id}`, 'cash', e.target.value)}
-                              placeholder="0.00" step="0.01" min="0" />
-                            <Input label="POS (₦)" type="number" value={forms[`extra-${sup._id}`]?.pos || ''}
-                              onChange={e => handleFormChange(`extra-${sup._id}`, 'pos', e.target.value)}
-                              placeholder="0.00" step="0.01" min="0" />
-                          </div>
-                          {(parseFloat(forms[`extra-${sup._id}`]?.pos) > 0) && (
-                            <Select label="POS Terminal *"
-                              value={forms[`extra-${sup._id}`]?.posTerminalId || ''}
-                              onChange={e => handleFormChange(`extra-${sup._id}`, 'posTerminalId', e.target.value)}
-                              options={terminalOptions} />
-                          )}
-                          {errors[`extra-${sup._id}`] && <p className="text-xs text-red-600">{errors[`extra-${sup._id}`]}</p>}
-                          <div className="flex gap-2">
-                            <Button variant="primary" size="sm" onClick={() => submitCollection(`extra-${sup._id}`, sup._id)} disabled={submitting[`extra-${sup._id}`]}>
-                              {submitting[`extra-${sup._id}`] ? 'Saving...' : 'Add'}
-                            </Button>
-                            <Button variant="secondary" size="sm" onClick={() => setExpandedId(null)}>Cancel</Button>
-                          </div>
+                      {isOpen ? (
+                        <div className="space-y-2">
+                          <CollectionForm
+                            sup={sup}
+                            supSales={salesBySupervisor[sup._id] || null}
+                            activeDayShift={activeDayShift}
+                            onSubmitted={() => { setExpandedId(null); loadData(); }}
+                          />
+                          <button onClick={() => setExpandedId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
                         </div>
                       ) : (
-                        <button onClick={() => { setForms(prev => ({ ...prev, [`extra-${sup._id}`]: { cash: '', pos: '', posTerminalId: '', notes: '' } })); setExpandedId(`extra-${sup._id}`); }}
-                          className="text-xs text-gray-400 hover:text-ecana-maroon transition-colors">
+                        <button onClick={() => setExpandedId(`extra-${sup._id}`)} className="text-xs text-gray-400 hover:text-ecana-maroon transition-colors">
                           + Add another collection
                         </button>
                       )}
@@ -438,7 +489,7 @@ export default function RecordPaymentsPage() {
       {activeDayShift && supervisors.length === 0 && (
         <Card>
           <p className="text-sm text-amber-700 text-center py-4">
-            No supervisors found for this station. Ask admin to assign supervisors with this station.
+            No supervisors found for this station. Ask admin to assign supervisors.
           </p>
         </Card>
       )}
@@ -446,11 +497,9 @@ export default function RecordPaymentsPage() {
       {(totalCash > 0 || totalPos > 0) && (
         <Card title="Today's Collection Summary">
           <div className="space-y-2">
-            <div className="flex justify-between text-sm text-gray-600"><span>Total Cash Collected</span><span className="font-semibold text-gray-900">₦{fmt(totalCash)}</span></div>
-            <div className="flex justify-between text-sm text-gray-600"><span>Total POS Collected</span><span className="font-semibold text-gray-900">₦{fmt(totalPos)}</span></div>
-            <div className="flex justify-between text-base font-bold text-gray-900 pt-2 border-t border-gray-200">
-              <span>Grand Total</span><span className="text-ecana-maroon">₦{fmt(totalCash + totalPos)}</span>
-            </div>
+            <div className="flex justify-between text-sm text-gray-600"><span>Total Cash</span><span className="font-semibold">₦{fmt(totalCash)}</span></div>
+            <div className="flex justify-between text-sm text-gray-600"><span>Total POS</span><span className="font-semibold">₦{fmt(totalPos)}</span></div>
+            <div className="flex justify-between font-bold text-gray-900 pt-2 border-t border-gray-200"><span>Grand Total</span><span className="text-ecana-maroon">₦{fmt(totalCash + totalPos)}</span></div>
           </div>
         </Card>
       )}

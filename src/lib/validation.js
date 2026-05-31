@@ -81,7 +81,7 @@ export const paymentRecordSchema = z.object({
   dayShiftId: z.string(),
   supervisorId: z.string(),
   cashReceived: z.number().min(0, 'Cash received cannot be negative'),
-  posReceived: z.number().min(0, 'POS received cannot be negative'),
+  // posReceived is now computed from posEntries on the server
 });
 
 // Change Password Schema

@@ -71,7 +71,13 @@ export async function POST(request) {
       );
     }
 
-    const totalReceived = validatedData.cashReceived + validatedData.posReceived;
+    // posEntries: [{ bank, amount, terminalId? }]
+    const posEntries = (body.posEntries || [])
+      .filter(e => e.bank && Number(e.amount) > 0)
+      .map(e => ({ bank: e.bank.trim(), amount: Number(e.amount), terminalId: e.terminalId?.trim() || null }));
+
+    const posReceived = posEntries.reduce((s, e) => s + e.amount, 0);
+    const totalReceived = validatedData.cashReceived + posReceived;
 
     // Create payment record
     const paymentRecord = await PaymentRecord.create([{
@@ -82,10 +88,9 @@ export async function POST(request) {
       supervisorId: validatedData.supervisorId,
       supervisorName: supervisor.name,
       cashReceived: validatedData.cashReceived,
-      posReceived: validatedData.posReceived,
+      posEntries,
+      posReceived,
       totalReceived,
-      posTerminalId: body.posTerminalId || null,
-      posTerminalLabel: body.posTerminalLabel || null,
       recordedBy: currentUser.id,
       recordedByName: currentUser.name,
       notes: body.notes || '',
