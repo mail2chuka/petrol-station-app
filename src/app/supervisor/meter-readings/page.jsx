@@ -32,11 +32,12 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
   const openingDone = opening != null;
   const closingDone = closing != null;
 
-  const discrepancy = prevClosing != null && openingDone && opening !== prevClosing;
+  // Use same 0.01 tolerance as the API to avoid false discrepancy flags from float precision
+  const discrepancy = prevClosing != null && openingDone && Math.abs(opening - prevClosing) > 0.01;
   const liveDiscrepancy = prevClosing != null &&
     openingVal !== '' &&
     !isNaN(parseFloat(openingVal)) &&
-    parseFloat(openingVal) !== prevClosing;
+    Math.abs(parseFloat(openingVal) - prevClosing) > 0.01;
 
   const net = closingDone
     ? (closing - opening - (existing?.rtt ?? 0)).toFixed(2)

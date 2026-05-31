@@ -97,16 +97,23 @@ export async function POST(request) {
         return NextResponse.json({ error: 'A valid opening reading is required' }, { status: 400 });
       }
 
-      // Fetch previous day's closing
+      // Fetch ONLY the previous day's closing — same date window the UI shows the supervisor.
+      // Using the day before startDate (UTC) to be consistent with the client's prevDateStr.
+      const prevDayStart = new Date(startDate);
+      prevDayStart.setUTCDate(prevDayStart.getUTCDate() - 1);
+      const prevDayEnd = new Date(prevDayStart);
+      prevDayEnd.setUTCHours(23, 59, 59, 999);
+
       const previousReading = await MeterReading.findOne({
         stationId,
         pumpId,
-        date: { $lt: startDate },
+        date: { $gte: prevDayStart, $lte: prevDayEnd },
         closing: { $ne: null },
-      }).sort({ date: -1, createdAt: -1 });
+      });
 
       const previousDayClosing = previousReading?.closing ?? null;
-      const hasDiscrepancy = previousDayClosing !== null && opening !== previousDayClosing;
+      // Use a tolerance of 0.01 to guard against floating-point representation differences
+      const hasDiscrepancy = previousDayClosing !== null && Math.abs(opening - previousDayClosing) > 0.01;
 
       if (hasDiscrepancy && !body.discrepancyComment?.trim()) {
         return NextResponse.json({
