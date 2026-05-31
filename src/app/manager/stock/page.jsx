@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
@@ -8,16 +8,30 @@ import Input from '@/components/Input';
 import Select from '@/components/Select';
 import Button from '@/components/Button';
 import Loading from '@/components/Loading';
+import { FUEL_TYPE_LABELS } from '@/lib/constants';
+
+function getStock(station, fuelType) {
+  if (!station?.currentStock) return 0;
+  const s = station.currentStock;
+  return typeof s.get === 'function' ? (s.get(fuelType) ?? 0) : (s[fuelType] ?? 0);
+}
+
+function getPrice(station, fuelType) {
+  if (!station?.currentPrices) return 0;
+  const p = station.currentPrices;
+  return typeof p.get === 'function' ? (p.get(fuelType) ?? 0) : (p[fuelType] ?? 0);
+}
 
 function ReceiveStockPageContent() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const adminStationId = searchParams.get('stationId');
   const activeStationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
+
   const [station, setStation] = useState(null);
   const [formData, setFormData] = useState({
-    fuelType: 'PMS',
-    tank: '',
+    fuelType: '',
+    tankId: '',       // selected tank _id
     quantity: '',
     expectedQuantity: '',
     cost: '',
@@ -30,89 +44,94 @@ function ReceiveStockPageContent() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  useEffect(() => {
-    fetchStation();
-  }, [session]);
+  useEffect(() => { fetchStation(); }, [session]);
 
   const fetchStation = async () => {
     if (!activeStationId) return;
-
     try {
       const res = await fetch('/api/stations');
       const data = await res.json();
-      
       const myStation = data.stations?.find(s => s._id === activeStationId);
       if (myStation) {
         setStation(myStation);
+        // Default fuelType to first available product
+        const products = myStation.availableProducts || ['PMS', 'AGO'];
+        setFormData(prev => ({ ...prev, fuelType: products[0] || 'PMS', tankId: '', }));
       }
-    } catch (error) {
-      console.error('Error fetching station:', error);
+    } catch (err) {
+      console.error('Error fetching station:', err);
     } finally {
       setLoading(false);
     }
   };
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value,
+      // Reset tank selection when fuel type changes
+      ...(name === 'fuelType' ? { tankId: '' } : {}),
+    }));
   };
+
+  // Tanks filtered by selected fuel type
+  const tanksForFuelType = useMemo(() => {
+    return (station?.tanks || []).filter(t => t.isActive !== false && t.product === formData.fuelType);
+  }, [station, formData.fuelType]);
+
+  // All active tanks (for distribution)
+  const allTanks = useMemo(() => (station?.tanks || []).filter(t => t.isActive !== false), [station]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    const distributionTotal = distribution.reduce((sum, item) => sum + (Number(item.litres) || 0), 0);
     const quantityValue = Number(formData.quantity || 0);
-    const distributionDifference = Math.abs(distributionTotal - quantityValue);
+    const distributionTotal = distribution.reduce((sum, item) => sum + (Number(item.litres) || 0), 0);
 
-    if (distribution.length > 0 && distributionDifference > 0.001) {
-      setError('Tank distribution total must equal quantity delivered');
+    if (distribution.length > 0 && Math.abs(distributionTotal - quantityValue) > 0.001) {
+      setError('Tank distribution total must equal quantity delivered.');
       return;
     }
 
     setSubmitting(true);
-
     try {
+      // Resolve tank label for the selected tankId
+      const selectedTank = tanksForFuelType.find(t => t._id === formData.tankId);
+
       const res = await fetch(`/api/stations/${activeStationId}/stock`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           stationId: activeStationId,
           fuelType: formData.fuelType,
-          tank: formData.tank?.trim() ? formData.tank.trim() : undefined,
+          tank: selectedTank ? selectedTank.label : undefined,
           quantity: parseFloat(formData.quantity),
           expectedQuantity: formData.expectedQuantity ? parseFloat(formData.expectedQuantity) : undefined,
           cost: parseFloat(formData.cost),
           supplier: formData.supplier,
           notes: formData.notes,
           distribution: distribution
-            .filter((d) => d.tankId && d.litres !== '')
-            .map((d) => ({ tankId: d.tankId, litres: parseFloat(d.litres) })),
+            .filter(d => d.tankId && d.litres !== '')
+            .map(d => ({ tankId: d.tankId, litres: parseFloat(d.litres) })),
         }),
       });
 
       const data = await res.json();
 
       if (res.ok) {
-        setSuccess(`Stock received successfully! New ${formData.fuelType} stock: ${data.stockUpdate.newStock.toFixed(2)}L`);
-        setFormData({
-          fuelType: 'PMS',
-          tank: '',
-          quantity: '',
-          expectedQuantity: '',
-          cost: '',
-          supplier: '',
-          notes: '',
-        });
+        setSuccess(
+          `Stock received! ${formData.fuelType} updated: ${data.stockUpdate.previousStock.toFixed(2)} L → ${data.stockUpdate.newStock.toFixed(2)} L`
+        );
+        setFormData(prev => ({ ...prev, tankId: '', quantity: '', expectedQuantity: '', cost: '', supplier: '', notes: '' }));
         setDistribution([]);
-        fetchStation(); // Refresh station data
+        fetchStation();
       } else {
         setError(data.error || 'Failed to receive stock');
       }
-    } catch (error) {
+    } catch {
       setError('An error occurred. Please try again.');
     } finally {
       setSubmitting(false);
@@ -129,82 +148,84 @@ function ReceiveStockPageContent() {
 
   if (loading) return <Loading />;
 
+  const availableProducts = station?.availableProducts || ['PMS', 'AGO'];
   const costPerLiter = formData.quantity && formData.cost
     ? (parseFloat(formData.cost) / parseFloat(formData.quantity)).toFixed(2)
-    : '0.00';
-
+    : null;
   const variance = formData.expectedQuantity && formData.quantity
     ? (parseFloat(formData.quantity) - parseFloat(formData.expectedQuantity)).toFixed(2)
     : null;
-
   const distributionTotal = distribution.reduce((sum, item) => sum + (Number(item.litres) || 0), 0);
   const quantityValue = Number(formData.quantity || 0);
-  const distributionDifference = Math.abs(distributionTotal - quantityValue);
 
   return (
     <div>
       <h1 className="text-3xl font-bold text-gray-800 mb-8">Receive Stock</h1>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
-        </div>
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-4 text-sm">{error}</div>
       )}
-
       {success && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded mb-4">
-          {success}
-        </div>
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl mb-4 text-sm">{success}</div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        {/* Current stock levels */}
         <Card title="Current Stock Levels">
-          <div className="space-y-4">
-            <div className="p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm text-gray-600">PMS (Petrol)</p>
-              <p className="text-2xl font-bold text-blue-600">
-                {station?.currentStock?.PMS?.toFixed(2) || '0.00'}L
-              </p>
-              <p className="text-sm text-gray-600">
-                Price: ₦{station?.currentPrices?.PMS?.toFixed(2) || '0.00'}/L
-              </p>
-            </div>
-            <div className="p-3 bg-green-50 rounded-lg">
-              <p className="text-sm text-gray-600">AGO (Diesel)</p>
-              <p className="text-2xl font-bold text-green-600">
-                {station?.currentStock?.AGO?.toFixed(2) || '0.00'}L
-              </p>
-              <p className="text-sm text-gray-600">
-                Price: ₦{station?.currentPrices?.AGO?.toFixed(2) || '0.00'}/L
-              </p>
-            </div>
+          <div className="space-y-3">
+            {availableProducts.map(product => (
+              <div key={product} className={`p-3 rounded-xl ${formData.fuelType === product ? 'bg-ecana-maroon/5 border border-ecana-maroon/20' : 'bg-slate-50'}`}>
+                <p className="text-sm text-gray-600">{FUEL_TYPE_LABELS[product] || product}</p>
+                <p className="text-2xl font-bold text-slate-800">
+                  {getStock(station, product).toFixed(2)} L
+                </p>
+                <p className="text-sm text-gray-500">
+                  Price: ₦{getPrice(station, product).toFixed(2)}/L
+                </p>
+              </div>
+            ))}
+
+            {/* Tank list */}
+            {(station?.tanks || []).filter(t => t.isActive !== false).length > 0 && (
+              <div className="pt-2 border-t border-gray-100">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Tanks</p>
+                {(station.tanks || []).filter(t => t.isActive !== false).map(tank => (
+                  <div key={tank._id} className="flex justify-between text-sm py-1">
+                    <span className="text-gray-700">{tank.label}</span>
+                    <span className="text-gray-500">{tank.product} · {(tank.capacity || 0).toLocaleString()} L cap.</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </Card>
 
+        {/* Record new stock */}
         <Card title="Record New Stock">
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} className="space-y-0">
             <Select
               label="Fuel Type"
               name="fuelType"
               value={formData.fuelType}
               onChange={handleChange}
-              options={[
-                { value: 'PMS', label: 'PMS (Petrol)' },
-                { value: 'AGO', label: 'AGO (Diesel)' },
-              ]}
+              options={availableProducts.map(p => ({ value: p, label: FUEL_TYPE_LABELS[p] || p }))}
               required
             />
 
-            <Input
-              label="Tank"
-              name="tank"
-              value={formData.tank}
+            {/* Tank select — dropdown of tanks for the selected fuel type */}
+            <Select
+              label="Tank (Optional)"
+              name="tankId"
+              value={formData.tankId}
               onChange={handleChange}
-              placeholder="e.g., Tank 1"
+              options={[
+                { value: '', label: tanksForFuelType.length > 0 ? 'Select a tank...' : '— No tanks configured for this fuel —' },
+                ...tanksForFuelType.map(t => ({ value: t._id, label: `${t.label} (cap: ${(t.capacity || 0).toLocaleString()} L)` })),
+              ]}
             />
 
             <Input
-              label="Expected Quantity (Liters)"
+              label="Expected Quantity (Litres)"
               type="number"
               name="expectedQuantity"
               value={formData.expectedQuantity}
@@ -212,20 +233,10 @@ function ReceiveStockPageContent() {
               placeholder="0.00"
               step="0.01"
               min="0"
-              required
             />
 
-            {variance !== null && (
-              <div className="mb-4 p-3 bg-amber-50 rounded-lg">
-                <p className="text-xs text-gray-600">Supply Variance (Actual - Expected)</p>
-                <p className={`text-xl font-bold ${Number(variance) < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
-                  {Number(variance) >= 0 ? '+' : ''}{variance}L
-                </p>
-              </div>
-            )}
-
             <Input
-              label="Quantity Delivered (Liters)"
+              label="Quantity Delivered (Litres)"
               type="number"
               name="quantity"
               value={formData.quantity}
@@ -236,54 +247,80 @@ function ReceiveStockPageContent() {
               required
             />
 
-            <div className="mb-4 p-3 border rounded-lg bg-slate-50">
-              <p className="text-sm font-semibold text-slate-800 mb-2">Tank Distribution</p>
-              <p className="text-xs text-slate-500 mb-3">Split received volume across one or more tanks. Total must equal delivered quantity.</p>
-              <div className="space-y-2">
-                {distribution.map((item, index) => (
-                  <div key={`${item.tankId}-${index}`} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
-                    <Select
-                      label="Tank"
-                      name={`tank-${index}`}
-                      value={item.tankId}
-                      onChange={(e) => {
-                        const next = [...distribution];
-                        next[index].tankId = e.target.value;
-                        setDistribution(next);
-                      }}
-                      options={(station?.tanks || []).map((t) => ({ value: t._id, label: `${t.label} (${t.product})` }))}
-                    />
-                    <Input
-                      label="Litres"
-                      type="number"
-                      value={item.litres}
-                      min="0"
-                      step="0.01"
-                      onChange={(e) => {
-                        const next = [...distribution];
-                        next[index].litres = e.target.value;
-                        setDistribution(next);
-                      }}
-                    />
-                    <Button type="button" variant="danger" onClick={() => setDistribution(distribution.filter((_, i) => i !== index))}>Remove</Button>
-                  </div>
-                ))}
+            {variance !== null && (
+              <div className="mb-4 p-3 rounded-xl bg-amber-50">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Supply Variance (Actual − Expected)</p>
+                <p className={`text-xl font-bold mt-0.5 ${Number(variance) < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                  {Number(variance) >= 0 ? '+' : ''}{variance} L
+                </p>
               </div>
-              <div className="mt-3 flex gap-2">
+            )}
+
+            {/* Tank distribution */}
+            <div className="mb-4 p-4 border border-gray-200 rounded-xl bg-slate-50">
+              <p className="text-sm font-semibold text-slate-800 mb-1">Split Across Tanks (Optional)</p>
+              <p className="text-xs text-slate-500 mb-3">
+                Use this to distribute delivered volume across multiple tanks. Total must equal delivered quantity.
+              </p>
+
+              {distribution.map((item, index) => (
+                <div key={index} className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2 items-end">
+                  <Select
+                    label="Tank"
+                    value={item.tankId}
+                    onChange={(e) => {
+                      const next = [...distribution];
+                      next[index].tankId = e.target.value;
+                      setDistribution(next);
+                    }}
+                    options={[
+                      { value: '', label: 'Select tank...' },
+                      ...allTanks.map(t => ({ value: t._id, label: `${t.label} (${t.product})` })),
+                    ]}
+                  />
+                  <Input
+                    label="Litres"
+                    type="number"
+                    value={item.litres}
+                    min="0"
+                    step="0.01"
+                    onChange={(e) => {
+                      const next = [...distribution];
+                      next[index].litres = e.target.value;
+                      setDistribution(next);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    onClick={() => setDistribution(distribution.filter((_, i) => i !== index))}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+
+              <div className="flex items-center gap-3 mt-2">
                 <Button
                   type="button"
                   variant="secondary"
+                  size="sm"
                   onClick={() => setDistribution([...distribution, { tankId: '', litres: '' }])}
                 >
-                  Add Tank Split
+                  + Add Tank Split
                 </Button>
-                <div className="text-xs text-slate-600 self-center">
-                  Total Split: {distributionTotal.toFixed(2)}L
-                </div>
+                {distribution.length > 0 && (
+                  <span className="text-xs text-slate-600">
+                    Total split: <strong>{distributionTotal.toFixed(2)} L</strong>
+                    {quantityValue > 0 && (
+                      <span className={Math.abs(distributionTotal - quantityValue) < 0.001 ? ' text-emerald-600' : ' text-red-600'}>
+                        {' '}/ {quantityValue.toFixed(2)} L
+                      </span>
+                    )}
+                  </span>
+                )}
               </div>
-              {formData.quantity && distribution.length > 0 && distributionDifference > 0.001 && (
-                <p className="text-xs text-red-600 mt-2">Distribution total must equal quantity delivered.</p>
-              )}
             </div>
 
             <Input
@@ -298,36 +335,34 @@ function ReceiveStockPageContent() {
               required
             />
 
-            {formData.quantity && formData.cost && (
-              <div className="mb-4 p-3 bg-ecana-blue-50 rounded-lg">
-                <p className="text-xs text-gray-600">Cost Per Liter (₦)</p>
-                <p className="text-xl font-bold text-ecana-blue">₦{costPerLiter}</p>
+            {costPerLiter && (
+              <div className="mb-4 p-3 rounded-xl bg-slate-50">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Cost Per Litre</p>
+                <p className="text-xl font-bold text-slate-800 mt-0.5">₦{costPerLiter}</p>
               </div>
             )}
 
             <Input
-              label="Supplier"
+              label="Supplier (Optional)"
               name="supplier"
               value={formData.supplier}
               onChange={handleChange}
-              placeholder="e.g., ABC Fuel Suppliers"
+              placeholder="e.g. ABC Fuel Suppliers"
             />
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Notes (Optional)
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Notes (Optional)</label>
               <textarea
                 name="notes"
                 value={formData.notes}
                 onChange={handleChange}
-                rows="3"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Delivery notes, invoice number, etc..."
+                rows={2}
+                className="w-full px-4 py-3 text-sm border-2 border-slate-200 rounded-xl focus:outline-none focus:border-ecana-maroon resize-none"
+                placeholder="Invoice number, delivery notes..."
               />
             </div>
 
-            <Button type="submit" variant="success" disabled={submitting}>
+            <Button type="submit" variant="success" disabled={submitting} className="w-full">
               {submitting ? 'Recording...' : 'Receive Stock'}
             </Button>
           </form>
@@ -339,7 +374,7 @@ function ReceiveStockPageContent() {
 
 export default function ReceiveStockPage() {
   return (
-    <Suspense fallback={<Loading /> }>
+    <Suspense fallback={<Loading />}>
       <ReceiveStockPageContent />
     </Suspense>
   );

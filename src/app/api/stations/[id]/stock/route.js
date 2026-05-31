@@ -50,7 +50,10 @@ export async function POST(request, { params }) {
     }
 
     const fuelType = validatedData.fuelType;
-    const previousStock = station.currentStock[fuelType];
+    // currentStock is a Map — use .get() with a fallback of 0
+    const previousStock = station.currentStock instanceof Map
+      ? (station.currentStock.get(fuelType) ?? 0)
+      : (station.currentStock?.[fuelType] ?? 0);
     const newStock = previousStock + validatedData.quantity;
     const expectedQuantity = validatedData.expectedQuantity;
     const varianceQuantity = expectedQuantity !== undefined ? validatedData.quantity - expectedQuantity : undefined;
@@ -78,8 +81,13 @@ export async function POST(request, { params }) {
       }
     }
 
-    // Update station stock
-    station.currentStock[fuelType] = newStock;
+    // Update station stock — Map requires .set()
+    if (station.currentStock instanceof Map) {
+      station.currentStock.set(fuelType, newStock);
+    } else {
+      station.currentStock[fuelType] = newStock;
+    }
+    station.markModified('currentStock');
     await station.save({ session });
 
     // Create stock movement record
