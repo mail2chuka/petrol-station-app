@@ -127,4 +127,24 @@ const stationSchema = new mongoose.Schema(
 // Indexes
 stationSchema.index({ isActive: 1 });
 
+// Ensure all availableProducts have a 0 entry in currentStock and currentPrices before saving,
+// so reads never return undefined/null and cause NaN arithmetic bugs.
+stationSchema.pre('save', function (next) {
+  const products = this.availableProducts?.length ? this.availableProducts : ['PMS', 'AGO'];
+
+  if (!(this.currentStock instanceof Map)) {
+    this.currentStock = new Map(Object.entries(this.currentStock || {}));
+  }
+  if (!(this.currentPrices instanceof Map)) {
+    this.currentPrices = new Map(Object.entries(this.currentPrices || {}));
+  }
+
+  for (const p of products) {
+    if (this.currentStock.get(p) == null) this.currentStock.set(p, 0);
+    if (this.currentPrices.get(p) == null) this.currentPrices.set(p, 0);
+  }
+
+  next();
+});
+
 export default mongoose.models.Station || mongoose.model('Station', stationSchema);

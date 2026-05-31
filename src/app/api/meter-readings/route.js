@@ -9,6 +9,9 @@ import { notifyAdminMeterDiscrepancy } from '@/lib/notifications';
 import User from '@/models/User';
 
 // GET /api/meter-readings
+// Extra query param: lastClosingBefore=YYYY-MM-DD
+//   When present, returns the most recent closing for EACH pump before that date
+//   (used by the supervisor page to show the correct "previous closing" hint).
 export async function GET(request) {
   try {
     const currentUser = await requireAuth();
@@ -17,12 +20,41 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const stationId = searchParams.get('stationId');
     const date = searchParams.get('date');
+    const lastClosingBefore = searchParams.get('lastClosingBefore');
 
-    const query = {};
-    if (stationId) query.stationId = stationId;
-    if (currentUser.role !== ROLES.ADMIN && currentUser.stationId) {
-      query.stationId = currentUser.stationId;
+    // Resolve station scope
+    const scopedStationId = currentUser.role !== ROLES.ADMIN && currentUser.stationId
+      ? currentUser.stationId
+      : stationId;
+
+    // ── Special mode: last closing per pump before a date ─────────────────────
+    if (lastClosingBefore) {
+      const beforeDate = new Date(lastClosingBefore + 'T00:00:00.000Z');
+      const matchStage = {
+        closing: { $ne: null },
+        date: { $lt: beforeDate },
+        ...(scopedStationId ? { stationId: new (require('mongoose').Types.ObjectId)(scopedStationId) } : {}),
+      };
+
+      const lastClosings = await MeterReading.aggregate([
+        { $match: matchStage },
+        { $sort: { date: -1, createdAt: -1 } },
+        {
+          $group: {
+            _id: '$pumpId',
+            closing: { $first: '$closing' },
+            date: { $first: '$date' },
+            pumpLabel: { $first: '$pumpLabel' },
+          },
+        },
+      ]);
+
+      return NextResponse.json({ lastClosings });
     }
+
+    // ── Normal mode: readings for a date range ────────────────────────────────
+    const query = {};
+    if (scopedStationId) query.stationId = scopedStationId;
 
     const month = searchParams.get('month');
     if (month) {
@@ -97,27 +129,27 @@ export async function POST(request) {
         return NextResponse.json({ error: 'A valid opening reading is required' }, { status: 400 });
       }
 
-      // Fetch ONLY the previous day's closing — same date window the UI shows the supervisor.
-      // Using the day before startDate (UTC) to be consistent with the client's prevDateStr.
-      const prevDayStart = new Date(startDate);
-      prevDayStart.setUTCDate(prevDayStart.getUTCDate() - 1);
-      const prevDayEnd = new Date(prevDayStart);
-      prevDayEnd.setUTCHours(23, 59, 59, 999);
-
+      // Find the MOST RECENT closing for this pump before today — regardless of which date it was on.
+      // This is the authoritative "last known reading" the opening must be compared against.
       const previousReading = await MeterReading.findOne({
         stationId,
         pumpId,
-        date: { $gte: prevDayStart, $lte: prevDayEnd },
+        date: { $lt: startDate },
         closing: { $ne: null },
-      });
+      }).sort({ date: -1, createdAt: -1 });
 
       const previousDayClosing = previousReading?.closing ?? null;
-      // Use a tolerance of 0.01 to guard against floating-point representation differences
+      const previousReadingDate = previousReading?.date ?? null;
+
+      // Tolerance of 0.01 guards against floating-point representation differences
       const hasDiscrepancy = previousDayClosing !== null && Math.abs(opening - previousDayClosing) > 0.01;
 
       if (hasDiscrepancy && !body.discrepancyComment?.trim()) {
+        const dateLabel = previousReadingDate
+          ? new Date(previousReadingDate).toLocaleDateString('en-NG', { dateStyle: 'medium' })
+          : 'previous session';
         return NextResponse.json({
-          error: 'A comment is required because the opening reading differs from the previous day\'s closing',
+          error: `Opening reading differs from the last recorded closing of ${previousDayClosing} (${dateLabel}). A comment is required.`,
           requiresComment: true,
           previousDayClosing,
         }, { status: 400 });

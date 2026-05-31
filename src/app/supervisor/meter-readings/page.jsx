@@ -131,11 +131,12 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
       </div>
 
       <div className="px-4 py-4 space-y-4">
-        {/* Previous closing hint */}
+        {/* Last known closing hint — shown to supervisor so they know what to expect */}
         {prevClosing != null && (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
-            Previous day closing: <span className="font-semibold text-slate-700 ml-1">{prevClosing}</span>
+          <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+            Last closing reading: <span className="font-semibold text-slate-800 ml-1">{prevClosing}</span>
+            <span className="text-xs text-slate-400 ml-1">(opening must match unless explained)</span>
           </div>
         )}
 
@@ -156,7 +157,7 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
         {stage === 'opening_form' && (
           <div className="space-y-3">
             <Input
-              label={prevClosing != null ? `Opening Reading (prev closing: ${prevClosing})` : 'Opening Reading'}
+              label={prevClosing != null ? `Opening Reading (last closing was ${prevClosing})` : 'Opening Reading'}
               type="number"
               value={openingVal}
               onChange={e => { setOpeningVal(e.target.value); setError(''); }}
@@ -382,15 +383,15 @@ export default function MeterReadingsPage() {
       for (const r of (readingsData.readings || [])) readingsMap[r.pumpId] = r;
       setExistingReadings(readingsMap);
 
-      // Previous day's closings for discrepancy detection
-      const prevDate = new Date(dateStr + 'T12:00:00');
-      prevDate.setDate(prevDate.getDate() - 1);
-      const prevDateStr = prevDate.toISOString().split('T')[0];
-      const prevRes = await fetch(`/api/meter-readings?stationId=${stationId}&date=${prevDateStr}`);
+      // Fetch the MOST RECENT closing for each pump before today — regardless of which date.
+      // This is what the API also compares against, so both always agree.
+      const prevRes = await fetch(
+        `/api/meter-readings?stationId=${stationId}&lastClosingBefore=${dateStr}`
+      );
       const prevData = await prevRes.json();
       const prevMap = {};
-      for (const r of (prevData.readings || [])) {
-        if (r.closing != null) prevMap[r.pumpId] = r.closing;
+      for (const r of (prevData.lastClosings || [])) {
+        prevMap[r._id] = r.closing; // _id is pumpId from the aggregate $group
       }
       setPreviousClosings(prevMap);
 
