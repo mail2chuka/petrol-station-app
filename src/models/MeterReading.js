@@ -9,7 +9,7 @@ const meterReadingSchema = new mongoose.Schema(
       index: true,
     },
     stationName: {
-      type: String, // Denormalized
+      type: String,
       required: true,
     },
     pumpId: {
@@ -23,20 +23,30 @@ const meterReadingSchema = new mongoose.Schema(
       required: [true, 'Date is required'],
       index: true,
     },
+    // Opening is entered when supervisor "opens" the pump at start of shift
     opening: {
       type: Number,
       required: [true, 'Opening meter reading is required'],
       min: 0,
     },
+    openingSubmittedAt: {
+      type: Date,
+      default: null,
+    },
+    // Closing and RTT are entered independently at end of shift (optional until submitted)
     closing: {
       type: Number,
-      required: [true, 'Closing meter reading is required'],
+      default: null,
       min: 0,
     },
     rtt: {
       type: Number,
-      required: [true, 'Return-to-tank reading is required'],
+      default: 0,
       min: 0,
+    },
+    closingSubmittedAt: {
+      type: Date,
+      default: null,
     },
     supervisorId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -44,11 +54,11 @@ const meterReadingSchema = new mongoose.Schema(
       required: [true, 'Supervisor ID is required'],
     },
     supervisorName: {
-      type: String, // Denormalized
+      type: String,
       required: true,
     },
     previousDayClosing: {
-      type: Number, // Auto-fetched from previous day's closing reading
+      type: Number,
       default: null,
     },
     discrepancyFlag: {
@@ -56,7 +66,7 @@ const meterReadingSchema = new mongoose.Schema(
       default: false,
     },
     discrepancyComment: {
-      type: String, // Required when supervisor edits opening field
+      type: String,
       default: null,
     },
     managerReviewStatus: {
@@ -84,7 +94,7 @@ const meterReadingSchema = new mongoose.Schema(
     },
     editedByAdminId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User', // Admin who last edited this reading
+      ref: 'User',
       default: null,
     },
     editedByAdminName: {
@@ -108,7 +118,6 @@ const meterReadingSchema = new mongoose.Schema(
   }
 );
 
-// Compound index for uniqueness: one reading per pump per day
 meterReadingSchema.index({ stationId: 1, pumpId: 1, date: 1 }, { unique: true });
 meterReadingSchema.index({ stationId: 1, supervisorId: 1, date: -1 });
 meterReadingSchema.index({ stationId: 1, discrepancyFlag: 1 });

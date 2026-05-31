@@ -6,17 +6,7 @@ import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { notifyAdminMeterDiscrepancy } from '@/lib/notifications';
-
-const meterReadingSchema = z.object({
-  stationId: z.string(),
-  pumpId: z.string(),
-  pumpLabel: z.string().optional(),
-  date: z.string(),
-  opening: z.number().min(0),
-  closing: z.number().min(0),
-  rtt: z.number().min(0),
-  discrepancyComment: z.string().optional(),
-});
+import User from '@/models/User';
 
 // GET /api/meter-readings
 export async function GET(request) {
@@ -34,7 +24,7 @@ export async function GET(request) {
       query.stationId = currentUser.stationId;
     }
 
-    const month = searchParams.get('month'); // YYYY-MM
+    const month = searchParams.get('month');
     if (month) {
       const [y, m] = month.split('-').map(Number);
       query.date = {
@@ -57,6 +47,9 @@ export async function GET(request) {
 }
 
 // POST /api/meter-readings
+// Accepts two action types via body.action:
+//   "opening" — supervisor opens a pump and records the opening meter reading
+//   "closing" — supervisor records the closing meter reading and RTT at end of shift
 export async function POST(request) {
   try {
     const currentUser = await requireAuth();
@@ -66,18 +59,23 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Only supervisors can submit meter readings' }, { status: 403 });
     }
 
-    const payload = meterReadingSchema.parse(await request.json());
+    const body = await request.json();
+    const { action = 'opening', stationId, pumpId, pumpLabel: bodyPumpLabel, date } = body;
 
-    if (currentUser.stationId !== payload.stationId) {
+    if (!stationId || !pumpId || !date) {
+      return NextResponse.json({ error: 'stationId, pumpId, and date are required' }, { status: 400 });
+    }
+
+    if (currentUser.stationId !== stationId) {
       return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
     }
 
-    const startDate = new Date(payload.date + 'T00:00:00.000Z');
-    const endDate = new Date(payload.date + 'T23:59:59.999Z');
+    const startDate = new Date(date + 'T00:00:00.000Z');
+    const endDate = new Date(date + 'T23:59:59.999Z');
 
-    // Verify there is an active day shift and the pump is in it
+    // Verify active day shift and pump is in it
     const activeShift = await DayShift.findOne({
-      stationId: payload.stationId,
+      stationId,
       status: DAY_STATUS.IN_PROGRESS,
     });
 
@@ -85,73 +83,125 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No active day shift. The manager must begin the day first.' }, { status: 409 });
     }
 
-    const shiftDispenser = activeShift.dispenserAssignments?.find(
-      d => d.dispenserId === payload.pumpId
-    );
+    const shiftDispenser = activeShift.dispenserAssignments?.find(d => d.dispenserId === pumpId);
     if (!shiftDispenser) {
       return NextResponse.json({ error: 'This pump is not active for today\'s shift.' }, { status: 409 });
     }
 
-    // Use the dispenser name from shift if not provided
-    const pumpLabel = payload.pumpLabel || shiftDispenser.dispenserName || payload.pumpId;
+    const pumpLabel = bodyPumpLabel || shiftDispenser.dispenserName || pumpId;
 
-    const previousReading = await MeterReading.findOne({
-      stationId: payload.stationId,
-      pumpId: payload.pumpId,
-      date: { $lt: startDate },
-    }).sort({ date: -1, createdAt: -1 });
+    // ── OPENING ACTION ──────────────────────────────────────────────────────────
+    if (action === 'opening') {
+      const opening = Number(body.opening);
+      if (isNaN(opening) || opening < 0) {
+        return NextResponse.json({ error: 'A valid opening reading is required' }, { status: 400 });
+      }
 
-    const previousDayClosing = previousReading?.closing ?? null;
-    const openingEdited = previousDayClosing !== null && payload.opening !== previousDayClosing;
+      // Fetch previous day's closing
+      const previousReading = await MeterReading.findOne({
+        stationId,
+        pumpId,
+        date: { $lt: startDate },
+        closing: { $ne: null },
+      }).sort({ date: -1, createdAt: -1 });
 
-    if (openingEdited && !payload.discrepancyComment?.trim()) {
-      return NextResponse.json({ error: 'Comment is required when opening reading differs from previous closing' }, { status: 400 });
+      const previousDayClosing = previousReading?.closing ?? null;
+      const hasDiscrepancy = previousDayClosing !== null && opening !== previousDayClosing;
+
+      if (hasDiscrepancy && !body.discrepancyComment?.trim()) {
+        return NextResponse.json({
+          error: 'A comment is required because the opening reading differs from the previous day\'s closing',
+          requiresComment: true,
+          previousDayClosing,
+        }, { status: 400 });
+      }
+
+      const reading = await MeterReading.findOneAndUpdate(
+        { stationId, pumpId, date: { $gte: startDate, $lte: endDate } },
+        {
+          $set: {
+            stationId,
+            stationName: currentUser.stationName || 'Unknown Station',
+            pumpId,
+            pumpLabel,
+            date: startDate,
+            opening,
+            openingSubmittedAt: new Date(),
+            supervisorId: currentUser.id,
+            supervisorName: currentUser.name,
+            previousDayClosing,
+            discrepancyFlag: hasDiscrepancy,
+            discrepancyComment: body.discrepancyComment?.trim() || null,
+          },
+        },
+        { new: true, upsert: true, runValidators: false }
+      );
+
+      // Notify admin AND manager about discrepancy
+      if (hasDiscrepancy) {
+        await notifyAdminMeterDiscrepancy({
+          stationId,
+          stationName: currentUser.stationName || 'Unknown Station',
+          supervisorName: currentUser.name,
+          pumpLabel,
+          opening,
+          previousClosing: previousDayClosing,
+          comment: body.discrepancyComment?.trim() || '',
+          readingId: reading._id,
+        });
+
+        // Also notify the station manager
+        const manager = await User.findOne({ stationId, role: ROLES.MANAGER, isActive: true });
+        if (manager) {
+          const { createNotification } = await import('@/lib/notifications');
+          await createNotification({
+            recipientId: manager._id,
+            stationId,
+            stationName: currentUser.stationName || 'Unknown Station',
+            title: 'Opening Meter Discrepancy',
+            message: `${currentUser.name} opened ${pumpLabel} with reading ${opening}, which differs from previous closing of ${previousDayClosing}. Comment: "${body.discrepancyComment?.trim()}"`,
+            type: 'meter_discrepancy',
+            relatedType: 'meter_reading',
+            relatedId: reading._id,
+          });
+        }
+      }
+
+      return NextResponse.json({ reading }, { status: 201 });
     }
 
-    const reading = await MeterReading.findOneAndUpdate(
-      {
-        stationId: payload.stationId,
-        pumpId: payload.pumpId,
+    // ── CLOSING ACTION ──────────────────────────────────────────────────────────
+    if (action === 'closing') {
+      const closing = Number(body.closing);
+      const rtt = Number(body.rtt ?? 0);
+
+      if (isNaN(closing) || closing < 0) {
+        return NextResponse.json({ error: 'A valid closing reading is required' }, { status: 400 });
+      }
+
+      // Closing can only be added after opening exists
+      const existing = await MeterReading.findOne({
+        stationId,
+        pumpId,
         date: { $gte: startDate, $lte: endDate },
-      },
-      {
-        stationId: payload.stationId,
-        stationName: currentUser.stationName || 'Unknown Station',
-        pumpId: payload.pumpId,
-        pumpLabel: pumpLabel,
-        date: startDate,
-        opening: payload.opening,
-        closing: payload.closing,
-        rtt: payload.rtt,
-        supervisorId: currentUser.id,
-        supervisorName: currentUser.name,
-        previousDayClosing,
-        discrepancyFlag: openingEdited,
-        discrepancyComment: payload.discrepancyComment?.trim() || null,
-      },
-      { new: true, upsert: true, runValidators: true }
-    );
-
-    // Notify admin if opening meter differs from previous closing
-    if (openingEdited) {
-      await notifyAdminMeterDiscrepancy({
-        stationId: payload.stationId,
-        stationName: currentUser.stationName || 'Unknown Station',
-        supervisorName: currentUser.name,
-        pumpLabel: pumpLabel,
-        opening: payload.opening,
-        previousClosing: previousDayClosing,
-        comment: payload.discrepancyComment?.trim() || '',
-        readingId: reading._id,
       });
+
+      if (!existing) {
+        return NextResponse.json({ error: 'Enter the opening reading before the closing reading.' }, { status: 409 });
+      }
+
+      existing.closing = closing;
+      existing.rtt = isNaN(rtt) ? 0 : rtt;
+      existing.closingSubmittedAt = new Date();
+      await existing.save();
+
+      return NextResponse.json({ reading: existing }, { status: 200 });
     }
 
-    return NextResponse.json({ reading }, { status: 201 });
+    return NextResponse.json({ error: 'Invalid action. Use "opening" or "closing".' }, { status: 400 });
+
   } catch (error) {
     console.error('Error saving meter reading:', error);
-    if (error.name === 'ZodError') {
-      return NextResponse.json({ error: 'Validation error', details: error.errors }, { status: 400 });
-    }
     return NextResponse.json({ error: error.message || 'Failed to save meter reading' }, { status: 500 });
   }
 }

@@ -13,7 +13,6 @@ const managerMenuItems = [
   { label: 'Station Config', href: '/manager/station-config' },
   { label: 'Price Changes', href: '/manager/price-changes' },
   { label: 'Begin Day', href: '/manager/begin-day' },
-  { label: 'Open Pumps', href: '/manager/open-pumps' },
   { label: 'Supervisor Entries', href: '/manager/supervisor-entries' },
   { label: 'Cashier Entries', href: '/manager/cashier-entries' },
   { label: 'Summary Book', href: '/manager/summary-book' },
