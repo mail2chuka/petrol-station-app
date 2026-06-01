@@ -252,21 +252,19 @@ export default function RecordPaymentsPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <Input
                           label="Cash Received (₦)"
-                          type="number"
+                          type="text"
+                          inputMode="decimal"
                           value={f.cash}
                           onChange={e => handleFormChange(sup._id, 'cash', e.target.value)}
-                          placeholder="0.00"
-                          step="0.01"
-                          min="0"
+                          placeholder="0"
                         />
                         <Input
                           label="POS Received (₦)"
-                          type="number"
+                          type="text"
+                          inputMode="decimal"
                           value={f.pos}
                           onChange={e => handleFormChange(sup._id, 'pos', e.target.value)}
-                          placeholder="0.00"
-                          step="0.01"
-                          min="0"
+                          placeholder="0"
                         />
                       </div>
 
@@ -370,21 +368,19 @@ export default function RecordPaymentsPage() {
                           <div className="grid grid-cols-2 gap-3">
                             <Input
                               label="Cash (₦)"
-                              type="number"
+                              type="text"
+                              inputMode="decimal"
                               value={forms[`extra-${sup._id}`]?.cash || ''}
                               onChange={e => handleFormChange(`extra-${sup._id}`, 'cash', e.target.value)}
-                              placeholder="0.00"
-                              step="0.01"
-                              min="0"
+                              placeholder="0"
                             />
                             <Input
                               label="POS (₦)"
-                              type="number"
+                              type="text"
+                              inputMode="decimal"
                               value={forms[`extra-${sup._id}`]?.pos || ''}
                               onChange={e => handleFormChange(`extra-${sup._id}`, 'pos', e.target.value)}
-                              placeholder="0.00"
-                              step="0.01"
-                              min="0"
+                              placeholder="0"
                             />
                           </div>
                           {errors[`extra-${sup._id}`] && (

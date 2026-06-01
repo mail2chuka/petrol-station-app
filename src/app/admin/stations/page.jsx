@@ -719,15 +719,14 @@ export default function StationsPage() {
                       <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
                         <Input
                           label="Capacity"
-                          type="number"
+                          type="text"
+                          inputMode="decimal"
                           value={tank.capacity}
                           onChange={(e) => setMappingForm((p) => {
                             const tanks = [...p.tanks];
                             tanks[index].capacity = e.target.value;
                             return { ...p, tanks };
                           })}
-                          min="1"
-                          step="0.01"
                         />
                         <Button type="button" variant="danger" onClick={() => setMappingForm((p) => ({ ...p, tanks: p.tanks.filter((_, i) => i !== index) }))}>Remove</Button>
                       </div>
@@ -902,32 +901,29 @@ export default function StationsPage() {
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Input
                   label="PMS Price (₦/L)"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   name="pms"
                   value={priceForm.pms}
                   onChange={(e) => setPriceForm((p) => ({ ...p, pms: e.target.value }))}
-                  step="0.01"
-                  min="0"
                   required
                 />
                 <Input
                   label="AGO Price (₦/L)"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   name="ago"
                   value={priceForm.ago}
                   onChange={(e) => setPriceForm((p) => ({ ...p, ago: e.target.value }))}
-                  step="0.01"
-                  min="0"
                   required
                 />
                 <Input
                   label="Tolerance (%)"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   name="tolerancePercent"
                   value={priceForm.tolerancePercent}
                   onChange={(e) => setPriceForm((p) => ({ ...p, tolerancePercent: e.target.value }))}
-                  step="0.1"
-                  min="0"
                 />
               </div>
 

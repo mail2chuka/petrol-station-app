@@ -383,7 +383,7 @@ export default function AdminMaterialsCustomersPage() {
       {creditTarget && (
         <Card title={`Credit Account: ${creditTarget.name}`} className="border border-slate-200">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input label="Amount" type="number" min="0.01" step="0.01" value={creditForm.amount} onChange={(e) => setCreditForm((p) => ({ ...p, amount: e.target.value }))} required />
+            <Input label="Amount" type="text" inputMode="decimal" value={creditForm.amount} onChange={(e) => setCreditForm((p) => ({ ...p, amount: e.target.value }))} required />
             <Input label="Method" value={creditForm.method} onChange={(e) => setCreditForm((p) => ({ ...p, method: e.target.value }))} helpText="Use cash, bank_transfer, or paystack" required />
             <Input label="Reference" value={creditForm.reference} onChange={(e) => setCreditForm((p) => ({ ...p, reference: e.target.value }))} />
             <Input label="Notes" value={creditForm.notes} onChange={(e) => setCreditForm((p) => ({ ...p, notes: e.target.value }))} />

@@ -151,12 +151,11 @@ function ManagerPriceChangesPageContent() {
           />
           <Input
             label="New Price (N/L)"
-            type="number"
+            type="text"
+            inputMode="decimal"
             name="price"
             value={form.price}
             onChange={(e) => setForm((current) => ({ ...current, price: e.target.value }))}
-            step="0.01"
-            min="0.01"
             placeholder="Enter new regulated price"
           />
         </div>

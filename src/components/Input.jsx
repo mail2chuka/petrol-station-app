@@ -20,6 +20,7 @@ export default function Input({
   helpText,
   autoComplete,
   autoFocus,
+  inputMode,
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const isPassword = type === 'password';
@@ -58,6 +59,7 @@ export default function Input({
           step={step}
           autoComplete={autoComplete}
           autoFocus={autoFocus}
+          inputMode={inputMode}
           className={`
             w-full
             px-4 py-3

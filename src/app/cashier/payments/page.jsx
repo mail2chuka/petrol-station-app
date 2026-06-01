@@ -47,12 +47,11 @@ function PosEntryRow({ entry, index, onChange, onRemove }) {
       />
       <Input
         label={index === 0 ? 'Amount (₦)' : undefined}
-        type="number"
+        type="text"
+        inputMode="decimal"
         value={entry.amount}
         onChange={e => onChange(index, 'amount', e.target.value)}
-        placeholder="0.00"
-        step="0.01"
-        min="0"
+        placeholder="0"
       />
       <Input
         label={index === 0 ? 'Terminal ID (opt.)' : undefined}
@@ -161,12 +160,11 @@ function CollectionForm({ sup, supSales, activeDayShift, onSubmitted }) {
       <div>
         <Input
           label="Cash Received (₦)"
-          type="number"
+          type="text"
+          inputMode="decimal"
           value={cash}
           onChange={e => { setCash(e.target.value); setError(''); }}
-          placeholder="0.00"
-          step="0.01"
-          min="0"
+          placeholder="0"
         />
       </div>
 

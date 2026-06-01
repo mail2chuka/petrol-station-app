@@ -234,13 +234,12 @@ function BeginDayPageContent() {
               <Input
                 key={product}
                 label={`${FUEL_TYPE_LABELS[product] || product} Price (₦/L)`}
-                type="number"
+                type="text"
+                inputMode="decimal"
                 name={`price-${product}`}
                 value={pricesAtStart[product] || ''}
                 onChange={e => setPricesAtStart(p => ({ ...p, [product]: e.target.value }))}
                 placeholder="Enter price"
-                step="0.01"
-                min="0.01"
                 required
               />
             ))}

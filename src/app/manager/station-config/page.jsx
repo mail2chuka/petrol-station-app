@@ -287,9 +287,8 @@ function StationConfigPageContent() {
                       />
                       <Input
                         label="Capacity (L)"
-                        type="number"
-                        min="1"
-                        step="0.01"
+                        type="text"
+                        inputMode="decimal"
                         value={tank.capacity}
                         onChange={e => updateTank(i, 'capacity', e.target.value)}
                         placeholder="e.g. 33000"

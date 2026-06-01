@@ -326,13 +326,12 @@ export default function AdminDashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
               label="Price (₦/L)"
-              type="number"
+              type="text"
+              inputMode="decimal"
               name="price"
               value={priceForm.price}
               onChange={(e) => setPriceForm((p) => ({ ...p, price: e.target.value }))}
-              placeholder="0.00"
-              step="0.01"
-              min="0"
+              placeholder="0"
               required
             />
             <Input

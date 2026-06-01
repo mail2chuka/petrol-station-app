@@ -157,12 +157,11 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
           <div className="space-y-3">
             <Input
               label={prevClosing != null ? `Opening Reading (last closing was ${prevClosing})` : 'Opening Reading'}
-              type="number"
+              type="text"
+              inputMode="decimal"
               value={openingVal}
               onChange={e => { setOpeningVal(e.target.value); setError(''); }}
               placeholder="Enter meter reading"
-              step="0.01"
-              min="0"
               autoFocus
             />
 
@@ -246,22 +245,20 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
             <div className="grid grid-cols-2 gap-3">
               <Input
                 label="Closing Reading"
-                type="number"
+                type="text"
+                inputMode="decimal"
                 value={closingVal}
                 onChange={e => { setClosingVal(e.target.value); setError(''); }}
                 placeholder="Enter closing reading"
-                step="0.01"
-                min="0"
                 autoFocus
               />
               <Input
                 label="RTT (Return to Tank)"
-                type="number"
+                type="text"
+                inputMode="decimal"
                 value={rttVal}
                 onChange={e => setRttVal(e.target.value)}
                 placeholder="0"
-                step="0.01"
-                min="0"
               />
             </div>
 

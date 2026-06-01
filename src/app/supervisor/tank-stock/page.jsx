@@ -276,12 +276,11 @@ export default function TankStockPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <Input
                           label={`${periodLabel} Stock (Litres)`}
-                          type="number"
+                          type="text"
+                          inputMode="decimal"
                           name={`stock-${tank._id}`}
                           value={f.stockValue || ''}
                           onChange={(e) => updateForm(tank._id, 'stockValue', e.target.value)}
-                          min="0"
-                          step="0.01"
                           placeholder="e.g. 15000"
                         />
                         <Input

@@ -172,13 +172,12 @@ export default function CashDepositsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Input
                   label="Amount (₦)"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   name="amount"
                   value={form.amount}
                   onChange={handleChange}
-                  placeholder="0.00"
-                  step="0.01"
-                  min="0.01"
+                  placeholder="0"
                   required
                 />
                 <Input

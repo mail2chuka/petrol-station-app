@@ -226,24 +226,22 @@ function ReceiveStockPageContent() {
 
             <Input
               label="Expected Quantity (Litres)"
-              type="number"
+              type="text"
+              inputMode="decimal"
               name="expectedQuantity"
               value={formData.expectedQuantity}
               onChange={handleChange}
-              placeholder="0.00"
-              step="0.01"
-              min="0"
+              placeholder="0"
             />
 
             <Input
               label="Quantity Delivered (Litres)"
-              type="number"
+              type="text"
+              inputMode="decimal"
               name="quantity"
               value={formData.quantity}
               onChange={handleChange}
-              placeholder="0.00"
-              step="0.01"
-              min="0.01"
+              placeholder="0"
               required
             />
 
@@ -280,10 +278,9 @@ function ReceiveStockPageContent() {
                   />
                   <Input
                     label="Litres"
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={item.litres}
-                    min="0"
-                    step="0.01"
                     onChange={(e) => {
                       const next = [...distribution];
                       next[index].litres = e.target.value;
@@ -325,13 +322,12 @@ function ReceiveStockPageContent() {
 
             <Input
               label="Total Cost (₦)"
-              type="number"
+              type="text"
+              inputMode="decimal"
               name="cost"
               value={formData.cost}
               onChange={handleChange}
-              placeholder="0.00"
-              step="0.01"
-              min="0.01"
+              placeholder="0"
               required
             />
 

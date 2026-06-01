@@ -107,7 +107,7 @@ export default function MaterialsTopupsPage() {
               <div className="sm:col-span-2">
                 <Select label="Customer" value={formData.customerId} onChange={(e) => setFormData((p) => ({ ...p, customerId: e.target.value }))} options={customerOptions} required />
               </div>
-              <Input label="Amount (₦)" type="number" min="1" step="any" value={formData.amount} onChange={(e) => setFormData((p) => ({ ...p, amount: e.target.value }))} required />
+              <Input label="Amount (₦)" type="text" inputMode="decimal" value={formData.amount} onChange={(e) => setFormData((p) => ({ ...p, amount: e.target.value }))} required />
               <Select label="Method" value={formData.method} onChange={(e) => setFormData((p) => ({ ...p, method: e.target.value }))} options={methodOptions} />
               <Input label="Reference / Receipt No." value={formData.reference} onChange={(e) => setFormData((p) => ({ ...p, reference: e.target.value }))} placeholder="Optional" />
               <Input label="Notes" value={formData.notes} onChange={(e) => setFormData((p) => ({ ...p, notes: e.target.value }))} placeholder="Optional" />

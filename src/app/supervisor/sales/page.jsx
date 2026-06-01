@@ -75,7 +75,7 @@ export default function RecordSalesPage() {
 
         initialForms[d.dispenserId] = existing
           ? { liters: String(existing.liters), cash: String(existing.cashAmount), pos: String(existing.posAmount) }
-          : { liters: suggestedLiters != null ? suggestedLiters.toFixed(2) : '', cash: '', pos: '' };
+          : { liters: suggestedLiters != null ? String(suggestedLiters) : '', cash: '', pos: '' };
 
         initialEditing[d.dispenserId] = !existing;
       }
@@ -303,31 +303,28 @@ export default function RecordSalesPage() {
                       <div>
                         <Input
                           label={suggestedLiters != null ? `Liters Sold (meter: ${suggestedLiters.toFixed(2)} L)` : 'Liters Sold'}
-                          type="number"
+                          type="text"
+                          inputMode="decimal"
                           value={f.liters || ''}
                           onChange={e => updateForm(dispenser.dispenserId, 'liters', e.target.value)}
-                          placeholder="0.00"
-                          step="0.01"
-                          min="0"
+                          placeholder="0"
                         />
                       </div>
                       <Input
                         label="Cash Received (₦)"
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={f.cash || ''}
                         onChange={e => updateForm(dispenser.dispenserId, 'cash', e.target.value)}
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
+                        placeholder="0"
                       />
                       <Input
                         label="POS Received (₦)"
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={f.pos || ''}
                         onChange={e => updateForm(dispenser.dispenserId, 'pos', e.target.value)}
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
+                        placeholder="0"
                       />
                     </div>
 

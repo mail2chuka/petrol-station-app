@@ -223,8 +223,8 @@ export default function AdminMaterialsProductsPage() {
               {showUnitForm === product._id && (
                 <form onSubmit={(e) => handleAddUnit(e, product._id)} className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 border-t pt-4">
                   <Input label="Unit Name (e.g. Bag, Ton)" value={unitForm.name} onChange={(e) => setUnitForm((u) => ({ ...u, name: e.target.value }))} required />
-                  <Input label="Price Per Unit (₦)" type="number" min="0" step="0.01" value={unitForm.pricePerUnit} onChange={(e) => setUnitForm((u) => ({ ...u, pricePerUnit: e.target.value }))} required />
-                  <Input label="Opening Stock" type="number" min="0" step="0.001" value={unitForm.stockQuantity} onChange={(e) => setUnitForm((u) => ({ ...u, stockQuantity: e.target.value }))} />
+                  <Input label="Price Per Unit (₦)" type="text" inputMode="decimal" value={unitForm.pricePerUnit} onChange={(e) => setUnitForm((u) => ({ ...u, pricePerUnit: e.target.value }))} required />
+                  <Input label="Opening Stock" type="text" inputMode="decimal" value={unitForm.stockQuantity} onChange={(e) => setUnitForm((u) => ({ ...u, stockQuantity: e.target.value }))} />
                   <div className="flex items-end sm:col-span-3">
                     <Button type="submit" isLoading={submittingUnit}>Add Unit</Button>
                   </div>
@@ -283,8 +283,8 @@ export default function AdminMaterialsProductsPage() {
         <Card title={`Edit Inventory: ${editingUnit.productName} - ${editingUnit.name}`} className="border border-slate-200">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Input label="Unit Name" value={editUnitForm.name} onChange={(e) => setEditUnitForm((p) => ({ ...p, name: e.target.value }))} required />
-            <Input label="Price Per Unit (₦)" type="number" min="0" step="0.01" value={editUnitForm.pricePerUnit} onChange={(e) => setEditUnitForm((p) => ({ ...p, pricePerUnit: e.target.value }))} required />
-            <Input label="Stock Quantity" type="number" min="0" step="0.001" value={editUnitForm.stockQuantity} onChange={(e) => setEditUnitForm((p) => ({ ...p, stockQuantity: e.target.value }))} required />
+            <Input label="Price Per Unit (₦)" type="text" inputMode="decimal" value={editUnitForm.pricePerUnit} onChange={(e) => setEditUnitForm((p) => ({ ...p, pricePerUnit: e.target.value }))} required />
+            <Input label="Stock Quantity" type="text" inputMode="decimal" value={editUnitForm.stockQuantity} onChange={(e) => setEditUnitForm((p) => ({ ...p, stockQuantity: e.target.value }))} required />
             <div className="sm:col-span-3 flex gap-2">
               <Button isLoading={savingUnitEdit} onClick={saveUnitEdit}>Save Inventory</Button>
               <Button variant="secondary" onClick={() => setEditingUnit(null)}>Cancel</Button>
