@@ -3,13 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Card from '@/components/Card';
 import Select from '@/components/Select';
-import DateCalendar from '@/components/DateCalendar';
+import ReportPeriodList from '@/components/ReportPeriodList';
 
-function todayStr() { return new Date().toISOString().split('T')[0]; }
-function currentMonthStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
 function fmtN(n) {
   return `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -34,7 +29,16 @@ function Pill({ status }) {
   );
 }
 
-// ── Detail Modal ──────────────────────────────────────────────────────────────
+function Row({ label, value }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <dt className="text-gray-500 shrink-0">{label}</dt>
+      <dd className="text-gray-900 text-right">{value}</dd>
+    </div>
+  );
+}
+
+// ── Detail modal for clicking table rows ──────────────────────────────────────
 function DetailModal({ item, onClose }) {
   if (!item) return null;
 
@@ -90,17 +94,13 @@ function DetailModal({ item, onClose }) {
         } />
         {d.discrepancyFlag && (
           <Row label="Discrepancy" value={
-            <span className="text-amber-700 font-medium">
-              ⚠ {d.discrepancyComment || 'Flagged'}
-            </span>
+            <span className="text-amber-700 font-medium">⚠ {d.discrepancyComment || 'Flagged'}</span>
           } />
         )}
         <Row label="Review Status" value={<Pill status={d.managerReviewStatus || 'pending'} />} />
         {d.managerReviewNote && <Row label="Review Note" value={d.managerReviewNote} />}
         {d.reviewedByManagerName && <Row label="Reviewed By" value={d.reviewedByManagerName} />}
-        {d.reviewedAt && <Row label="Reviewed At" value={fmtDate(d.reviewedAt)} />}
         <Row label="Previous Closing" value={d.previousDayClosing != null ? `${d.previousDayClosing} L` : '—'} />
-        <Row label="Date" value={fmtDate(d.date)} />
       </dl>
     );
   }
@@ -131,7 +131,6 @@ function DetailModal({ item, onClose }) {
         <Row label="Recorded By" value={d.recordedByName} />
         <Row label="Review Status" value={<Pill status={d.managerReviewStatus || 'pending'} />} />
         {d.managerReviewNote && <Row label="Review Note" value={d.managerReviewNote} />}
-        {d.reviewedByManagerName && <Row label="Reviewed By" value={d.reviewedByManagerName} />}
         <Row label="Time" value={fmtDate(d.createdAt)} />
       </dl>
     );
@@ -151,7 +150,6 @@ function DetailModal({ item, onClose }) {
         <Row label="Status" value={<Pill status={d.status} />} />
         {d.adminNote && <Row label="Admin Note" value={d.adminNote} />}
         {d.approvedByAdminName && <Row label="Reviewed By" value={d.approvedByAdminName} />}
-        {d.approvedAt && <Row label="Reviewed At" value={fmtDate(d.approvedAt)} />}
       </dl>
     );
   }
@@ -174,49 +172,335 @@ function DetailModal({ item, onClose }) {
   );
 }
 
-function Row({ label, value }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt className="text-gray-500 shrink-0">{label}</dt>
-      <dd className="text-gray-900 text-right">{value}</dd>
-    </div>
-  );
-}
-
-// ── Clickable Table Row ───────────────────────────────────────────────────────
 function ClickRow({ children, onClick }) {
   return (
-    <tr
-      onClick={onClick}
-      className="hover:bg-blue-50 cursor-pointer transition-colors"
-    >
+    <tr onClick={onClick} className="hover:bg-blue-50 cursor-pointer transition-colors">
       {children}
     </tr>
   );
 }
-
 function TD({ children, className = '' }) {
   return <td className={`px-4 py-2.5 text-sm text-gray-700 ${className}`}>{children}</td>;
 }
-
 function TH({ children }) {
   return <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left bg-gray-50">{children}</th>;
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
-export default function ReportsPage() {
-  const [stations, setStations] = useState([]);
-  const [selectedStation, setSelectedStation] = useState('');
-  const [selectedDate, setSelectedDate] = useState(todayStr());
-  const [report, setReport] = useState(null);
-  const [deposits, setDeposits] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [markedDates, setMarkedDates] = useState({});
-  const [loadingMonth, setLoadingMonth] = useState(false);
+// ── Day Detail View (4-section) ───────────────────────────────────────────────
+function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
   const [activeSection, setActiveSection] = useState('supervisor');
   const [supervisorSubTab, setSupervisorSubTab] = useState('sales');
   const [cashierSubTab, setCashierSubTab] = useState('collections');
+
+  const s = report?.summary;
+
+  const depositsForDate = deposits.filter(dep => {
+    return new Date(dep.date).toISOString().split('T')[0] === detailDate;
+  });
+
+  const sections = [
+    { key: 'manager', label: 'Manager Inputs' },
+    { key: 'supervisor', label: 'Supervisor Inputs' },
+    { key: 'cashier', label: 'Cashier Inputs' },
+  ];
+
+  if (loading) return <div className="flex justify-center py-16"><div className="spinner" /></div>;
+
+  if (!report) return (
+    <div className="text-center py-16 text-gray-400">
+      <p className="text-base font-medium">No day shift found for this date.</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {Object.entries(s.totalSales).filter(([, v]) => v.liters > 0 || v.amount > 0).map(([fuel, v]) => (
+          <Card key={fuel}>
+            <div className="text-center">
+              <p className="text-xs text-gray-500 mb-1">{fuel} Sales</p>
+              <p className="text-xl font-bold text-ecana-maroon">{v.liters.toFixed(1)} L</p>
+              <p className="text-xs text-gray-500">{fmtN(v.amount)}</p>
+            </div>
+          </Card>
+        ))}
+        <Card>
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">Cash</p>
+            <p className="text-xl font-bold text-gray-900">{fmtN(s.totalPayments.cash)}</p>
+          </div>
+        </Card>
+        <Card>
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">POS</p>
+            <p className="text-xl font-bold text-gray-900">{fmtN(s.totalPayments.pos)}</p>
+          </div>
+        </Card>
+        <Card>
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">Expected</p>
+            <p className="text-xl font-bold text-gray-900">{fmtN(s.expectedAmount)}</p>
+          </div>
+        </Card>
+        <Card>
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">Discrepancy</p>
+            <p className={`text-xl font-bold ${s.discrepancy > 0 ? 'text-green-600' : s.discrepancy < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+              {s.discrepancy >= 0 ? '+' : ''}{fmtN(s.discrepancy)}
+            </p>
+          </div>
+        </Card>
+      </div>
+
+      {/* Section tabs */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        {sections.map(sec => (
+          <button
+            key={sec.key}
+            onClick={() => setActiveSection(sec.key)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              activeSection === sec.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {sec.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── MANAGER INPUTS ── */}
+      {activeSection === 'manager' && (
+        <div className="space-y-4">
+          <Card title="Day Shift Info">
+            <dl className="space-y-2 text-sm">
+              <Row label="Status" value={<Pill status={report.dayShift.status === 'in_progress' ? 'pending' : 'approved'} />} />
+              <Row label="Started By" value={report.dayShift.startedByName || '—'} />
+              <Row label="Start Time" value={report.dayShift.startTime ? fmtDate(report.dayShift.startTime) : '—'} />
+              {report.dayShift.endTime && <Row label="End Time" value={fmtDate(report.dayShift.endTime)} />}
+              {report.dayShift.endedByName && <Row label="Ended By" value={report.dayShift.endedByName} />}
+            </dl>
+          </Card>
+
+          {report.dayShift.pricesAtStart && Object.keys(report.dayShift.pricesAtStart).length > 0 && (
+            <Card title="Prices at Day Start">
+              <dl className="space-y-2 text-sm">
+                {Object.entries(report.dayShift.pricesAtStart).map(([fuel, price]) => (
+                  <Row key={fuel} label={fuel} value={`${fmtN(price)} / L`} />
+                ))}
+              </dl>
+            </Card>
+          )}
+
+          <Card title="Pump Assignments">
+            <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead><tr><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Price / L</TH></tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {report.dayShift.dispenserAssignments.map((d, i) => {
+                    const price = report.dayShift.pricesAtStart instanceof Map
+                      ? report.dayShift.pricesAtStart.get(d.fuelType)
+                      : report.dayShift.pricesAtStart?.[d.fuelType];
+                    return (
+                      <ClickRow key={i} onClick={() => setDetailItem({ type: 'assignment', data: { ...d, priceAtStart: price } })}>
+                        <TD className="font-medium">{d.dispenserName}</TD>
+                        <TD>{d.fuelType}</TD>
+                        <TD>{d.supervisorName || '—'}</TD>
+                        <TD>{fmtN(price)}</TD>
+                      </ClickRow>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── SUPERVISOR INPUTS ── */}
+      {activeSection === 'supervisor' && (
+        <div className="space-y-4">
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+            {[{ key: 'sales', label: 'Sales' }, { key: 'readings', label: 'Meter Readings' }].map(t => (
+              <button key={t.key} onClick={() => setSupervisorSubTab(t.key)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${supervisorSubTab === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {supervisorSubTab === 'sales' && (
+            <Card title="Sales Entries">
+              {report.salesEntries.length === 0
+                ? <p className="text-sm text-gray-400 py-4 text-center">No sales recorded for this day.</p>
+                : <>
+                  <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead><tr><TH>Time</TH><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Liters</TH><TH>Expected</TH></tr></thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {report.salesEntries.map((sale, i) => (
+                          <ClickRow key={sale._id || i} onClick={() => setDetailItem({ type: 'sale', data: sale })}>
+                            <TD>{new Date(sale.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</TD>
+                            <TD className="font-medium">{sale.dispenserName}</TD>
+                            <TD>{sale.fuelType}</TD>
+                            <TD>{sale.supervisorName}</TD>
+                            <TD>{Number(sale.liters).toFixed(2)} L</TD>
+                            <TD>{fmtN(sale.expectedAmount)}</TD>
+                          </ClickRow>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              }
+            </Card>
+          )}
+
+          {supervisorSubTab === 'readings' && (
+            <Card title="Meter Readings">
+              {report.meterReadings.length === 0
+                ? <p className="text-sm text-gray-400 py-4 text-center">No meter readings recorded for this day.</p>
+                : <>
+                  <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead><tr><TH>Pump</TH><TH>Supervisor</TH><TH>Opening</TH><TH>Closing</TH><TH>RTT</TH><TH>Status</TH></tr></thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {report.meterReadings.map((r, i) => (
+                          <ClickRow key={r._id || i} onClick={() => setDetailItem({ type: 'reading', data: r })}>
+                            <TD className="font-medium">{r.pumpLabel || r.pumpId}</TD>
+                            <TD>{r.supervisorName}</TD>
+                            <TD>{r.opening}</TD>
+                            <TD>{r.closing ?? '—'}</TD>
+                            <TD>{r.rtt ?? 0}</TD>
+                            <TD>
+                              <div className="flex items-center gap-1.5">
+                                <Pill status={r.managerReviewStatus || 'pending'} />
+                                {r.discrepancyFlag && <span className="text-amber-500 text-xs">⚠</span>}
+                              </div>
+                            </TD>
+                          </ClickRow>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              }
+            </Card>
+          )}
+
+          {report.supervisorSummaries.length > 0 && (
+            <Card title="Supervisor Summary">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead><tr><TH>Supervisor</TH><TH>Liters</TH><TH>Expected</TH><TH>Cash</TH><TH>POS</TH><TH>Total</TH></tr></thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {report.supervisorSummaries.map((sup, i) => (
+                      <tr key={i}>
+                        <TD className="font-medium">{sup.supervisorName}</TD>
+                        <TD>{sup.totalLiters.toFixed(2)} L</TD>
+                        <TD>{fmtN(sup.totalExpected)}</TD>
+                        <TD>{fmtN(sup.totalCash)}</TD>
+                        <TD>{fmtN(sup.totalPos)}</TD>
+                        <TD className="font-semibold">{fmtN(sup.totalPaymentReceived)}</TD>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* ── CASHIER INPUTS ── */}
+      {activeSection === 'cashier' && (
+        <div className="space-y-4">
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+            {[{ key: 'collections', label: 'Collections' }, { key: 'deposits', label: 'Bank Deposits' }].map(t => (
+              <button key={t.key} onClick={() => setCashierSubTab(t.key)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${cashierSubTab === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {cashierSubTab === 'collections' && (
+            <Card title="Payment Collections">
+              {report.paymentRecords.length === 0
+                ? <p className="text-sm text-gray-400 py-4 text-center">No collections recorded for this day.</p>
+                : <>
+                  <p className="text-xs text-gray-400 mb-3">Click a row to see full POS breakdown.</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead><tr><TH>Time</TH><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Cash</TH><TH>POS</TH><TH>Total</TH><TH>Status</TH></tr></thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {report.paymentRecords.map((p, i) => (
+                          <ClickRow key={p._id || i} onClick={() => setDetailItem({ type: 'payment', data: p })}>
+                            <TD>{new Date(p.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</TD>
+                            <TD className="font-medium">{p.dispenserName || '—'}</TD>
+                            <TD>{p.fuelType || '—'}</TD>
+                            <TD>{p.supervisorName || '—'}</TD>
+                            <TD>{fmtN(p.cashReceived)}</TD>
+                            <TD>{fmtN(p.posReceived)}</TD>
+                            <TD className="font-semibold">{fmtN(p.totalReceived)}</TD>
+                            <TD><Pill status={p.managerReviewStatus || 'pending'} /></TD>
+                          </ClickRow>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              }
+            </Card>
+          )}
+
+          {cashierSubTab === 'deposits' && (
+            <Card title="Bank Deposits">
+              {depositsForDate.length === 0
+                ? <p className="text-sm text-gray-400 py-4 text-center">No bank deposits recorded for this day.</p>
+                : <>
+                  <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead><tr><TH>Amount</TH><TH>Bank</TH><TH>Deposited By</TH><TH>Status</TH></tr></thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {depositsForDate.map((dep, i) => (
+                          <ClickRow key={dep._id || i} onClick={() => setDetailItem({ type: 'deposit', data: dep })}>
+                            <TD className="font-semibold">{fmtN(dep.amount)}</TD>
+                            <TD>{dep.bankName}</TD>
+                            <TD>{dep.initiatedByCashierName}</TD>
+                            <TD><Pill status={dep.status} /></TD>
+                          </ClickRow>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              }
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+export default function AdminReportsPage() {
+  const [stations, setStations] = useState([]);
+  const [selectedStation, setSelectedStation] = useState('');
+
+  // view state
+  const [view, setView] = useState('list');       // 'list' | 'detail'
+  const [detailDate, setDetailDate] = useState(null);
+
+  // detail data
+  const [report, setReport] = useState(null);
+  const [deposits, setDeposits] = useState([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
   const [detailItem, setDetailItem] = useState(null);
 
   useEffect(() => {
@@ -230,21 +514,26 @@ export default function ReportsPage() {
       .catch(() => {});
   }, []);
 
-  const fetchMonthMarks = useCallback(async (monthStr, stId) => {
+  // Reset to list when station changes
+  useEffect(() => {
+    setView('list');
+    setReport(null);
+    setDetailItem(null);
+  }, [selectedStation]);
+
+  const fetchReport = useCallback(async (date, stId) => {
     const sid = stId || selectedStation;
-    if (!sid) return;
-    setLoadingMonth(true);
+    if (!sid || !date) return;
+    setDetailLoading(true);
+    setDetailError('');
+    setReport(null);
     try {
-      const res = await fetch(`/api/day-shifts?stationId=${sid}&month=${monthStr}`);
+      const res = await fetch(`/api/reports/daily?stationId=${sid}&date=${date}`);
       const data = await res.json();
-      if (!res.ok) return;
-      const grouped = {};
-      for (const shift of data.dayShifts || []) {
-        const d = new Date(shift.date).toISOString().split('T')[0];
-        grouped[d] = { total: 1, pending: shift.status === 'in_progress' ? 1 : 0 };
-      }
-      setMarkedDates(grouped);
-    } catch {} finally { setLoadingMonth(false); }
+      if (res.ok) setReport(data);
+      else setDetailError(data.error || 'Failed to fetch report');
+    } catch { setDetailError('Network error.'); }
+    finally { setDetailLoading(false); }
   }, [selectedStation]);
 
   const fetchDeposits = useCallback(async (stId) => {
@@ -257,465 +546,87 @@ export default function ReportsPage() {
     } catch {}
   }, [selectedStation]);
 
-  const fetchReport = useCallback(async (date, stId) => {
-    const sid = stId || selectedStation;
-    if (!sid || !date) return;
-    setLoading(true);
-    setError('');
-    setReport(null);
-    try {
-      const res = await fetch(`/api/reports/daily?stationId=${sid}&date=${date}`);
-      const data = await res.json();
-      if (res.ok) {
-        setReport(data);
-      } else {
-        setError(data.error || 'Failed to fetch report');
-      }
-    } catch { setError('Network error. Please try again.'); }
-    finally { setLoading(false); }
-  }, [selectedStation]);
+  const openDay = useCallback((dateStr) => {
+    setDetailDate(dateStr);
+    setView('detail');
+    fetchReport(dateStr);
+    fetchDeposits();
+  }, [fetchReport, fetchDeposits]);
 
-  useEffect(() => {
-    if (!selectedStation) return;
-    setMarkedDates({});
+  const backToList = () => {
+    setView('list');
     setReport(null);
-    setError('');
-    fetchMonthMarks(currentMonthStr(), selectedStation);
-    fetchReport(selectedDate, selectedStation);
-    fetchDeposits(selectedStation);
-  }, [selectedStation]);
-
-  const handleDateChange = (date) => {
-    setSelectedDate(date);
-    fetchReport(date);
+    setDetailError('');
+    setDetailItem(null);
   };
 
   const stationOptions = stations.map(s => ({ value: s._id, label: `${s.name} (${s.code})` }));
-  const s = report?.summary;
 
-  // Deposits filtered to selected date
-  const depositsForDate = deposits.filter(dep => {
-    const d = new Date(dep.date).toISOString().split('T')[0];
-    return d === selectedDate;
-  });
-
-  const sections = [
-    { key: 'manager', label: 'Manager Inputs' },
-    { key: 'supervisor', label: 'Supervisor Inputs' },
-    { key: 'cashier', label: 'Cashier Inputs' },
-  ];
+  const detailLabel = detailDate
+    ? new Date(detailDate + 'T12:00:00').toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    : '';
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold text-gray-800">Daily Reports</h1>
-
-      <div className="max-w-xs">
-        <Select
-          label="Station"
-          name="station"
-          value={selectedStation}
-          onChange={(e) => setSelectedStation(e.target.value)}
-          options={stationOptions}
-        />
+      {/* Header + station selector */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <h1 className="text-3xl font-bold text-gray-800">Reports</h1>
+        <div className="w-64">
+          <Select
+            label="Station"
+            name="station"
+            value={selectedStation}
+            onChange={e => setSelectedStation(e.target.value)}
+            options={stationOptions}
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
-        {/* Calendar */}
-        <div className="space-y-2">
-          <DateCalendar
-            value={selectedDate}
-            onChange={handleDateChange}
-            onMonthChange={(m) => fetchMonthMarks(m, selectedStation)}
-            markedDates={markedDates}
-            maxDate={todayStr()}
-          />
-          {loadingMonth && <p className="text-xs text-center text-gray-400">Loading month data…</p>}
-        </div>
+      {/* ── LIST VIEW ── */}
+      {view === 'list' && selectedStation && (
+        <ReportPeriodList stationId={selectedStation} onSelectDay={openDay} />
+      )}
 
-        {/* Report panel */}
+      {/* ── DETAIL VIEW ── */}
+      {view === 'detail' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-800">
-              {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            </h2>
+          {/* Navigation + date */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={backToList}
+                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-ecana-maroon font-medium transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back to list
+              </button>
+              <span className="text-gray-300">|</span>
+              <h2 className="text-lg font-semibold text-gray-800">{detailLabel}</h2>
+            </div>
             <button
-              onClick={() => { fetchReport(selectedDate); fetchDeposits(); }}
-              disabled={loading}
+              onClick={() => fetchReport(detailDate)}
+              disabled={detailLoading}
               className="text-sm text-ecana-maroon hover:underline font-medium disabled:opacity-50"
             >
-              {loading ? 'Loading…' : 'Refresh'}
+              {detailLoading ? 'Loading…' : 'Refresh'}
             </button>
           </div>
 
-          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
-          {loading && <div className="flex justify-center py-12"><div className="spinner" /></div>}
-
-          {report && !loading && (
-            <>
-              {/* ── Summary Cards ── */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {Object.entries(s.totalSales).filter(([, v]) => v.liters > 0 || v.amount > 0).map(([fuel, v]) => (
-                  <Card key={fuel}>
-                    <div className="text-center">
-                      <p className="text-xs text-gray-500 mb-1">{fuel} Sales</p>
-                      <p className="text-xl font-bold text-ecana-maroon">{v.liters.toFixed(1)} L</p>
-                      <p className="text-xs text-gray-500">{fmtN(v.amount)}</p>
-                    </div>
-                  </Card>
-                ))}
-                <Card>
-                  <div className="text-center">
-                    <p className="text-xs text-gray-500 mb-1">Cash Collected</p>
-                    <p className="text-xl font-bold text-gray-900">{fmtN(s.totalPayments.cash)}</p>
-                  </div>
-                </Card>
-                <Card>
-                  <div className="text-center">
-                    <p className="text-xs text-gray-500 mb-1">POS Collected</p>
-                    <p className="text-xl font-bold text-gray-900">{fmtN(s.totalPayments.pos)}</p>
-                  </div>
-                </Card>
-                <Card>
-                  <div className="text-center">
-                    <p className="text-xs text-gray-500 mb-1">Expected</p>
-                    <p className="text-xl font-bold text-gray-900">{fmtN(s.expectedAmount)}</p>
-                  </div>
-                </Card>
-                <Card>
-                  <div className="text-center">
-                    <p className="text-xs text-gray-500 mb-1">Discrepancy</p>
-                    <p className={`text-xl font-bold ${s.discrepancy > 0 ? 'text-green-600' : s.discrepancy < 0 ? 'text-red-600' : 'text-gray-600'}`}>
-                      {s.discrepancy >= 0 ? '+' : ''}{fmtN(s.discrepancy)}
-                    </p>
-                  </div>
-                </Card>
-              </div>
-
-              {/* ── Section Tabs ── */}
-              <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-                {sections.map(sec => (
-                  <button
-                    key={sec.key}
-                    onClick={() => setActiveSection(sec.key)}
-                    className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                      activeSection === sec.key
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    {sec.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* ── MANAGER INPUTS ── */}
-              {activeSection === 'manager' && (
-                <div className="space-y-4">
-                  <Card title="Day Shift Info">
-                    <dl className="space-y-2 text-sm">
-                      <Row label="Status" value={<Pill status={report.dayShift.status === 'in_progress' ? 'pending' : 'approved'} />} />
-                      <Row label="Started By" value={report.dayShift.startedByName || '—'} />
-                      <Row label="Start Time" value={report.dayShift.startTime ? fmtDate(report.dayShift.startTime) : '—'} />
-                      {report.dayShift.endTime && <Row label="End Time" value={fmtDate(report.dayShift.endTime)} />}
-                      {report.dayShift.endedByName && <Row label="Ended By" value={report.dayShift.endedByName} />}
-                    </dl>
-                  </Card>
-
-                  {/* Prices at start */}
-                  {report.dayShift.pricesAtStart && (
-                    <Card title="Prices at Day Start">
-                      <dl className="space-y-2 text-sm">
-                        {Object.entries(report.dayShift.pricesAtStart).map(([fuel, price]) => (
-                          <Row key={fuel} label={fuel} value={fmtN(price) + ' / L'} />
-                        ))}
-                      </dl>
-                    </Card>
-                  )}
-
-                  <Card title="Pump Assignments">
-                    <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr>
-                            <TH>Pump</TH>
-                            <TH>Fuel</TH>
-                            <TH>Supervisor</TH>
-                            <TH>Price / L</TH>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {report.dayShift.dispenserAssignments.map((d, i) => {
-                            const price = report.dayShift.pricesAtStart instanceof Map
-                              ? report.dayShift.pricesAtStart.get(d.fuelType)
-                              : report.dayShift.pricesAtStart?.[d.fuelType];
-                            return (
-                              <ClickRow
-                                key={i}
-                                onClick={() => setDetailItem({
-                                  type: 'assignment',
-                                  data: { ...d, priceAtStart: price },
-                                })}
-                              >
-                                <TD className="font-medium">{d.dispenserName}</TD>
-                                <TD>{d.fuelType}</TD>
-                                <TD>{d.supervisorName || '—'}</TD>
-                                <TD>{fmtN(price)}</TD>
-                              </ClickRow>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </Card>
-                </div>
-              )}
-
-              {/* ── SUPERVISOR INPUTS ── */}
-              {activeSection === 'supervisor' && (
-                <div className="space-y-4">
-                  <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-                    {[{ key: 'sales', label: 'Sales' }, { key: 'readings', label: 'Meter Readings' }].map(t => (
-                      <button
-                        key={t.key}
-                        onClick={() => setSupervisorSubTab(t.key)}
-                        className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                          supervisorSubTab === t.key
-                            ? 'bg-white text-gray-900 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {supervisorSubTab === 'sales' && (
-                    <Card title="Sales Entries">
-                      {report.salesEntries.length === 0 ? (
-                        <p className="text-sm text-gray-400 py-4 text-center">No sales recorded for this day.</p>
-                      ) : (
-                        <>
-                          <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
-                          <div className="overflow-x-auto">
-                            <table className="w-full">
-                              <thead>
-                                <tr>
-                                  <TH>Time</TH>
-                                  <TH>Pump</TH>
-                                  <TH>Fuel</TH>
-                                  <TH>Supervisor</TH>
-                                  <TH>Liters</TH>
-                                  <TH>Expected</TH>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-100">
-                                {report.salesEntries.map((sale, i) => (
-                                  <ClickRow key={sale._id || i} onClick={() => setDetailItem({ type: 'sale', data: sale })}>
-                                    <TD>{new Date(sale.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</TD>
-                                    <TD className="font-medium">{sale.dispenserName}</TD>
-                                    <TD>{sale.fuelType}</TD>
-                                    <TD>{sale.supervisorName}</TD>
-                                    <TD>{Number(sale.liters).toFixed(2)} L</TD>
-                                    <TD>{fmtN(sale.expectedAmount)}</TD>
-                                  </ClickRow>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </>
-                      )}
-                    </Card>
-                  )}
-
-                  {supervisorSubTab === 'readings' && (
-                    <Card title="Meter Readings">
-                      {report.meterReadings.length === 0 ? (
-                        <p className="text-sm text-gray-400 py-4 text-center">No meter readings recorded for this day.</p>
-                      ) : (
-                        <>
-                          <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
-                          <div className="overflow-x-auto">
-                            <table className="w-full">
-                              <thead>
-                                <tr>
-                                  <TH>Pump</TH>
-                                  <TH>Supervisor</TH>
-                                  <TH>Opening</TH>
-                                  <TH>Closing</TH>
-                                  <TH>RTT</TH>
-                                  <TH>Status</TH>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-100">
-                                {report.meterReadings.map((r, i) => (
-                                  <ClickRow key={r._id || i} onClick={() => setDetailItem({ type: 'reading', data: r })}>
-                                    <TD className="font-medium">{r.pumpLabel || r.pumpId}</TD>
-                                    <TD>{r.supervisorName}</TD>
-                                    <TD>{r.opening}</TD>
-                                    <TD>{r.closing ?? '—'}</TD>
-                                    <TD>{r.rtt ?? 0}</TD>
-                                    <TD>
-                                      <div className="flex items-center gap-1.5">
-                                        <Pill status={r.managerReviewStatus || 'pending'} />
-                                        {r.discrepancyFlag && (
-                                          <span className="text-amber-500 text-xs font-medium">⚠</span>
-                                        )}
-                                      </div>
-                                    </TD>
-                                  </ClickRow>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </>
-                      )}
-                    </Card>
-                  )}
-
-                  {/* Supervisor summary */}
-                  {report.supervisorSummaries.length > 0 && (
-                    <Card title="Supervisor Summary">
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr>
-                              <TH>Supervisor</TH>
-                              <TH>Total Liters</TH>
-                              <TH>Expected</TH>
-                              <TH>Cash Recv.</TH>
-                              <TH>POS Recv.</TH>
-                              <TH>Total Recv.</TH>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {report.supervisorSummaries.map((sup, i) => (
-                              <tr key={i}>
-                                <TD className="font-medium">{sup.supervisorName}</TD>
-                                <TD>{sup.totalLiters.toFixed(2)} L</TD>
-                                <TD>{fmtN(sup.totalExpected)}</TD>
-                                <TD>{fmtN(sup.totalCash)}</TD>
-                                <TD>{fmtN(sup.totalPos)}</TD>
-                                <TD className="font-semibold">{fmtN(sup.totalPaymentReceived)}</TD>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </Card>
-                  )}
-                </div>
-              )}
-
-              {/* ── CASHIER INPUTS ── */}
-              {activeSection === 'cashier' && (
-                <div className="space-y-4">
-                  <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-                    {[{ key: 'collections', label: 'Collections' }, { key: 'deposits', label: 'Bank Deposits' }].map(t => (
-                      <button
-                        key={t.key}
-                        onClick={() => setCashierSubTab(t.key)}
-                        className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                          cashierSubTab === t.key
-                            ? 'bg-white text-gray-900 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {cashierSubTab === 'collections' && (
-                    <Card title="Payment Collections">
-                      {report.paymentRecords.length === 0 ? (
-                        <p className="text-sm text-gray-400 py-4 text-center">No collections recorded for this day.</p>
-                      ) : (
-                        <>
-                          <p className="text-xs text-gray-400 mb-3">Click a row to see full details including POS breakdown.</p>
-                          <div className="overflow-x-auto">
-                            <table className="w-full">
-                              <thead>
-                                <tr>
-                                  <TH>Time</TH>
-                                  <TH>Pump</TH>
-                                  <TH>Fuel</TH>
-                                  <TH>Supervisor</TH>
-                                  <TH>Cash</TH>
-                                  <TH>POS</TH>
-                                  <TH>Total</TH>
-                                  <TH>Status</TH>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-100">
-                                {report.paymentRecords.map((p, i) => (
-                                  <ClickRow key={p._id || i} onClick={() => setDetailItem({ type: 'payment', data: p })}>
-                                    <TD>{new Date(p.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</TD>
-                                    <TD className="font-medium">{p.dispenserName || '—'}</TD>
-                                    <TD>{p.fuelType || '—'}</TD>
-                                    <TD>{p.supervisorName || '—'}</TD>
-                                    <TD>{fmtN(p.cashReceived)}</TD>
-                                    <TD>{fmtN(p.posReceived)}</TD>
-                                    <TD className="font-semibold">{fmtN(p.totalReceived)}</TD>
-                                    <TD><Pill status={p.managerReviewStatus || 'pending'} /></TD>
-                                  </ClickRow>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </>
-                      )}
-                    </Card>
-                  )}
-
-                  {cashierSubTab === 'deposits' && (
-                    <Card title="Bank Deposits">
-                      {depositsForDate.length === 0 ? (
-                        <p className="text-sm text-gray-400 py-4 text-center">No bank deposits recorded for this day.</p>
-                      ) : (
-                        <>
-                          <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
-                          <div className="overflow-x-auto">
-                            <table className="w-full">
-                              <thead>
-                                <tr>
-                                  <TH>Amount</TH>
-                                  <TH>Bank</TH>
-                                  <TH>Deposited By</TH>
-                                  <TH>Status</TH>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-100">
-                                {depositsForDate.map((dep, i) => (
-                                  <ClickRow key={dep._id || i} onClick={() => setDetailItem({ type: 'deposit', data: dep })}>
-                                    <TD className="font-semibold">{fmtN(dep.amount)}</TD>
-                                    <TD>{dep.bankName}</TD>
-                                    <TD>{dep.initiatedByCashierName}</TD>
-                                    <TD><Pill status={dep.status} /></TD>
-                                  </ClickRow>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </>
-                      )}
-                    </Card>
-                  )}
-                </div>
-              )}
-            </>
+          {detailError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{detailError}</div>
           )}
 
-          {!report && !loading && !error && (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-              <svg className="w-10 h-10 mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <p className="text-base font-medium">Select a marked day to view the report</p>
-            </div>
-          )}
+          <DayDetail
+            report={report}
+            deposits={deposits}
+            detailDate={detailDate}
+            setDetailItem={setDetailItem}
+            loading={detailLoading}
+          />
         </div>
-      </div>
+      )}
 
       <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />
     </div>
