@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import PaymentRecord from '@/models/PaymentRecord';
 import DayShift from '@/models/DayShift';
-import User from '@/models/User';
 import { requireAuth } from '@/lib/auth';
 import { paymentRecordSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
@@ -61,12 +60,14 @@ export async function POST(request) {
       );
     }
 
-    // Get supervisor name
-    const supervisor = await User.findById(validatedData.supervisorId).session(session);
-    if (!supervisor) {
+    // Look up the pump (dispenser assignment) to derive supervisor info
+    const assignment = dayShift.dispenserAssignments.find(
+      d => d.dispenserId === validatedData.dispenserId
+    );
+    if (!assignment) {
       await session.abortTransaction();
       return NextResponse.json(
-        { error: 'Supervisor not found' },
+        { error: 'Pump not found in day shift' },
         { status: 404 }
       );
     }
@@ -85,8 +86,11 @@ export async function POST(request) {
       stationId: dayShift.stationId,
       stationName: dayShift.stationName,
       date: dayShift.date,
-      supervisorId: validatedData.supervisorId,
-      supervisorName: supervisor.name,
+      dispenserId: validatedData.dispenserId,
+      dispenserName: assignment.dispenserName,
+      fuelType: assignment.fuelType,
+      supervisorId: assignment.supervisorId,
+      supervisorName: assignment.supervisorName,
       cashReceived: validatedData.cashReceived,
       posEntries,
       posReceived,
@@ -108,10 +112,13 @@ export async function POST(request) {
       stationId: dayShift.stationId,
       stationName: dayShift.stationName,
       details: {
-        supervisorId: validatedData.supervisorId,
-        supervisorName: supervisor.name,
+        dispenserId: validatedData.dispenserId,
+        dispenserName: assignment.dispenserName,
+        fuelType: assignment.fuelType,
+        supervisorId: assignment.supervisorId,
+        supervisorName: assignment.supervisorName,
         cashReceived: validatedData.cashReceived,
-        posReceived: validatedData.posReceived,
+        posReceived,
         totalReceived,
       },
     });

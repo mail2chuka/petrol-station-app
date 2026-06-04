@@ -67,21 +67,19 @@ export const beginDaySchema = z.object({
   })),
 });
 
-// Sales Entry Schema
+// Sales Entry Schema — supervisor only enters liters; cash/POS collected by cashier
 export const salesEntrySchema = z.object({
   dayShiftId: z.string(),
   dispenserId: z.string(),
   liters: z.number().positive('Liters must be positive'),
-  cashAmount: z.number().min(0, 'Cash amount cannot be negative'),
-  posAmount: z.number().min(0, 'POS amount cannot be negative'),
 });
 
-// Payment Record Schema
+// Payment Record Schema — cashier collects per pump (dispenserId)
 export const paymentRecordSchema = z.object({
   dayShiftId: z.string(),
-  supervisorId: z.string(),
+  dispenserId: z.string(),
   cashReceived: z.number().min(0, 'Cash received cannot be negative'),
-  // posReceived is now computed from posEntries on the server
+  // posReceived is computed from posEntries on the server
 });
 
 // Change Password Schema

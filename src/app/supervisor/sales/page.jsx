@@ -19,11 +19,11 @@ export default function RecordSalesPage() {
   const stationId = session?.user?.stationId;
 
   const [activeDayShift, setActiveDayShift] = useState(null);
-  const [dispensers, setDispensers] = useState([]);      // dispenserAssignments from shift
-  const [meterReadings, setMeterReadings] = useState({}); // { dispenserId: reading }
-  const [existingSales, setExistingSales] = useState({});  // { dispenserId: salesEntry }
-  const [forms, setForms] = useState({});                  // { dispenserId: { liters, cash, pos } }
-  const [editing, setEditing] = useState({});              // { dispenserId: bool }
+  const [dispensers, setDispensers] = useState([]);
+  const [meterReadings, setMeterReadings] = useState({});
+  const [existingSales, setExistingSales] = useState({});
+  const [forms, setForms] = useState({});
+  const [editing, setEditing] = useState({});
   const [submitting, setSubmitting] = useState({});
   const [messages, setMessages] = useState({});
   const [loading, setLoading] = useState(true);
@@ -47,7 +47,6 @@ export default function RecordSalesPage() {
       const assignments = shift?.dispenserAssignments || [];
       setDispensers(assignments);
 
-      // Map sales by dispenserId
       const salesMap = {};
       for (const s of (salesData.salesEntries || [])) {
         if (shift && s.dayShiftId === shift._id) {
@@ -56,14 +55,12 @@ export default function RecordSalesPage() {
       }
       setExistingSales(salesMap);
 
-      // Map meter readings by pumpId (dispenserId)
       const readingsMap = {};
       for (const r of (readingsData.readings || [])) {
         readingsMap[r.pumpId] = r;
       }
       setMeterReadings(readingsMap);
 
-      // Build form state — pre-fill liters from meter reading if no existing sale
       const initialForms = {};
       const initialEditing = {};
       for (const d of assignments) {
@@ -74,8 +71,8 @@ export default function RecordSalesPage() {
           : null;
 
         initialForms[d.dispenserId] = existing
-          ? { liters: String(existing.liters), cash: String(existing.cashAmount), pos: String(existing.posAmount) }
-          : { liters: suggestedLiters != null ? String(suggestedLiters) : '', cash: '', pos: '' };
+          ? { liters: String(existing.liters) }
+          : { liters: suggestedLiters != null ? String(suggestedLiters) : '' };
 
         initialEditing[d.dispenserId] = !existing;
       }
@@ -93,17 +90,14 @@ export default function RecordSalesPage() {
     if (stationId) loadData();
   }, [session]);
 
-  const updateForm = (dispId, field, value) => {
-    setForms(prev => ({ ...prev, [dispId]: { ...prev[dispId], [field]: value } }));
+  const updateForm = (dispId, value) => {
+    setForms(prev => ({ ...prev, [dispId]: { liters: value } }));
   };
 
   const startEditing = (dispId) => {
     const existing = existingSales[dispId];
     if (existing) {
-      setForms(prev => ({
-        ...prev,
-        [dispId]: { liters: String(existing.liters), cash: String(existing.cashAmount), pos: String(existing.posAmount) },
-      }));
+      setForms(prev => ({ ...prev, [dispId]: { liters: String(existing.liters) } }));
     }
     setEditing(prev => ({ ...prev, [dispId]: true }));
     setMessages(prev => ({ ...prev, [dispId]: '' }));
@@ -117,8 +111,6 @@ export default function RecordSalesPage() {
   const submitSale = async (dispenser) => {
     const f = forms[dispenser.dispenserId] || {};
     const liters = parseFloat(f.liters);
-    const cash = parseFloat(f.cash) || 0;
-    const pos = parseFloat(f.pos) || 0;
 
     if (!liters || liters <= 0) {
       setMessages(prev => ({ ...prev, [dispenser.dispenserId]: 'Enter a valid liters amount.' }));
@@ -136,8 +128,6 @@ export default function RecordSalesPage() {
           dayShiftId: activeDayShift._id,
           dispenserId: dispenser.dispenserId,
           liters,
-          cashAmount: cash,
-          posAmount: pos,
         }),
       });
       const data = await res.json();
@@ -174,8 +164,6 @@ export default function RecordSalesPage() {
   }
 
   const totalSalesLiters = Object.values(existingSales).reduce((s, e) => s + (e.liters || 0), 0);
-  const totalSalesCash = Object.values(existingSales).reduce((s, e) => s + (e.cashAmount || 0), 0);
-  const totalSalesPos = Object.values(existingSales).reduce((s, e) => s + (e.posAmount || 0), 0);
   const recordedCount = Object.keys(existingSales).length;
 
   return (
@@ -183,7 +171,7 @@ export default function RecordSalesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Record Sales</h1>
-          <p className="text-sm text-slate-500 mt-1">Enter liters sold and payment breakdown for each pump.</p>
+          <p className="text-sm text-slate-500 mt-1">Enter liters sold for each pump.</p>
         </div>
         <button
           onClick={loadData}
@@ -193,9 +181,8 @@ export default function RecordSalesPage() {
         </button>
       </div>
 
-      {/* Summary bar — only shown once some sales are recorded */}
       {recordedCount > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div className="card-modern p-4 text-center">
             <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Pumps Done</p>
             <p className="text-2xl font-bold text-gray-800">{recordedCount}/{dispensers.length}</p>
@@ -203,14 +190,6 @@ export default function RecordSalesPage() {
           <div className="card-modern p-4 text-center">
             <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Liters</p>
             <p className="text-2xl font-bold text-gray-800">{totalSalesLiters.toFixed(1)} L</p>
-          </div>
-          <div className="card-modern p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Cash</p>
-            <p className="text-xl font-bold text-gray-800">{fmt(totalSalesCash)}</p>
-          </div>
-          <div className="card-modern p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">POS</p>
-            <p className="text-xl font-bold text-gray-800">{fmt(totalSalesPos)}</p>
           </div>
         </div>
       )}
@@ -231,10 +210,7 @@ export default function RecordSalesPage() {
               ? Math.max(0, (reading.closing || 0) - (reading.opening || 0) - (reading.rtt || 0))
               : null;
 
-            const cashVal = parseFloat(f.cash) || 0;
-            const posVal = parseFloat(f.pos) || 0;
             const litersVal = parseFloat(f.liters) || 0;
-            const liveTotal = cashVal + posVal;
 
             const priceEntry = activeDayShift?.pricesAtStart;
             const pricePerLiter = priceEntry instanceof Map
@@ -252,44 +228,34 @@ export default function RecordSalesPage() {
                 title={dispenser.dispenserName}
                 subtitle={`${dispenser.fuelType}${existing ? ` · Saved at ${savedAt}` : ' · Not yet recorded'}`}
               >
-                {/* Meter reading hint */}
                 {reading && (
                   <div className="mb-4 flex items-center gap-2 text-sm text-slate-500 bg-slate-50 rounded-xl px-3 py-2">
                     <svg className="w-4 h-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                     </svg>
                     <span>
-                      Meter reading: {reading.opening} → {reading.closing} (RTT {reading.rtt ?? 0})
+                      Meter: {reading.opening} → {reading.closing ?? '—'} &nbsp;·&nbsp; RTT: {reading.rtt ?? 0}
                       <span className="mx-1.5 text-slate-300">·</span>
                       <span className="font-semibold text-slate-700">Net: {suggestedLiters?.toFixed(2)} L</span>
                     </span>
                   </div>
                 )}
 
-                {/* Display mode */}
                 {existing && !isEditing ? (
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {[
-                        { label: 'Liters Sold', value: `${Number(existing.liters).toFixed(2)} L`, highlight: false },
-                        { label: 'Cash', value: fmt(existing.cashAmount), highlight: false },
-                        { label: 'POS', value: fmt(existing.posAmount), highlight: false },
-                        { label: 'Total', value: fmt(existing.totalAmount), highlight: true },
-                      ].map(({ label, value, highlight }) => (
-                        <div key={label} className={`rounded-xl p-3 ${highlight ? 'bg-emerald-50 border border-emerald-100' : 'bg-slate-50'}`}>
-                          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-0.5">{label}</p>
-                          <p className={`text-lg font-bold ${highlight ? 'text-emerald-700' : 'text-slate-900'}`}>{value}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    {existing.discrepancy !== 0 && (
-                      <div className={`px-3 py-2 rounded-lg text-sm font-medium ${existing.discrepancy < 0 ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
-                        {existing.discrepancy < 0 ? 'Short' : 'Over'} by {fmt(Math.abs(existing.discrepancy))}
-                        {pricePerLiter ? ` (expected ${fmt(existing.expectedAmount)} at ₦${pricePerLiter}/L)` : ''}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-slate-50 rounded-xl p-3">
+                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-0.5">Liters Sold</p>
+                        <p className="text-lg font-bold text-slate-900">{Number(existing.liters).toFixed(2)} L</p>
                       </div>
+                      <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-0.5">Expected</p>
+                        <p className="text-lg font-bold text-emerald-700">{fmt(existing.expectedAmount)}</p>
+                      </div>
+                    </div>
+                    {pricePerLiter && (
+                      <p className="text-xs text-slate-400">@ {fmt(pricePerLiter)}/L</p>
                     )}
-
                     <div className="flex justify-end">
                       <Button variant="secondary" size="sm" onClick={() => startEditing(dispenser.dispenserId)}>
                         Edit
@@ -297,50 +263,20 @@ export default function RecordSalesPage() {
                     </div>
                   </div>
                 ) : (
-                  /* Input mode */
                   <div className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div>
-                        <Input
-                          label={suggestedLiters != null ? `Liters Sold (meter: ${suggestedLiters.toFixed(2)} L)` : 'Liters Sold'}
-                          type="text"
-                          inputMode="decimal"
-                          value={f.liters || ''}
-                          onChange={e => updateForm(dispenser.dispenserId, 'liters', e.target.value)}
-                          placeholder="0"
-                        />
-                      </div>
-                      <Input
-                        label="Cash Received (₦)"
-                        type="text"
-                        inputMode="decimal"
-                        value={f.cash || ''}
-                        onChange={e => updateForm(dispenser.dispenserId, 'cash', e.target.value)}
-                        placeholder="0"
-                      />
-                      <Input
-                        label="POS Received (₦)"
-                        type="text"
-                        inputMode="decimal"
-                        value={f.pos || ''}
-                        onChange={e => updateForm(dispenser.dispenserId, 'pos', e.target.value)}
-                        placeholder="0"
-                      />
-                    </div>
+                    <Input
+                      label={suggestedLiters != null ? `Liters Sold (meter: ${suggestedLiters.toFixed(2)} L)` : 'Liters Sold'}
+                      type="text"
+                      inputMode="decimal"
+                      value={f.liters || ''}
+                      onChange={e => updateForm(dispenser.dispenserId, e.target.value)}
+                      placeholder="0"
+                    />
 
-                    {/* Live totals preview */}
-                    {(cashVal > 0 || posVal > 0 || litersVal > 0) && (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-slate-50 rounded-xl p-3">
-                          <p className="text-xs text-slate-500 uppercase tracking-wide mb-0.5">Total Payment</p>
-                          <p className="text-lg font-bold text-slate-900">{fmt(liveTotal)}</p>
-                        </div>
-                        {pricePerLiter && litersVal > 0 && (
-                          <div className={`rounded-xl p-3 ${Math.abs(liveTotal - expectedAmt) < 0.01 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
-                            <p className="text-xs text-slate-500 uppercase tracking-wide mb-0.5">Expected ({fmt(pricePerLiter)}/L)</p>
-                            <p className="text-lg font-bold text-slate-900">{fmt(expectedAmt)}</p>
-                          </div>
-                        )}
+                    {pricePerLiter && litersVal > 0 && (
+                      <div className="bg-slate-50 rounded-xl p-3">
+                        <p className="text-xs text-slate-500 uppercase tracking-wide mb-0.5">Expected ({fmt(pricePerLiter)}/L)</p>
+                        <p className="text-lg font-bold text-slate-900">{fmt(expectedAmt)}</p>
                       </div>
                     )}
 

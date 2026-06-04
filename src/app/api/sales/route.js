@@ -79,8 +79,6 @@ export async function POST(request) {
       : dayShift.pricesAtStart?.[assignment.fuelType];
     const pricePerLiter = effectiveApprovedPrice?.newPrice ?? startPrice ?? 0;
     const expectedAmount = validatedData.liters * pricePerLiter;
-    const totalAmount = validatedData.cashAmount + validatedData.posAmount;
-    const discrepancy = totalAmount - expectedAmount;
 
     // Upsert: one entry per supervisor+dispenser+dayShift
     const salesEntry = await SalesEntry.findOneAndUpdate(
@@ -102,10 +100,10 @@ export async function POST(request) {
         liters: validatedData.liters,
         pricePerLiter,
         expectedAmount,
-        cashAmount: validatedData.cashAmount,
-        posAmount: validatedData.posAmount,
-        totalAmount,
-        discrepancy,
+        cashAmount: 0,
+        posAmount: 0,
+        totalAmount: 0,
+        discrepancy: 0,
         enteredBy: currentUser.id,
         enteredByName: currentUser.name,
       },
@@ -128,8 +126,6 @@ export async function POST(request) {
         fuelType: assignment.fuelType,
         liters: validatedData.liters,
         expectedAmount,
-        totalAmount,
-        discrepancy,
       },
     });
 

@@ -56,28 +56,28 @@ export async function GET(request) {
       TankStockEntry.find({ stationId, date: { $gte: startDate, $lte: endDate } }),
     ]);
 
-    // Aggregate sales by fuel type
-    const totalSales = {
-      PMS: { liters: 0, amount: 0 },
-      AGO: { liters: 0, amount: 0 },
-    };
-    let totalCollected = 0;
+    // Aggregate sales by fuel type (liters + expected amounts from supervisor entries)
+    const totalSales = {};
     salesEntries.forEach(sale => {
+      if (!totalSales[sale.fuelType]) totalSales[sale.fuelType] = { liters: 0, amount: 0 };
       totalSales[sale.fuelType].liters += sale.liters;
       totalSales[sale.fuelType].amount += sale.expectedAmount;
-      totalCollected += (sale.totalAmount || 0);
     });
+    // Ensure PMS/AGO always present for backward compat
+    if (!totalSales.PMS) totalSales.PMS = { liters: 0, amount: 0 };
+    if (!totalSales.AGO) totalSales.AGO = { liters: 0, amount: 0 };
 
-    const expectedAmount = totalSales.PMS.amount + totalSales.AGO.amount;
-    const discrepancy = totalCollected - expectedAmount;
+    const expectedAmount = Object.values(totalSales).reduce((s, v) => s + v.amount, 0);
 
-    // Accountant payment totals
+    // totalCollected comes from cashier payment records
     const totalPayments = {
       cash: paymentRecords.reduce((sum, p) => sum + p.cashReceived, 0),
       pos: paymentRecords.reduce((sum, p) => sum + p.posReceived, 0),
     };
+    const totalCollected = totalPayments.cash + totalPayments.pos;
+    const discrepancy = totalCollected - expectedAmount;
 
-    // Aggregate by supervisor
+    // Aggregate by supervisor — liters from sales, cash/pos from payment records
     const supervisorMap = {};
     salesEntries.forEach(sale => {
       const key = sale.supervisorId.toString();
@@ -87,7 +87,6 @@ export async function GET(request) {
           supervisorName: sale.supervisorName,
           totalLiters: 0,
           totalExpected: 0,
-          totalCollected: 0,
           totalCash: 0,
           totalPos: 0,
           totalPaymentReceived: 0,
@@ -95,16 +94,25 @@ export async function GET(request) {
       }
       supervisorMap[key].totalLiters += sale.liters;
       supervisorMap[key].totalExpected += sale.expectedAmount;
-      supervisorMap[key].totalCollected += (sale.totalAmount || 0);
     });
 
     paymentRecords.forEach(payment => {
-      const key = payment.supervisorId.toString();
-      if (supervisorMap[key]) {
-        supervisorMap[key].totalCash += payment.cashReceived;
-        supervisorMap[key].totalPos += payment.posReceived;
-        supervisorMap[key].totalPaymentReceived += payment.totalReceived;
+      const key = payment.supervisorId?.toString();
+      if (!key) return;
+      if (!supervisorMap[key]) {
+        supervisorMap[key] = {
+          supervisorId: payment.supervisorId,
+          supervisorName: payment.supervisorName,
+          totalLiters: 0,
+          totalExpected: 0,
+          totalCash: 0,
+          totalPos: 0,
+          totalPaymentReceived: 0,
+        };
       }
+      supervisorMap[key].totalCash += payment.cashReceived;
+      supervisorMap[key].totalPos += payment.posReceived;
+      supervisorMap[key].totalPaymentReceived += payment.totalReceived;
     });
 
     return NextResponse.json({

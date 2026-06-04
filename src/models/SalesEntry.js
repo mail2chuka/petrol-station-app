@@ -63,17 +63,17 @@ const salesEntrySchema = new mongoose.Schema(
     },
     cashAmount: {
       type: Number,
-      required: true,
+      default: 0,
       min: 0,
     },
     posAmount: {
       type: Number,
-      required: true,
+      default: 0,
       min: 0,
     },
     totalAmount: {
       type: Number,
-      required: true,
+      default: 0,
     },
     discrepancy: {
       type: Number,

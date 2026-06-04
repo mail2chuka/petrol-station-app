@@ -35,7 +35,6 @@ function emptyPosEntry() {
   return { bank: '', amount: '', terminalId: '' };
 }
 
-// POS entry row component
 function PosEntryRow({ entry, index, onChange, onRemove }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px_120px_auto] gap-2 items-end">
@@ -71,8 +70,8 @@ function PosEntryRow({ entry, index, onChange, onRemove }) {
   );
 }
 
-// One collection form for a supervisor
-function CollectionForm({ sup, supSales, activeDayShift, onSubmitted }) {
+// Collection form for a single pump
+function CollectionForm({ dispenser, salesEntry, activeDayShift, onSubmitted }) {
   const [cash, setCash] = useState('');
   const [posEntries, setPosEntries] = useState([emptyPosEntry()]);
   const [notes, setNotes] = useState('');
@@ -81,7 +80,7 @@ function CollectionForm({ sup, supSales, activeDayShift, onSubmitted }) {
 
   const posTotal = posEntries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
   const grandTotal = (parseFloat(cash) || 0) + posTotal;
-  const expected = supSales?.total ?? null;
+  const expected = salesEntry?.expectedAmount ?? null;
   const isMatch = expected !== null && Math.abs(grandTotal - expected) < 0.01;
 
   const updatePosEntry = (index, field, value) => {
@@ -121,7 +120,7 @@ function CollectionForm({ sup, supSales, activeDayShift, onSubmitted }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dayShiftId: activeDayShift._id,
-          supervisorId: sup._id,
+          dispenserId: dispenser.dispenserId,
           cashReceived: cashAmt,
           posEntries: validPos.map(e => ({
             bank: e.bank,
@@ -144,19 +143,28 @@ function CollectionForm({ sup, supSales, activeDayShift, onSubmitted }) {
 
   return (
     <div className="border-t border-amber-100 p-4 bg-amber-50/30 space-y-4">
-      {/* Expected amounts from supervisor's sales */}
-      {supSales && (
+      {salesEntry && (
         <div className="p-3 bg-white rounded-xl border border-amber-200 text-sm">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Expected from {sup.name}&apos;s sales</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Expected from {dispenser.dispenserName}
+          </p>
           <div className="flex flex-wrap gap-4">
-            <div><p className="text-xs text-gray-400">Cash sales</p><p className="font-semibold text-gray-800">₦{fmt(supSales.cash)}</p></div>
-            <div><p className="text-xs text-gray-400">POS sales</p><p className="font-semibold text-gray-800">₦{fmt(supSales.pos)}</p></div>
-            <div><p className="text-xs text-gray-400">Total</p><p className="font-bold text-ecana-maroon">₦{fmt(supSales.total)}</p></div>
+            <div>
+              <p className="text-xs text-gray-400">Liters</p>
+              <p className="font-semibold text-gray-800">{Number(salesEntry.liters).toFixed(2)} L</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Price/L</p>
+              <p className="font-semibold text-gray-800">₦{fmt(salesEntry.pricePerLiter)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Expected</p>
+              <p className="font-bold text-ecana-maroon">₦{fmt(salesEntry.expectedAmount)}</p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Cash */}
       <div>
         <Input
           label="Cash Received (₦)"
@@ -168,7 +176,6 @@ function CollectionForm({ sup, supSales, activeDayShift, onSubmitted }) {
         />
       </div>
 
-      {/* POS entries */}
       <div className="space-y-2">
         <p className="text-sm font-medium text-slate-700">
           POS Payments <span className="text-xs font-normal text-slate-400">(add one row per bank)</span>
@@ -191,7 +198,6 @@ function CollectionForm({ sup, supSales, activeDayShift, onSubmitted }) {
         </button>
       </div>
 
-      {/* Live totals */}
       {(parseFloat(cash) > 0 || posTotal > 0) && (
         <div className="p-3 bg-white rounded-xl border border-gray-200 text-sm space-y-1.5">
           <div className="flex justify-between text-gray-600">
@@ -208,14 +214,13 @@ function CollectionForm({ sup, supSales, activeDayShift, onSubmitted }) {
           </div>
           {expected !== null && (
             <div className={`flex justify-between text-sm font-semibold ${isMatch ? 'text-green-600' : 'text-amber-700'}`}>
-              <span>{isMatch ? '✓ Matches supervisor sales' : `Difference: ₦${fmt(Math.abs(grandTotal - expected))}`}</span>
+              <span>{isMatch ? '✓ Matches expected sales' : `Difference: ₦${fmt(Math.abs(grandTotal - expected))}`}</span>
               <span>Expected: ₦{fmt(expected)}</span>
             </div>
           )}
         </div>
       )}
 
-      {/* Notes */}
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1.5">Notes (Optional)</label>
         <textarea
@@ -239,8 +244,8 @@ function CollectionForm({ sup, supSales, activeDayShift, onSubmitted }) {
 export default function RecordPaymentsPage() {
   const { data: session } = useSession();
   const [activeDayShift, setActiveDayShift] = useState(null);
-  const [supervisors, setSupervisors] = useState([]);
-  const [salesBySupervisor, setSalesBySupervisor] = useState({});
+  const [dispensers, setDispensers] = useState([]);
+  const [salesByDispenser, setSalesByDispenser] = useState({});
   const [collectedMap, setCollectedMap] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -253,25 +258,25 @@ export default function RecordPaymentsPage() {
     setLoading(true);
     setGlobalError('');
     try {
-      const [shiftRes, usersRes, paymentsRes] = await Promise.all([
+      const [shiftRes, paymentsRes] = await Promise.all([
         fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
-        fetch(`/api/users?role=supervisor&stationId=${stationId}`),
         fetch(`/api/payments?stationId=${stationId}&date=${today()}`),
       ]);
 
-      const [shiftData, usersData, paymentsData] = await Promise.all([
-        shiftRes.json(), usersRes.json(), paymentsRes.json(),
+      const [shiftData, paymentsData] = await Promise.all([
+        shiftRes.json(), paymentsRes.json(),
       ]);
 
       const shift = (shiftData.dayShifts || [])[0] || null;
       setActiveDayShift(shift);
-      setSupervisors(usersData.users || []);
+      setDispensers(shift?.dispenserAssignments || []);
 
+      // Map payment records by dispenserId (multiple allowed per pump)
       const map = {};
       for (const p of (paymentsData.paymentRecords || [])) {
-        const sid = p.supervisorId?.toString();
-        if (!map[sid]) map[sid] = [];
-        map[sid].push(p);
+        const did = p.dispenserId;
+        if (!map[did]) map[did] = [];
+        map[did].push(p);
       }
       setCollectedMap(map);
 
@@ -280,13 +285,9 @@ export default function RecordPaymentsPage() {
         const salesData = await salesRes.json();
         const salesMap = {};
         for (const s of (salesData.salesEntries || [])) {
-          const sid = s.supervisorId?.toString();
-          if (!salesMap[sid]) salesMap[sid] = { name: s.supervisorName, total: 0, cash: 0, pos: 0 };
-          salesMap[sid].total += s.totalAmount || 0;
-          salesMap[sid].cash += s.cashAmount || 0;
-          salesMap[sid].pos += s.posAmount || 0;
+          salesMap[s.dispenserId] = s;
         }
-        setSalesBySupervisor(salesMap);
+        setSalesByDispenser(salesMap);
       }
     } catch {
       setGlobalError('Failed to load data. Please refresh.');
@@ -304,9 +305,9 @@ export default function RecordPaymentsPage() {
     </div>
   );
 
-  const collectedSups = supervisors.filter(s => collectedMap[s._id]?.length > 0);
-  const uncollectedSups = supervisors.filter(s => !collectedMap[s._id]?.length);
-  const allCollected = supervisors.length > 0 && uncollectedSups.length === 0;
+  const collectedDisps = dispensers.filter(d => collectedMap[d.dispenserId]?.length > 0);
+  const uncollectedDisps = dispensers.filter(d => !collectedMap[d.dispenserId]?.length);
+  const allCollected = dispensers.length > 0 && uncollectedDisps.length === 0;
 
   const totalCash = Object.values(collectedMap).flat().reduce((s, p) => s + (p.cashReceived || 0), 0);
   const totalPos = Object.values(collectedMap).flat().reduce((s, p) => s + (p.posReceived || 0), 0);
@@ -316,7 +317,7 @@ export default function RecordPaymentsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Record Collections</h1>
-          <p className="text-sm text-slate-500 mt-1">Collect from each supervisor — add one POS row per bank used.</p>
+          <p className="text-sm text-slate-500 mt-1">Collect cash and POS for each pump — add one POS row per bank used.</p>
         </div>
         <button onClick={loadData} className="text-xs text-gray-500 hover:text-ecana-maroon border border-gray-200 rounded-lg px-3 py-1.5 transition-colors">Refresh</button>
       </div>
@@ -334,18 +335,18 @@ export default function RecordPaymentsPage() {
         <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-4 rounded-xl flex items-center gap-3">
           <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" />
           <div>
-            <p className="font-semibold">All Supervisors Collected</p>
+            <p className="font-semibold">All Pumps Collected</p>
             <p className="text-sm mt-0.5">Cash: ₦{fmt(totalCash)} · POS: ₦{fmt(totalPos)} · Total: ₦{fmt(totalCash + totalPos)}</p>
           </div>
         </div>
       )}
 
-      {activeDayShift && supervisors.length > 0 && (
+      {activeDayShift && dispensers.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'Supervisors', val: supervisors.length, color: '' },
-            { label: 'Collected', val: collectedSups.length, color: 'text-green-700' },
-            { label: 'Pending', val: uncollectedSups.length, color: uncollectedSups.length > 0 ? 'text-amber-600' : '' },
+            { label: 'Pumps', val: dispensers.length, color: '' },
+            { label: 'Collected', val: collectedDisps.length, color: 'text-green-700' },
+            { label: 'Pending', val: uncollectedDisps.length, color: uncollectedDisps.length > 0 ? 'text-amber-600' : '' },
             { label: 'Total Today', val: `₦${fmt(totalCash + totalPos)}`, color: 'text-ecana-maroon', small: true },
           ].map(({ label, val, color, small }) => (
             <div key={label} className="card-modern p-4 text-center">
@@ -356,27 +357,28 @@ export default function RecordPaymentsPage() {
         </div>
       )}
 
-      {/* Uncollected supervisors */}
-      {activeDayShift && uncollectedSups.length > 0 && (
+      {/* Uncollected pumps */}
+      {activeDayShift && uncollectedDisps.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-amber-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-500" /> Pending ({uncollectedSups.length})
+            <span className="w-2 h-2 rounded-full bg-amber-500" /> Pending ({uncollectedDisps.length})
           </h2>
           <div className="space-y-3">
-            {uncollectedSups.map(sup => {
-              const isOpen = expandedId === sup._id;
-              const supSales = salesBySupervisor[sup._id];
+            {uncollectedDisps.map(disp => {
+              const isOpen = expandedId === disp.dispenserId;
+              const salesEntry = salesByDispenser[disp.dispenserId];
               return (
-                <div key={sup._id} className="bg-white border-2 border-amber-200 rounded-2xl overflow-hidden">
+                <div key={disp.dispenserId} className="bg-white border-2 border-amber-200 rounded-2xl overflow-hidden">
                   <div className="flex items-center justify-between p-4">
                     <div>
-                      <p className="font-semibold text-gray-800">{sup.name}</p>
-                      {supSales
-                        ? <p className="text-xs text-gray-500">Sales: ₦{fmt(supSales.total)}</p>
+                      <p className="font-semibold text-gray-800">{disp.dispenserName}</p>
+                      <p className="text-xs text-gray-500">{disp.fuelType} · {disp.supervisorName}</p>
+                      {salesEntry
+                        ? <p className="text-xs text-gray-500">Expected: ₦{fmt(salesEntry.expectedAmount)}</p>
                         : <p className="text-xs text-gray-400">No sales recorded yet</p>}
                     </div>
                     <button
-                      onClick={() => setExpandedId(isOpen ? null : sup._id)}
+                      onClick={() => setExpandedId(isOpen ? null : disp.dispenserId)}
                       className={`text-sm font-medium px-4 py-1.5 rounded-lg transition-colors ${isOpen ? 'bg-gray-100 text-gray-600' : 'bg-ecana-maroon text-white hover:bg-ecana-maroon/90'}`}
                     >
                       {isOpen ? 'Cancel' : 'Collect →'}
@@ -384,8 +386,8 @@ export default function RecordPaymentsPage() {
                   </div>
                   {isOpen && (
                     <CollectionForm
-                      sup={sup}
-                      supSales={salesBySupervisor[sup._id] || null}
+                      dispenser={disp}
+                      salesEntry={salesByDispenser[disp.dispenserId] || null}
                       activeDayShift={activeDayShift}
                       onSubmitted={() => { setExpandedId(null); loadData(); }}
                     />
@@ -397,43 +399,43 @@ export default function RecordPaymentsPage() {
         </div>
       )}
 
-      {/* Collected supervisors */}
-      {collectedSups.length > 0 && (
+      {/* Collected pumps */}
+      {collectedDisps.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500" /> Collected ({collectedSups.length})
+            <span className="w-2 h-2 rounded-full bg-green-500" /> Collected ({collectedDisps.length})
           </h2>
           <div className="space-y-3">
-            {collectedSups.map(sup => {
-              const records = collectedMap[sup._id] || [];
-              const supCash = records.reduce((s, p) => s + (p.cashReceived || 0), 0);
-              const supPos = records.reduce((s, p) => s + (p.posReceived || 0), 0);
-              const supTotal = supCash + supPos;
-              const supSales = salesBySupervisor[sup._id];
-              const isMatch = !supSales || Math.abs(supTotal - supSales.total) < 0.01;
-              const isOpen = expandedId === `extra-${sup._id}`;
+            {collectedDisps.map(disp => {
+              const records = collectedMap[disp.dispenserId] || [];
+              const dispCash = records.reduce((s, p) => s + (p.cashReceived || 0), 0);
+              const dispPos = records.reduce((s, p) => s + (p.posReceived || 0), 0);
+              const dispTotal = dispCash + dispPos;
+              const salesEntry = salesByDispenser[disp.dispenserId];
+              const isMatch = !salesEntry || Math.abs(dispTotal - salesEntry.expectedAmount) < 0.01;
+              const isOpen = expandedId === `extra-${disp.dispenserId}`;
 
               return (
-                <div key={sup._id} className={`bg-white border rounded-2xl p-4 ${isMatch ? 'border-green-200' : 'border-amber-300'}`}>
+                <div key={disp.dispenserId} className={`bg-white border rounded-2xl p-4 ${isMatch ? 'border-green-200' : 'border-amber-300'}`}>
                   <div className="flex items-start justify-between gap-4 mb-3">
                     <div className="flex items-center gap-3">
                       <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-0.5 ${isMatch ? 'bg-green-500' : 'bg-amber-500'}`} />
                       <div>
-                        <p className="font-semibold text-gray-800">{sup.name}</p>
-                        {!isMatch && supSales && (
+                        <p className="font-semibold text-gray-800">{disp.dispenserName}</p>
+                        <p className="text-xs text-gray-500">{disp.fuelType} · {disp.supervisorName}</p>
+                        {!isMatch && salesEntry && (
                           <p className="text-xs text-amber-700 font-medium">
-                            Diff: ₦{fmt(Math.abs(supTotal - supSales.total))} (Sales: ₦{fmt(supSales.total)})
+                            Diff: ₦{fmt(Math.abs(dispTotal - salesEntry.expectedAmount))} (Expected: ₦{fmt(salesEntry.expectedAmount)})
                           </p>
                         )}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="font-bold text-gray-900">₦{fmt(supTotal)}</p>
-                      <p className="text-xs text-gray-500">Cash: ₦{fmt(supCash)} · POS: ₦{fmt(supPos)}</p>
+                      <p className="font-bold text-gray-900">₦{fmt(dispTotal)}</p>
+                      <p className="text-xs text-gray-500">Cash: ₦{fmt(dispCash)} · POS: ₦{fmt(dispPos)}</p>
                     </div>
                   </div>
 
-                  {/* Breakdown per record */}
                   <div className="space-y-2">
                     {records.map((r, ri) => (
                       <div key={r._id || ri} className="text-xs bg-slate-50 rounded-lg px-3 py-2 space-y-0.5">
@@ -462,15 +464,15 @@ export default function RecordPaymentsPage() {
                       {isOpen ? (
                         <div className="space-y-2">
                           <CollectionForm
-                            sup={sup}
-                            supSales={salesBySupervisor[sup._id] || null}
+                            dispenser={disp}
+                            salesEntry={salesByDispenser[disp.dispenserId] || null}
                             activeDayShift={activeDayShift}
                             onSubmitted={() => { setExpandedId(null); loadData(); }}
                           />
                           <button onClick={() => setExpandedId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
                         </div>
                       ) : (
-                        <button onClick={() => setExpandedId(`extra-${sup._id}`)} className="text-xs text-gray-400 hover:text-ecana-maroon transition-colors">
+                        <button onClick={() => setExpandedId(`extra-${disp.dispenserId}`)} className="text-xs text-gray-400 hover:text-ecana-maroon transition-colors">
                           + Add another collection
                         </button>
                       )}
@@ -483,10 +485,10 @@ export default function RecordPaymentsPage() {
         </div>
       )}
 
-      {activeDayShift && supervisors.length === 0 && (
+      {activeDayShift && dispensers.length === 0 && (
         <Card>
           <p className="text-sm text-amber-700 text-center py-4">
-            No supervisors found for this station. Ask admin to assign supervisors.
+            No pumps activated for today&apos;s shift. Ask the manager to begin the day.
           </p>
         </Card>
       )}
