@@ -15,7 +15,6 @@ const NIGERIAN_BANKS = [
 
 function today() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
-}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function fmt(n) {
