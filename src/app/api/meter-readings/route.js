@@ -115,6 +115,13 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No active day shift. The manager must begin the day first.' }, { status: 409 });
     }
 
+    // Readings can only be submitted for the date of the current active shift.
+    // This prevents supervisors from editing past-day readings while today's shift runs.
+    const shiftDateStr = new Date(activeShift.date).toISOString().split('T')[0];
+    if (date !== shiftDateStr) {
+      return NextResponse.json({ error: 'Meter readings can only be submitted for today\'s active shift. Past readings can only be corrected by an admin.' }, { status: 403 });
+    }
+
     const shiftDispenser = activeShift.dispenserAssignments?.find(d => d.dispenserId === pumpId);
     if (!shiftDispenser) {
       return NextResponse.json({ error: 'This pump is not active for today\'s shift.' }, { status: 409 });

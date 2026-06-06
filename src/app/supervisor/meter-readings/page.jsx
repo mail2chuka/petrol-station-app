@@ -344,11 +344,30 @@ export default function MeterReadingsPage() {
     if (newDate.slice(0, 7) !== date.slice(0, 7)) fetchMonthMarks(newDate.slice(0, 7));
   };
 
+  const [openingAll, setOpeningAll] = useState(false);
+
   const canEdit = !!activeDayShift;
   const isToday = date === today();
 
   const openedCount = pumps.filter(p => existingReadings[p.id]?.opening != null).length;
   const closedCount = pumps.filter(p => existingReadings[p.id]?.closing != null).length;
+  const unopenedPumps = pumps.filter(p => existingReadings[p.id]?.opening == null);
+
+  async function openAll() {
+    if (!unopenedPumps.length) return;
+    setOpeningAll(true);
+    await Promise.all(
+      unopenedPumps.map(pump =>
+        fetch('/api/meter-readings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'opening', stationId, pumpId: pump.id, pumpLabel: pump.name, date }),
+        })
+      )
+    );
+    setOpeningAll(false);
+    fetchData(date);
+  }
 
   return (
     <div className="space-y-6">
@@ -362,9 +381,20 @@ export default function MeterReadingsPage() {
       {/* Active shift status banner */}
       {isToday && (
         activeDayShift ? (
-          <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-800">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-            Day is open · {openedCount}/{pumps.length} pumps opened · {closedCount}/{pumps.length} closed
+          <div className="flex items-center justify-between gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-800">
+            <div className="flex items-center gap-3">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+              Day is open · {openedCount}/{pumps.length} pumps opened · {closedCount}/{pumps.length} closed
+            </div>
+            {unopenedPumps.length > 0 && (
+              <button
+                onClick={openAll}
+                disabled={openingAll}
+                className="shrink-0 px-3 py-1 text-xs font-semibold bg-ecana-maroon text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+              >
+                {openingAll ? 'Opening…' : `Open All Pumps (${unopenedPumps.length})`}
+              </button>
+            )}
           </div>
         ) : (
           <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">

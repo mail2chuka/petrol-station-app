@@ -54,6 +54,22 @@ export async function POST(request, { params }) {
     const startDate = new Date(dateStr + 'T00:00:00.000Z');
     const endDate = new Date(dateStr + 'T23:59:59.999Z');
 
+    // Validate: all pumps that have an opening reading must also have a closing reading
+    const unclosedReadings = await MeterReading.find({
+      stationId: dayShift.stationId,
+      date: { $gte: startDate, $lte: endDate },
+      opening: { $ne: null },
+      closing: null,
+    }).session(session);
+
+    if (unclosedReadings.length > 0) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: `Closing reading not entered for: ${unclosedReadings.map(r => r.pumpLabel || r.pumpId).join(', ')}. All opened pumps must have a closing reading before the day can end.` },
+        { status: 400 }
+      );
+    }
+
     // Load station and active tanks
     const station = await Station.findById(dayShift.stationId).session(session);
     const activeTanks = (station.tanks || []).filter(t => t.isActive);
