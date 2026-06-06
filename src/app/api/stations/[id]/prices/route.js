@@ -74,12 +74,9 @@ export async function POST(request, { params }) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    const canAdjustDirectly = currentUser.role === ROLES.ADMIN;
-    const canRequestAdjustment = currentUser.role === ROLES.MANAGER;
-
-    if (!canAdjustDirectly && !canRequestAdjustment) {
+    if (currentUser.role !== ROLES.ADMIN) {
       return NextResponse.json(
-        { error: 'Only administrators or managers can submit price changes' },
+        { error: 'Only administrators can change prices' },
         { status: 403 }
       );
     }
@@ -129,70 +126,6 @@ export async function POST(request, { params }) {
       return NextResponse.json(
         { error: 'A day shift must be started before price changes can be submitted or applied' },
         { status: 400 }
-      );
-    }
-
-    // Managers can request price changes only for their own station during an active day.
-    if (canRequestAdjustment) {
-      if (!currentUser.stationId || currentUser.stationId !== station._id.toString()) {
-        await session.abortTransaction();
-        return NextResponse.json(
-          { error: 'Managers can only request changes for their own station' },
-          { status: 403 }
-        );
-      }
-
-      if (!body.reason || !String(body.reason).trim()) {
-        await session.abortTransaction();
-        return NextResponse.json(
-          { error: 'Reason is required for manager price change requests' },
-          { status: 400 }
-        );
-      }
-
-      const [pendingRequest] = await PriceHistory.create([{
-        stationId: station._id,
-        stationName: station.name,
-        fuelType,
-        previousPrice,
-        newPrice,
-        changeAmount,
-        changePercentage,
-        effectiveDate: new Date(),
-        changedBy: currentUser.id,
-        changedByName: currentUser.name,
-        reason: String(body.reason).trim(),
-        approvalStatus: 'pending',
-      }], { session, ordered: true });
-
-      await createAuditLog({
-        userId: currentUser.id,
-        userName: currentUser.name,
-        userRole: currentUser.role,
-        action: AUDIT_ACTIONS.ADJUST_PRICE,
-        resource: AUDIT_RESOURCES.PRICE,
-        resourceId: pendingRequest._id.toString(),
-        stationId: station._id,
-        stationName: station.name,
-        details: {
-          fuelType,
-          previousPrice,
-          requestedPrice: newPrice,
-          changeAmount,
-          changePercentage,
-          approvalStatus: 'pending',
-          requestType: 'manager_intra_day',
-        },
-      });
-
-      await session.commitTransaction();
-
-      return NextResponse.json(
-        {
-          message: 'Price change request submitted for admin approval',
-          priceRequest: pendingRequest,
-        },
-        { status: 202 }
       );
     }
 

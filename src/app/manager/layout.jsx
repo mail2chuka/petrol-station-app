@@ -11,7 +11,6 @@ import Loading from '@/components/Loading';
 const managerMenuItems = [
   { label: 'Dashboard', href: '/manager' },
   { label: 'Station Config', href: '/manager/station-config' },
-  { label: 'Price Changes', href: '/manager/price-changes' },
   { label: 'Begin Day', href: '/manager/begin-day' },
   { label: 'Supervisor Entries', href: '/manager/supervisor-entries' },
   { label: 'Cashier Entries', href: '/manager/cashier-entries' },
