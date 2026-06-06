@@ -576,8 +576,8 @@ function SummaryListView({ stationId, onSelectDay }) {
                         {tolerance.toFixed(2)}
                       </TD>
                       <TD>{(r.sales ?? 0).toFixed(2)}</TD>
-                      <TD>{fmtMoney(r.priceForDay)}</TD>
-                      <TD>{fmtMoney(salesAmount)}</TD>
+                      <TD>{Number(r.priceForDay || 0).toFixed(2)}</TD>
+                      <TD>{Number(salesAmount || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TD>
                       <TD className={r.shortage > 0 ? 'text-red-600 font-medium' : ''}>{(r.shortage ?? 0).toFixed(2)}</TD>
                       <TD>{(r.closingStock ?? 0).toFixed(2)}</TD>
                     </ClickRow>
