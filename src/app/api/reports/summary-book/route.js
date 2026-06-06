@@ -96,40 +96,43 @@ export async function GET(request) {
         {}
       );
 
+      // Aggregate opening stock, stock in, and closing stock by product across all tanks
+      const productAgg = {};
       for (const tank of dayTankEntries) {
-        const openingStock = tank.openingStock || 0;
-        const stockIn = dayStockIns
+        const fuelType = tank.product;
+        if (!productAgg[fuelType]) {
+          productAgg[fuelType] = { openingStock: 0, stockIn: 0, closingStock: 0 };
+        }
+        productAgg[fuelType].openingStock += tank.openingStock || 0;
+        productAgg[fuelType].stockIn += dayStockIns
           .flatMap((movement) => movement.distribution || [])
           .filter((d) => d.tankId === tank.tankId)
           .reduce((sum, d) => sum + d.litres, 0);
+        // closingStockManager preferred; fall back to measured
+        productAgg[fuelType].closingStock += tank.closingStockManager ?? tank.closingStockMeasured ?? 0;
+      }
 
-        const fuelType = tank.product;
+      for (const [fuelType, agg] of Object.entries(productAgg)) {
         // Sales liters from SalesEntry are already NET (supervisor enters closing-opening-rtt).
-        // Do NOT subtract RTT again here — that would double-deduct it.
         const salesLitres = salesByFuel[fuelType] || 0;
         const priceForDay = dayShift.pricesAtStart?.[fuelType] || 0;
         const totalAmount = priceForDay * salesLitres;
-        const closingStock = tank.closingStockManager ?? tank.closingStockMeasured ?? 0;
-        // expectedClosing = opening + received - net_sold
-        // RTT cancels out: net_sold = gross_dispensed - RTT, and RTT goes back to tank
-        const expectedClosing = openingStock + stockIn - salesLitres;
-        const shortage = Math.max(0, expectedClosing - closingStock);
-        const overage = Math.max(0, closingStock - expectedClosing);
+        const expectedClosing = agg.openingStock + agg.stockIn - salesLitres;
+        const shortage = Math.max(0, expectedClosing - agg.closingStock);
+        const overage = Math.max(0, agg.closingStock - expectedClosing);
 
         rows.push({
           date: dayKey,
           openingTime: dayShift.startTime,
-          tankId: tank.tankId,
-          tankLabel: tank.tankLabel || tank.tankId,
           product: fuelType,
-          openingStock,
-          stockIn,
+          openingStock: agg.openingStock,
+          stockIn: agg.stockIn,
           overage,
           sales: salesLitres,
           priceForDay,
           totalAmount,
           shortage,
-          closingStock,
+          closingStock: agg.closingStock,
         });
       }
     }

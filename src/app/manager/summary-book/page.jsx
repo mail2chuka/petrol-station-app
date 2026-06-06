@@ -57,17 +57,21 @@ function SummaryBookContent() {
 
   const columns = [
     { header: 'Date', field: 'date' },
-    { header: 'Tank', render: (r) => r.tankLabel || r.tankId || '-' },
     { header: 'Product', field: 'product' },
-    { header: 'Opening Time', render: (r) => (r.openingTime ? new Date(r.openingTime).toLocaleTimeString('en-NG') : '-') },
-    { header: 'Opening Stock', render: (r) => `${(r.openingStock ?? 0).toFixed(2)}L` },
-    { header: 'Stock In', render: (r) => `${(r.stockIn ?? 0).toFixed(2)}L` },
-    { header: 'Sales', render: (r) => `${(r.sales ?? 0).toFixed(2)}L` },
-    { header: 'Price', render: (r) => `₦${(r.priceForDay ?? 0).toFixed(2)}` },
-    { header: 'Total Amount', render: (r) => `₦${(r.totalAmount ?? 0).toFixed(2)}` },
-    { header: 'Shortage', render: (r) => `${(r.shortage ?? 0).toFixed(2)}L` },
-    { header: 'Overage', render: (r) => `${(r.overage ?? 0).toFixed(2)}L` },
-    { header: 'Closing Stock', render: (r) => `${(r.closingStock ?? 0).toFixed(2)}L` },
+    { header: 'Opening Stock (L)', render: (r) => (r.openingStock ?? 0).toFixed(2) },
+    { header: 'Stock In (L)', render: (r) => (r.stockIn ?? 0).toFixed(2) },
+    {
+      header: 'Tolerance (L)',
+      render: (r) => {
+        const tolerance = (r.sales ?? 0) - ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.closingStock ?? 0));
+        return tolerance.toFixed(2);
+      },
+    },
+    { header: 'Sales (L)', render: (r) => (r.sales ?? 0).toFixed(2) },
+    { header: 'Price/L (₦)', render: (r) => (r.priceForDay ?? 0).toFixed(2) },
+    { header: 'Sales Amount (₦)', render: (r) => ((r.priceForDay ?? 0) * (r.sales ?? 0)).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+    { header: 'Shortage Recorded (L)', render: (r) => (r.shortage ?? 0).toFixed(2) },
+    { header: 'Closing Stock (L)', render: (r) => (r.closingStock ?? 0).toFixed(2) },
   ];
 
   return (

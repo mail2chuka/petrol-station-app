@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Card from '@/components/Card';
 import Select from '@/components/Select';
-import ReportPeriodList from '@/components/ReportPeriodList';
 
 function fmtN(n) {
   return `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -487,6 +486,119 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
   );
 }
 
+// ── Summary list view (replaces ReportPeriodList) ────────────────────────────
+function SummaryListView({ stationId, onSelectDay }) {
+  const today = new Date().toISOString().split('T')[0];
+  const firstOfMonth = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  })();
+
+  const [from, setFrom] = useState(firstOfMonth);
+  const [to, setTo] = useState(today);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const fetchRows = useCallback(async () => {
+    if (!stationId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/reports/summary-book?stationId=${stationId}&from=${from}&to=${to}`);
+      const data = await res.json();
+      if (res.ok) setRows(data.rows || []);
+      else setError(data.error || 'Failed to load summary');
+    } catch {
+      setError('Network error.');
+    } finally {
+      setLoading(false);
+    }
+  }, [stationId, from, to]);
+
+  useEffect(() => { fetchRows(); }, [stationId]);
+
+  function fmtMoney(n) {
+    return `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-gray-500 whitespace-nowrap">From</label>
+          <input type="date" value={from} max={today} onChange={e => setFrom(e.target.value)}
+            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-ecana-maroon" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-gray-500 whitespace-nowrap">To</label>
+          <input type="date" value={to} min={from} max={today} onChange={e => setTo(e.target.value)}
+            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-ecana-maroon" />
+        </div>
+        <button onClick={fetchRows} disabled={loading}
+          className="px-4 py-1.5 text-sm bg-ecana-maroon text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium">
+          {loading ? 'Loading…' : 'Load'}
+        </button>
+      </div>
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
+      {loading && <div className="flex justify-center py-10"><div className="spinner" /></div>}
+
+      {!loading && rows.length > 0 && (
+        <div className="card-modern overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <TH>Date</TH>
+                  <TH>Product</TH>
+                  <TH>Opening Stock (L)</TH>
+                  <TH>Stock In (L)</TH>
+                  <TH>Tolerance (L)</TH>
+                  <TH>Sales (L)</TH>
+                  <TH>Price/L (₦)</TH>
+                  <TH>Sales Amount (₦)</TH>
+                  <TH>Shortage Recorded (L)</TH>
+                  <TH>Closing Stock (L)</TH>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rows.map((r, i) => {
+                  const tolerance = (r.sales ?? 0) - ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.closingStock ?? 0));
+                  const salesAmount = (r.priceForDay ?? 0) * (r.sales ?? 0);
+                  return (
+                    <ClickRow key={i} onClick={() => onSelectDay(r.date)}>
+                      <TD className="font-medium whitespace-nowrap">{r.date}</TD>
+                      <TD>{r.product || '—'}</TD>
+                      <TD>{(r.openingStock ?? 0).toFixed(2)}</TD>
+                      <TD>{(r.stockIn ?? 0).toFixed(2)}</TD>
+                      <TD className={tolerance < 0 ? 'text-red-600 font-medium' : tolerance > 0 ? 'text-green-600' : ''}>
+                        {tolerance.toFixed(2)}
+                      </TD>
+                      <TD>{(r.sales ?? 0).toFixed(2)}</TD>
+                      <TD>{fmtMoney(r.priceForDay)}</TD>
+                      <TD>{fmtMoney(salesAmount)}</TD>
+                      <TD className={r.shortage > 0 ? 'text-red-600 font-medium' : ''}>{(r.shortage ?? 0).toFixed(2)}</TD>
+                      <TD>{(r.closingStock ?? 0).toFixed(2)}</TD>
+                    </ClickRow>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!loading && rows.length === 0 && !error && (
+        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+          <p className="text-base font-medium">No summary data found</p>
+          <p className="text-sm mt-1">Summary rows appear after the manager ends the day and confirms closing stock for each tank.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AdminReportsPage() {
   const [stations, setStations] = useState([]);
@@ -584,7 +696,7 @@ export default function AdminReportsPage() {
 
       {/* ── LIST VIEW ── */}
       {view === 'list' && selectedStation && (
-        <ReportPeriodList stationId={selectedStation} onSelectDay={openDay} />
+        <SummaryListView stationId={selectedStation} onSelectDay={openDay} />
       )}
 
       {/* ── DETAIL VIEW ── */}
