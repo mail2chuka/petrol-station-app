@@ -169,8 +169,8 @@ export default function MonthlyReportPage() {
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               {[
                 { label: 'Days with Data', value: String(rows.length) },
-                { label: 'PMS Litres', value: `${fmt(totalPmsL)}L` },
-                { label: 'AGO Litres', value: `${fmt(totalAgoL)}L` },
+                { label: 'PMS Litres (L)', value: fmt(totalPmsL) },
+                { label: 'AGO Litres (L)', value: fmt(totalAgoL) },
                 { label: 'Total Expected', value: `₦${fmt(totalExpected)}` },
                 { label: 'Total Received', value: `₦${fmt(totalReceived)}`, disc: totalDisc },
               ].map((c) => (

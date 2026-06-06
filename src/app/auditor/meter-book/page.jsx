@@ -169,7 +169,7 @@ export default function MeterBookPage() {
                         <th className="pb-2 pr-4">Opening</th>
                         <th className="pb-2 pr-4">Closing</th>
                         <th className="pb-2 pr-4">RTT</th>
-                        <th className="pb-2 pr-4">Net Litres</th>
+                        <th className="pb-2 pr-4">Net Litres (L)</th>
                         <th className="pb-2">Status</th>
                       </tr>
                     </thead>
@@ -184,7 +184,7 @@ export default function MeterBookPage() {
                             <td className={`py-2.5 pr-4 font-semibold ${r.discrepancyFlag ? 'text-amber-700' : ''}`}>{r.opening}</td>
                             <td className="py-2.5 pr-4">{r.closing}</td>
                             <td className="py-2.5 pr-4">{r.rtt}</td>
-                            <td className="py-2.5 pr-4 font-semibold">{net.toFixed(2)}L</td>
+                            <td className="py-2.5 pr-4 font-semibold">{net.toFixed(2)}</td>
                             <td className="py-2.5">
                               {r.discrepancyFlag ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">

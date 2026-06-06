@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import SalesEntry from '@/models/SalesEntry';
+import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
-import { ROLES } from '@/lib/constants';
+import { ROLES, DAY_STATUS } from '@/lib/constants';
 
 // PATCH /api/sales/[id] - Update liters/cash/POS on an existing sale
 export async function PATCH(request, { params }) {
@@ -45,6 +46,18 @@ export async function PATCH(request, { params }) {
         { error: 'You can only edit your own sales entries' },
         { status: 403 }
       );
+    }
+
+    // Supervisors cannot edit entries from a closed day — only admins can
+    if (currentUser.role !== ROLES.ADMIN) {
+      const dayShift = await DayShift.findById(entry.dayShiftId).session(session);
+      if (dayShift && dayShift.status !== DAY_STATUS.IN_PROGRESS) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          { error: 'This day is closed. Only an admin can correct entries from a closed day.' },
+          { status: 403 }
+        );
+      }
     }
 
     const totalAmount = cashAmount + posAmount;

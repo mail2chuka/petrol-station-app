@@ -7,13 +7,13 @@ import Table from '@/components/Table';
 import Loading from '@/components/Loading';
 
 function formatCurrency(amount) {
-  if (amount === null || amount === undefined || isNaN(amount)) return '₦0.00';
-  return `₦${Number(amount).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (amount === null || amount === undefined || isNaN(amount)) return '0.00';
+  return Number(amount).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatLiters(liters) {
-  if (liters === null || liters === undefined || isNaN(liters)) return '0.00L';
-  return `${Number(liters).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}L`;
+  if (liters === null || liters === undefined || isNaN(liters)) return '0.00';
+  return Number(liters).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export default function MySalesPage() {
@@ -48,11 +48,11 @@ export default function MySalesPage() {
     },
     { header: 'Dispenser', field: 'dispenserName' },
     { header: 'Fuel', field: 'fuelType' },
-    { header: 'Liters', render: (row) => formatLiters(row.liters) },
-    { header: 'Cash', render: (row) => formatCurrency(row.cashAmount) },
-    { header: 'POS', render: (row) => formatCurrency(row.posAmount) },
+    { header: 'Liters (L)', render: (row) => formatLiters(row.liters) },
+    { header: 'Cash (₦)', render: (row) => formatCurrency(row.cashAmount) },
+    { header: 'POS (₦)', render: (row) => formatCurrency(row.posAmount) },
     {
-      header: 'Total',
+      header: 'Total (₦)',
       render: (row) => (
         <span className="font-semibold text-ecana-maroon">{formatCurrency(row.totalAmount)}</span>
       ),

@@ -505,21 +505,21 @@ export default function StationsPage() {
         <p className="text-xs text-gray-500">{row.code} • {row.location}</p>
       </div>
     )},
-    { 
-      header: 'PMS Price', 
-      render: (row) => `₦${row.currentPrices?.PMS?.toFixed(2) || '0.00'}`
+    {
+      header: 'PMS Price (₦)',
+      render: (row) => row.currentPrices?.PMS?.toFixed(2) || '0.00'
     },
-    { 
-      header: 'AGO Price', 
-      render: (row) => `₦${row.currentPrices?.AGO?.toFixed(2) || '0.00'}`
+    {
+      header: 'AGO Price (₦)',
+      render: (row) => row.currentPrices?.AGO?.toFixed(2) || '0.00'
     },
-    { 
-      header: 'PMS Stock', 
-      render: (row) => `${row.currentStock?.PMS?.toFixed(2) || '0.00'}L`
+    {
+      header: 'PMS Stock (L)',
+      render: (row) => row.currentStock?.PMS?.toFixed(2) || '0.00'
     },
-    { 
-      header: 'AGO Stock', 
-      render: (row) => `${row.currentStock?.AGO?.toFixed(2) || '0.00'}L`
+    {
+      header: 'AGO Stock (L)',
+      render: (row) => row.currentStock?.AGO?.toFixed(2) || '0.00'
     },
     {
       header: 'Tanks',

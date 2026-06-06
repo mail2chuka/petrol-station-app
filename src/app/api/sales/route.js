@@ -164,19 +164,17 @@ export async function GET(request) {
     const dayShiftId = searchParams.get('dayShiftId');
     const stationId = searchParams.get('stationId');
     const supervisorId = searchParams.get('supervisorId');
+    const date = searchParams.get('date');
 
     let query = {};
 
-    if (dayShiftId) {
-      query.dayShiftId = dayShiftId;
-    }
-
-    if (stationId) {
-      query.stationId = stationId;
-    }
-
-    if (supervisorId) {
-      query.supervisorId = supervisorId;
+    if (dayShiftId) query.dayShiftId = dayShiftId;
+    if (stationId) query.stationId = stationId;
+    if (supervisorId) query.supervisorId = supervisorId;
+    if (date) {
+      const start = new Date(date); start.setHours(0, 0, 0, 0);
+      const end = new Date(date); end.setHours(23, 59, 59, 999);
+      query.date = { $gte: start, $lte: end };
     }
 
     // Supervisors can only see their own sales

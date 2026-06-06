@@ -419,8 +419,8 @@ export default function AdminDashboard() {
                   <p className="text-xs text-gray-500">{row.code} • {row.location}</p>
                 </div>
               )},
-              { header: 'PMS', render: (row) => `₦${row.currentPrices?.PMS?.toFixed(2) || '0.00'}` },
-              { header: 'AGO', render: (row) => `₦${row.currentPrices?.AGO?.toFixed(2) || '0.00'}` },
+              { header: 'PMS (₦)', render: (row) => row.currentPrices?.PMS?.toFixed(2) || '0.00' },
+              { header: 'AGO (₦)', render: (row) => row.currentPrices?.AGO?.toFixed(2) || '0.00' },
             ]}
             data={stations.slice(0, 6)}
           />

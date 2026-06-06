@@ -103,9 +103,9 @@ function SupervisorEntriesContent() {
     },
     { header: 'RTT', render: (r) => r.closing != null ? (r.rtt ?? 0).toFixed(2) : '-' },
     {
-      header: 'Net L',
+      header: 'Net (L)',
       render: (r) => r.closing != null
-        ? ((r.closing - r.opening - (r.rtt ?? 0)).toFixed(2) + ' L')
+        ? (r.closing - r.opening - (r.rtt ?? 0)).toFixed(2)
         : '-',
     },
     {

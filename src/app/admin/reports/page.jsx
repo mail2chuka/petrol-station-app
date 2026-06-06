@@ -7,6 +7,9 @@ import Select from '@/components/Select';
 function fmtN(n) {
   return `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+function fmtNum(n) {
+  return Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 function fmtDate(d) {
   return new Date(d).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
 }
@@ -122,10 +125,10 @@ function DetailModal({ item, onClose, onSaved }) {
         <Row label="Fuel Type" value={d.fuelType} />
         <Row label="Supervisor" value={d.supervisorName || '—'} />
         <Row label="Tank" value={d.tankLabel || '—'} />
-        <Row label="Price at Start" value={fmtN(d.priceAtStart)} />
-        <Row label="Initial Reading" value={d.initialReading != null ? `${d.initialReading} L` : '—'} />
-        <Row label="Final Reading" value={d.finalReading != null ? `${d.finalReading} L` : '—'} />
-        <Row label="Total Liters" value={d.totalLiters != null ? `${Number(d.totalLiters).toFixed(2)} L` : '—'} />
+        <Row label="Price at Start (₦/L)" value={fmtNum(d.priceAtStart)} />
+        <Row label="Initial Reading (L)" value={d.initialReading != null ? Number(d.initialReading).toLocaleString('en-NG') : '—'} />
+        <Row label="Final Reading (L)" value={d.finalReading != null ? Number(d.finalReading).toLocaleString('en-NG') : '—'} />
+        <Row label="Total (L)" value={d.totalLiters != null ? Number(d.totalLiters).toFixed(2) : '—'} />
       </dl>
     );
   }
@@ -137,9 +140,9 @@ function DetailModal({ item, onClose, onSaved }) {
         <Row label="Pump" value={d.dispenserName} />
         <Row label="Fuel Type" value={d.fuelType} />
         <Row label="Supervisor" value={d.supervisorName} />
-        <Row label="Liters Sold" value={`${Number(d.liters).toFixed(2)} L`} />
-        <Row label="Price / Liter" value={fmtN(d.pricePerLiter)} />
-        <Row label="Expected Amount" value={fmtN(d.expectedAmount)} />
+        <Row label="Liters Sold (L)" value={Number(d.liters).toFixed(2)} />
+        <Row label="Price / Liter (₦)" value={fmtNum(d.pricePerLiter)} />
+        <Row label="Expected Amount (₦)" value={fmtNum(d.expectedAmount)} />
         <Row label="Time Entered" value={fmtDate(d.createdAt)} />
       </dl>
     );
@@ -163,15 +166,15 @@ function DetailModal({ item, onClose, onSaved }) {
       <dl className="space-y-2 text-sm">
         <Row label="Pump" value={d.pumpLabel || d.pumpId} />
         <Row label="Supervisor" value={d.supervisorName} />
-        <Row label="Opening Reading" value={`${d.opening} L`} />
-        <Row label="Closing Reading" value={d.closing != null ? `${d.closing} L` : '—'} />
-        <Row label="RTT" value={`${d.rtt ?? 0} L`} />
-        <Row label="Net Sold" value={d.closing != null ? `${Math.max(0, d.closing - d.opening - (d.rtt || 0)).toFixed(2)} L` : '—'} />
+        <Row label="Opening Reading (L)" value={d.opening} />
+        <Row label="Closing Reading (L)" value={d.closing ?? '—'} />
+        <Row label="RTT (L)" value={d.rtt ?? 0} />
+        <Row label="Net Sold (L)" value={d.closing != null ? Math.max(0, d.closing - d.opening - (d.rtt || 0)).toFixed(2) : '—'} />
         {d.discrepancyFlag && <Row label="Discrepancy" value={<span className="text-amber-700 font-medium">⚠ {d.discrepancyComment || 'Flagged'}</span>} />}
         <Row label="Review Status" value={<Pill status={d.managerReviewStatus || 'pending'} />} />
         {d.managerReviewNote && <Row label="Review Note" value={d.managerReviewNote} />}
         {d.reviewedByManagerName && <Row label="Reviewed By" value={d.reviewedByManagerName} />}
-        <Row label="Previous Closing" value={d.previousDayClosing != null ? `${d.previousDayClosing} L` : '—'} />
+        <Row label="Previous Closing (L)" value={d.previousDayClosing ?? '—'} />
       </dl>
     );
     editBody = (
@@ -194,9 +197,9 @@ function DetailModal({ item, onClose, onSaved }) {
         <Row label="Pump" value={d.dispenserName || '—'} />
         <Row label="Fuel Type" value={d.fuelType || '—'} />
         <Row label="Supervisor" value={d.supervisorName || '—'} />
-        <Row label="Cash Received" value={fmtN(d.cashReceived)} />
-        <Row label="POS Total" value={fmtN(d.posReceived)} />
-        <Row label="Total Received" value={<span className="font-bold">{fmtN(d.totalReceived)}</span>} />
+        <Row label="Cash Received (₦)" value={fmtNum(d.cashReceived)} />
+        <Row label="POS Total (₦)" value={fmtNum(d.posReceived)} />
+        <Row label="Total Received (₦)" value={<span className="font-bold">{fmtNum(d.totalReceived)}</span>} />
         {(d.posEntries || []).length > 0 && (
           <div className="pt-1">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">POS Breakdown</p>
@@ -231,7 +234,7 @@ function DetailModal({ item, onClose, onSaved }) {
     title = `Bank Deposit — ${fmtN(d.amount)}`;
     viewBody = (
       <dl className="space-y-2 text-sm">
-        <Row label="Amount" value={<span className="font-bold">{fmtN(d.amount)}</span>} />
+        <Row label="Amount (₦)" value={<span className="font-bold">{fmtNum(d.amount)}</span>} />
         <Row label="Bank" value={d.bankName} />
         <Row label="Branch" value={d.bankBranch || '—'} />
         <Row label="Account No." value={d.accountNumber || '—'} />
@@ -402,7 +405,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
             <Card title="Prices at Day Start">
               <dl className="space-y-2 text-sm">
                 {Object.entries(report.dayShift.pricesAtStart).map(([fuel, price]) => (
-                  <Row key={fuel} label={fuel} value={`${fmtN(price)} / L`} />
+                  <Row key={fuel} label={`${fuel} (₦/L)`} value={fmtNum(price)} />
                 ))}
               </dl>
             </Card>
@@ -423,7 +426,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                         <TD className="font-medium">{d.dispenserName}</TD>
                         <TD>{d.fuelType}</TD>
                         <TD>{d.supervisorName || '—'}</TD>
-                        <TD>{fmtN(price)}</TD>
+                        <TD>{fmtNum(price)}</TD>
                       </ClickRow>
                     );
                   })}
@@ -454,7 +457,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                   <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead><tr><TH>Time</TH><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Liters</TH><TH>Expected</TH></tr></thead>
+                      <thead><tr><TH>Time</TH><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Liters (L)</TH><TH>Expected (₦)</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
                         {report.salesEntries.map((sale, i) => (
                           <ClickRow key={sale._id || i} onClick={() => setDetailItem({ type: 'sale', data: sale })}>
@@ -462,8 +465,8 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                             <TD className="font-medium">{sale.dispenserName}</TD>
                             <TD>{sale.fuelType}</TD>
                             <TD>{sale.supervisorName}</TD>
-                            <TD>{Number(sale.liters).toFixed(2)} L</TD>
-                            <TD>{fmtN(sale.expectedAmount)}</TD>
+                            <TD>{Number(sale.liters).toFixed(2)}</TD>
+                            <TD>{fmtNum(sale.expectedAmount)}</TD>
                           </ClickRow>
                         ))}
                       </tbody>
@@ -511,16 +514,16 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
             <Card title="Supervisor Summary">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead><tr><TH>Supervisor</TH><TH>Liters</TH><TH>Expected</TH><TH>Cash</TH><TH>POS</TH><TH>Total</TH></tr></thead>
+                  <thead><tr><TH>Supervisor</TH><TH>Liters (L)</TH><TH>Expected (₦)</TH><TH>Cash (₦)</TH><TH>POS (₦)</TH><TH>Total (₦)</TH></tr></thead>
                   <tbody className="divide-y divide-gray-100">
                     {report.supervisorSummaries.map((sup, i) => (
                       <tr key={i}>
                         <TD className="font-medium">{sup.supervisorName}</TD>
-                        <TD>{sup.totalLiters.toFixed(2)} L</TD>
-                        <TD>{fmtN(sup.totalExpected)}</TD>
-                        <TD>{fmtN(sup.totalCash)}</TD>
-                        <TD>{fmtN(sup.totalPos)}</TD>
-                        <TD className="font-semibold">{fmtN(sup.totalPaymentReceived)}</TD>
+                        <TD>{sup.totalLiters.toFixed(2)}</TD>
+                        <TD>{fmtNum(sup.totalExpected)}</TD>
+                        <TD>{fmtNum(sup.totalCash)}</TD>
+                        <TD>{fmtNum(sup.totalPos)}</TD>
+                        <TD className="font-semibold">{fmtNum(sup.totalPaymentReceived)}</TD>
                       </tr>
                     ))}
                   </tbody>

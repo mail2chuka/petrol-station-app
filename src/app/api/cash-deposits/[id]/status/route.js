@@ -18,9 +18,9 @@ export async function PATCH(request, { params }) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    if (![ROLES.ADMIN, ROLES.MANAGER].includes(currentUser.role)) {
+    if (![ROLES.ADMIN, ROLES.MANAGER, ROLES.DAILY_AUDITOR].includes(currentUser.role)) {
       return NextResponse.json(
-        { error: 'Only manager/admin can approve or reject deposits' },
+        { error: 'Only manager, admin, or daily auditor can approve or reject deposits' },
         { status: 403 }
       );
     }

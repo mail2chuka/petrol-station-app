@@ -35,7 +35,7 @@ export const stationSchema = z.object({
 export const priceAdjustmentSchema = z.object({
   stationId: z.string(),
   fuelType: z.enum(Object.values(FUEL_TYPES)),
-  price: z.number().positive('Price must be positive'),
+  price: z.number().min(0, 'Price must be 0 or greater'),
 });
 
 // Stock Receipt Schema

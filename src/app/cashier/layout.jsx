@@ -10,6 +10,7 @@ import Loading from '@/components/Loading';
 
 const cashierMenuItems = [
   { label: 'Dashboard', href: '/cashier' },
+  { label: 'Sales Records', href: '/cashier/sales' },
   { label: 'Record Payments', href: '/cashier/payments' },
   { label: 'View Payments', href: '/cashier/view-payments' },
   { label: 'Bank Deposits', href: '/cashier/deposits' },

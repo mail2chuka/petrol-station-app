@@ -330,7 +330,7 @@ function DailyReportContent() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left border-b border-gray-200">
-                            {['Supervisor', 'Litres', 'Expected', 'Collected', 'Paid to Acct', 'Diff', ''].map((h, i) => (
+                            {['Supervisor', 'Litres (L)', 'Expected (₦)', 'Collected (₦)', 'Paid to Acct (₦)', 'Diff (₦)', ''].map((h, i) => (
                               <th key={i} className={`pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide ${i > 0 && i < 6 ? 'text-right' : ''}`}>{h}</th>
                             ))}
                           </tr>
@@ -341,11 +341,11 @@ function DailyReportContent() {
                             return (
                               <tr key={i}>
                                 <td className="py-3 pr-4 font-medium text-gray-800">{sv.supervisorName}</td>
-                                <td className="py-3 pr-4 text-right text-gray-700">{fmt(sv.totalLiters)} L</td>
-                                <td className="py-3 pr-4 text-right text-gray-700">₦{fmt(sv.totalExpected)}</td>
-                                <td className="py-3 pr-4 text-right text-gray-700">₦{fmt(sv.totalCollected)}</td>
-                                <td className="py-3 pr-4 text-right text-gray-700">₦{fmt(sv.totalPaymentReceived)}</td>
-                                <td className={`py-3 pr-4 text-right font-semibold ${diff < 0 ? 'text-red-600' : diff > 0 ? 'text-green-600' : 'text-gray-500'}`}>{diff >= 0 ? '+' : ''}₦{fmt(diff)}</td>
+                                <td className="py-3 pr-4 text-right text-gray-700">{fmt(sv.totalLiters)}</td>
+                                <td className="py-3 pr-4 text-right text-gray-700">{fmt(sv.totalExpected)}</td>
+                                <td className="py-3 pr-4 text-right text-gray-700">{fmt(sv.totalCollected)}</td>
+                                <td className="py-3 pr-4 text-right text-gray-700">{fmt(sv.totalPaymentReceived)}</td>
+                                <td className={`py-3 pr-4 text-right font-semibold ${diff < 0 ? 'text-red-600' : diff > 0 ? 'text-green-600' : 'text-gray-500'}`}>{diff >= 0 ? '+' : ''}{fmt(diff)}</td>
                                 <td className="py-3">
                                   <FlagBtn targetType="payment" targetId={null} targetRef={`${sv.supervisorName} — ${selectedDate}`} />
                                 </td>

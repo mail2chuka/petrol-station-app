@@ -206,11 +206,11 @@ export default function ReportPeriodList({ stationId, onSelectDay }) {
                 <tr className="bg-gray-50">
                   <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left">Date</th>
                   <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left">Status</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Liters</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Expected</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Cash</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">POS</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Discrepancy</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Liters (L)</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Expected (₦)</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Cash (₦)</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">POS (₦)</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Discrepancy (₦)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -232,21 +232,21 @@ export default function ReportPeriodList({ stationId, onSelectDay }) {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700 text-right">
-                        {Number(day.totalLiters).toFixed(1)} L
+                        {Number(day.totalLiters).toFixed(1)}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700 text-right">
-                        {fmtN(day.totalExpected)}
+                        {Number(day.totalExpected).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700 text-right">
-                        {fmtN(day.totalCash)}
+                        {Number(day.totalCash).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700 text-right">
-                        {fmtN(day.totalPos)}
+                        {Number(day.totalPos).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td className={`px-4 py-3 text-sm font-semibold text-right ${
                         disc < 0 ? 'text-red-600' : disc > 0 ? 'text-green-600' : 'text-gray-500'
                       }`}>
-                        {disc >= 0 ? '+' : ''}{fmtN(disc)}
+                        {disc >= 0 ? '+' : ''}{Math.abs(disc).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                     </tr>
                   );
@@ -258,14 +258,14 @@ export default function ReportPeriodList({ stationId, onSelectDay }) {
                   <td className="px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wide" colSpan={2}>
                     Period Total ({days.length} day{days.length !== 1 ? 's' : ''})
                   </td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{Number(totals.liters).toFixed(1)} L</td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{fmtN(totals.expected)}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{fmtN(totals.cash)}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{fmtN(totals.pos)}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{Number(totals.liters).toFixed(1)}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{Number(totals.expected).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{Number(totals.cash).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{Number(totals.pos).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className={`px-4 py-3 text-sm font-bold text-right ${
                     totals.discrepancy < 0 ? 'text-red-600' : totals.discrepancy > 0 ? 'text-green-600' : 'text-gray-500'
                   }`}>
-                    {totals.discrepancy >= 0 ? '+' : ''}{fmtN(totals.discrepancy)}
+                    {totals.discrepancy >= 0 ? '+' : ''}{Math.abs(totals.discrepancy).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                 </tr>
               </tfoot>

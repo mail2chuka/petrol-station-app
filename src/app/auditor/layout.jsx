@@ -19,6 +19,7 @@ const DAILY_AUDITOR_MENU = [
   { label: 'Meter Book', href: '/auditor/meter-book' },
   { label: 'Tank Stock', href: '/auditor/tank-stock' },
   { label: 'Flags', href: '/auditor/flags' },
+  { label: 'Approvals', href: '/auditor/approvals' },
 ];
 
 const EXTERNAL_AUDITOR_MENU = [

@@ -16,9 +16,9 @@ export async function PATCH(request, { params }) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    if (![ROLES.MANAGER, ROLES.ADMIN].includes(currentUser.role)) {
+    if (![ROLES.MANAGER, ROLES.ADMIN, ROLES.DAILY_AUDITOR].includes(currentUser.role)) {
       return NextResponse.json(
-        { error: 'Only manager/admin can review payment records' },
+        { error: 'Only manager, admin, or daily auditor can review payment records' },
         { status: 403 }
       );
     }
