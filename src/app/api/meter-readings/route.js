@@ -123,14 +123,9 @@ export async function POST(request) {
     const pumpLabel = bodyPumpLabel || shiftDispenser.dispenserName || pumpId;
 
     // ── OPENING ACTION ──────────────────────────────────────────────────────────
+    // Opening is auto-set from the most recent closing of the previous operating day.
+    // Supervisors cannot enter the opening value manually.
     if (action === 'opening') {
-      const opening = Number(body.opening);
-      if (isNaN(opening) || opening < 0) {
-        return NextResponse.json({ error: 'A valid opening reading is required' }, { status: 400 });
-      }
-
-      // Find the MOST RECENT closing for this pump before today — regardless of which date it was on.
-      // This is the authoritative "last known reading" the opening must be compared against.
       const previousReading = await MeterReading.findOne({
         stationId,
         pumpId,
@@ -139,21 +134,16 @@ export async function POST(request) {
       }).sort({ date: -1, createdAt: -1 });
 
       const previousDayClosing = previousReading?.closing ?? null;
-      const previousReadingDate = previousReading?.date ?? null;
 
-      // Tolerance of 0.01 guards against floating-point representation differences
-      const hasDiscrepancy = previousDayClosing !== null && Math.abs(opening - previousDayClosing) > 0.01;
-
-      if (hasDiscrepancy && !body.discrepancyComment?.trim()) {
-        const dateLabel = previousReadingDate
-          ? new Date(previousReadingDate).toLocaleDateString('en-NG', { dateStyle: 'medium' })
-          : 'previous session';
+      if (previousDayClosing === null) {
         return NextResponse.json({
-          error: `Opening reading differs from the last recorded closing of ${previousDayClosing} (${dateLabel}). A comment is required.`,
-          requiresComment: true,
-          previousDayClosing,
-        }, { status: 400 });
+          error: 'No previous closing found for this pump. An admin must set the opening reading before the shift can begin.',
+          requiresAdminSetup: true,
+        }, { status: 409 });
       }
+
+      // Opening is always equal to previous closing — supervisor cannot change it
+      const opening = previousDayClosing;
 
       const reading = await MeterReading.findOneAndUpdate(
         { stationId, pumpId, date: { $gte: startDate, $lte: endDate } },
@@ -169,44 +159,65 @@ export async function POST(request) {
             supervisorId: currentUser.id,
             supervisorName: currentUser.name,
             previousDayClosing,
-            discrepancyFlag: hasDiscrepancy,
-            discrepancyComment: body.discrepancyComment?.trim() || null,
+            discrepancyFlag: false,
+            discrepancyComment: null,
           },
         },
         { new: true, upsert: true, runValidators: false }
       );
 
-      // Notify admin AND manager about discrepancy
-      if (hasDiscrepancy) {
-        await notifyAdminMeterDiscrepancy({
-          stationId,
-          stationName: currentUser.stationName || 'Unknown Station',
-          supervisorName: currentUser.name,
-          pumpLabel,
-          opening,
-          previousClosing: previousDayClosing,
-          comment: body.discrepancyComment?.trim() || '',
-          readingId: reading._id,
-        });
+      return NextResponse.json({ reading }, { status: 201 });
+    }
 
-        // Also notify the station manager
-        const manager = await User.findOne({ stationId, role: ROLES.MANAGER, isActive: true });
-        if (manager) {
-          const { createNotification } = await import('@/lib/notifications');
-          await createNotification({
-            recipientId: manager._id,
-            stationId,
-            stationName: currentUser.stationName || 'Unknown Station',
-            title: 'Opening Meter Discrepancy',
-            message: `${currentUser.name} opened ${pumpLabel} with reading ${opening}, which differs from previous closing of ${previousDayClosing}. Comment: "${body.discrepancyComment?.trim()}"`,
-            type: 'meter_discrepancy',
-            relatedType: 'meter_reading',
-            relatedId: reading._id,
-          });
-        }
+    // ── FLAG-OPENING ACTION ─────────────────────────────────────────────────────
+    // Supervisor flags the auto-set opening as incorrect; admin will correct the value.
+    if (action === 'flag-opening') {
+      const flagComment = body.flagComment?.trim();
+      if (!flagComment) {
+        return NextResponse.json({ error: 'A comment is required when flagging the opening reading.' }, { status: 400 });
       }
 
-      return NextResponse.json({ reading }, { status: 201 });
+      const reading = await MeterReading.findOne({
+        stationId,
+        pumpId,
+        date: { $gte: startDate, $lte: endDate },
+      });
+
+      if (!reading) {
+        return NextResponse.json({ error: 'No opening reading found for this pump today.' }, { status: 404 });
+      }
+
+      reading.discrepancyFlag = true;
+      reading.discrepancyComment = flagComment;
+      await reading.save();
+
+      await notifyAdminMeterDiscrepancy({
+        stationId,
+        stationName: currentUser.stationName || 'Unknown Station',
+        supervisorName: currentUser.name,
+        pumpLabel: reading.pumpLabel,
+        opening: reading.opening,
+        previousClosing: reading.previousDayClosing,
+        comment: flagComment,
+        readingId: reading._id,
+      });
+
+      const manager = await User.findOne({ stationId, role: ROLES.MANAGER, isActive: true });
+      if (manager) {
+        const { createNotification } = await import('@/lib/notifications');
+        await createNotification({
+          recipientId: manager._id,
+          stationId,
+          stationName: currentUser.stationName || 'Unknown Station',
+          title: 'Opening Meter Reading Flagged',
+          message: `${currentUser.name} flagged the opening reading for ${reading.pumpLabel}: "${flagComment}"`,
+          type: 'meter_discrepancy',
+          relatedType: 'meter_reading',
+          relatedId: reading._id,
+        });
+      }
+
+      return NextResponse.json({ reading }, { status: 200 });
     }
 
     // ── CLOSING ACTION ──────────────────────────────────────────────────────────
@@ -237,7 +248,7 @@ export async function POST(request) {
       return NextResponse.json({ reading: existing }, { status: 200 });
     }
 
-    return NextResponse.json({ error: 'Invalid action. Use "opening" or "closing".' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid action. Use "opening", "flag-opening", or "closing".' }, { status: 400 });
 
   } catch (error) {
     console.error('Error saving meter reading:', error);
