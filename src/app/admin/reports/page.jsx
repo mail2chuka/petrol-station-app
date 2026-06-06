@@ -38,16 +38,86 @@ function Row({ label, value }) {
 }
 
 // ── Detail modal for clicking table rows ──────────────────────────────────────
-function DetailModal({ item, onClose }) {
+function EditField({ label, name, value, onChange, type = 'number' }) {
+  return (
+    <div className="flex justify-between items-center gap-4">
+      <label className="text-gray-500 text-sm shrink-0">{label}</label>
+      <input
+        type={type}
+        name={name}
+        value={value}
+        onChange={onChange}
+        step="0.01"
+        className="w-36 text-right text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:border-ecana-maroon"
+      />
+    </div>
+  );
+}
+
+function DetailModal({ item, onClose, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  const editableTypes = ['sale', 'reading', 'payment'];
+
+  function startEdit() {
+    const d = item.data;
+    if (item.type === 'sale') {
+      setForm({ liters: d.liters ?? '', cashAmount: d.cashAmount ?? 0, posAmount: d.posAmount ?? 0 });
+    } else if (item.type === 'reading') {
+      setForm({ opening: d.opening ?? '', closing: d.closing ?? '', rtt: d.rtt ?? 0 });
+    } else if (item.type === 'payment') {
+      setForm({ cashReceived: d.cashReceived ?? 0, posReceived: d.posReceived ?? 0 });
+    }
+    setSaveError('');
+    setEditing(true);
+  }
+
+  function handleChange(e) {
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setSaveError('');
+    const d = item.data;
+    try {
+      let url, body;
+      if (item.type === 'sale') {
+        url = `/api/sales/${d._id}`;
+        body = { liters: parseFloat(form.liters), cashAmount: parseFloat(form.cashAmount) || 0, posAmount: parseFloat(form.posAmount) || 0 };
+      } else if (item.type === 'reading') {
+        url = `/api/meter-readings/${d._id}`;
+        body = { opening: parseFloat(form.opening), closing: parseFloat(form.closing), rtt: parseFloat(form.rtt) || 0 };
+      } else if (item.type === 'payment') {
+        url = `/api/payments/${d._id}`;
+        body = { cashReceived: parseFloat(form.cashReceived) || 0, posReceived: parseFloat(form.posReceived) || 0 };
+      }
+      const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) { setSaveError(data.error || 'Failed to save'); return; }
+      setEditing(false);
+      onSaved();
+      onClose();
+    } catch {
+      setSaveError('Network error. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!item) return null;
 
+  const d = item.data;
   let title = '';
-  let body = null;
+  let viewBody = null;
+  let editBody = null;
 
   if (item.type === 'assignment') {
-    const d = item.data;
     title = `Pump: ${d.dispenserName}`;
-    body = (
+    viewBody = (
       <dl className="space-y-2 text-sm">
         <Row label="Fuel Type" value={d.fuelType} />
         <Row label="Supervisor" value={d.supervisorName || '—'} />
@@ -61,9 +131,8 @@ function DetailModal({ item, onClose }) {
   }
 
   if (item.type === 'sale') {
-    const d = item.data;
     title = `Sale — ${d.dispenserName}`;
-    body = (
+    viewBody = (
       <dl className="space-y-2 text-sm">
         <Row label="Pump" value={d.dispenserName} />
         <Row label="Fuel Type" value={d.fuelType} />
@@ -74,40 +143,53 @@ function DetailModal({ item, onClose }) {
         <Row label="Time Entered" value={fmtDate(d.createdAt)} />
       </dl>
     );
+    editBody = (
+      <div className="space-y-3 text-sm">
+        <Row label="Pump" value={d.dispenserName} />
+        <Row label="Supervisor" value={d.supervisorName} />
+        <Row label="Price / Liter" value={fmtN(d.pricePerLiter)} />
+        <div className="border-t pt-3 mt-2 space-y-2">
+          <EditField label="Liters Sold" name="liters" value={form.liters} onChange={handleChange} />
+          <EditField label="Cash Amount (₦)" name="cashAmount" value={form.cashAmount} onChange={handleChange} />
+          <EditField label="POS Amount (₦)" name="posAmount" value={form.posAmount} onChange={handleChange} />
+        </div>
+      </div>
+    );
   }
 
   if (item.type === 'reading') {
-    const d = item.data;
     title = `Meter Reading — ${d.pumpLabel || d.pumpId}`;
-    body = (
+    viewBody = (
       <dl className="space-y-2 text-sm">
         <Row label="Pump" value={d.pumpLabel || d.pumpId} />
         <Row label="Supervisor" value={d.supervisorName} />
         <Row label="Opening Reading" value={`${d.opening} L`} />
         <Row label="Closing Reading" value={d.closing != null ? `${d.closing} L` : '—'} />
         <Row label="RTT" value={`${d.rtt ?? 0} L`} />
-        <Row label="Net Sold" value={
-          d.closing != null
-            ? `${Math.max(0, d.closing - d.opening - (d.rtt || 0)).toFixed(2)} L`
-            : '—'
-        } />
-        {d.discrepancyFlag && (
-          <Row label="Discrepancy" value={
-            <span className="text-amber-700 font-medium">⚠ {d.discrepancyComment || 'Flagged'}</span>
-          } />
-        )}
+        <Row label="Net Sold" value={d.closing != null ? `${Math.max(0, d.closing - d.opening - (d.rtt || 0)).toFixed(2)} L` : '—'} />
+        {d.discrepancyFlag && <Row label="Discrepancy" value={<span className="text-amber-700 font-medium">⚠ {d.discrepancyComment || 'Flagged'}</span>} />}
         <Row label="Review Status" value={<Pill status={d.managerReviewStatus || 'pending'} />} />
         {d.managerReviewNote && <Row label="Review Note" value={d.managerReviewNote} />}
         {d.reviewedByManagerName && <Row label="Reviewed By" value={d.reviewedByManagerName} />}
         <Row label="Previous Closing" value={d.previousDayClosing != null ? `${d.previousDayClosing} L` : '—'} />
       </dl>
     );
+    editBody = (
+      <div className="space-y-3 text-sm">
+        <Row label="Pump" value={d.pumpLabel || d.pumpId} />
+        <Row label="Supervisor" value={d.supervisorName} />
+        <div className="border-t pt-3 mt-2 space-y-2">
+          <EditField label="Opening Reading" name="opening" value={form.opening} onChange={handleChange} />
+          <EditField label="Closing Reading" name="closing" value={form.closing} onChange={handleChange} />
+          <EditField label="RTT" name="rtt" value={form.rtt} onChange={handleChange} />
+        </div>
+      </div>
+    );
   }
 
   if (item.type === 'payment') {
-    const d = item.data;
     title = `Collection — ${d.dispenserName || d.supervisorName}`;
-    body = (
+    viewBody = (
       <dl className="space-y-2 text-sm">
         <Row label="Pump" value={d.dispenserName || '—'} />
         <Row label="Fuel Type" value={d.fuelType || '—'} />
@@ -133,12 +215,21 @@ function DetailModal({ item, onClose }) {
         <Row label="Time" value={fmtDate(d.createdAt)} />
       </dl>
     );
+    editBody = (
+      <div className="space-y-3 text-sm">
+        <Row label="Pump" value={d.dispenserName || '—'} />
+        <Row label="Supervisor" value={d.supervisorName || '—'} />
+        <div className="border-t pt-3 mt-2 space-y-2">
+          <EditField label="Cash Received (₦)" name="cashReceived" value={form.cashReceived} onChange={handleChange} />
+          <EditField label="POS Total (₦)" name="posReceived" value={form.posReceived} onChange={handleChange} />
+        </div>
+      </div>
+    );
   }
 
   if (item.type === 'deposit') {
-    const d = item.data;
     title = `Bank Deposit — ${fmtN(d.amount)}`;
-    body = (
+    viewBody = (
       <dl className="space-y-2 text-sm">
         <Row label="Amount" value={<span className="font-bold">{fmtN(d.amount)}</span>} />
         <Row label="Bank" value={d.bankName} />
@@ -153,19 +244,46 @@ function DetailModal({ item, onClose }) {
     );
   }
 
+  const canEdit = editableTypes.includes(item.type);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
       <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-start justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900 pr-4">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 shrink-0">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {canEdit && !editing && (
+              <button onClick={startEdit}
+                className="text-xs font-medium px-3 py-1 rounded-lg bg-ecana-maroon text-white hover:opacity-90">
+                Edit
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
-        {body}
+
+        {editing ? editBody : viewBody}
+
+        {editing && (
+          <div className="mt-5 space-y-2">
+            {saveError && <p className="text-xs text-red-600">{saveError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setEditing(false); setSaveError(''); }}
+                className="px-4 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={handleSave} disabled={saving}
+                className="px-4 py-1.5 text-sm rounded-lg bg-ecana-maroon text-white hover:opacity-90 disabled:opacity-50 font-medium">
+                {saving ? 'Saving…' : 'Save Correction'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -518,8 +636,8 @@ function SummaryListView({ stationId, onSelectDay }) {
 
   useEffect(() => { fetchRows(); }, [stationId]);
 
-  function fmtMoney(n) {
-    return `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  function fmtNum(n) {
+    return Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   return (
@@ -570,16 +688,16 @@ function SummaryListView({ stationId, onSelectDay }) {
                     <ClickRow key={i} onClick={() => onSelectDay(r.date)}>
                       <TD className="font-medium whitespace-nowrap">{r.date}</TD>
                       <TD>{r.product || '—'}</TD>
-                      <TD>{(r.openingStock ?? 0).toFixed(2)}</TD>
-                      <TD>{(r.stockIn ?? 0).toFixed(2)}</TD>
+                      <TD>{fmtNum(r.openingStock)}</TD>
+                      <TD>{fmtNum(r.stockIn)}</TD>
                       <TD className={tolerance < 0 ? 'text-red-600 font-medium' : tolerance > 0 ? 'text-green-600' : ''}>
-                        {tolerance.toFixed(2)}
+                        {fmtNum(tolerance)}
                       </TD>
-                      <TD>{(r.sales ?? 0).toFixed(2)}</TD>
-                      <TD>{Number(r.priceForDay || 0).toFixed(2)}</TD>
-                      <TD>{Number(salesAmount || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TD>
-                      <TD className={r.shortage > 0 ? 'text-red-600 font-medium' : ''}>{(r.shortage ?? 0).toFixed(2)}</TD>
-                      <TD>{(r.closingStock ?? 0).toFixed(2)}</TD>
+                      <TD>{fmtNum(r.sales)}</TD>
+                      <TD>{fmtNum(r.priceForDay)}</TD>
+                      <TD>{fmtNum(salesAmount)}</TD>
+                      <TD className={r.shortage > 0 ? 'text-red-600 font-medium' : ''}>{fmtNum(r.shortage)}</TD>
+                      <TD>{fmtNum(r.closingStock)}</TD>
                     </ClickRow>
                   );
                 })}
@@ -740,7 +858,7 @@ export default function AdminReportsPage() {
         </div>
       )}
 
-      <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />
+      <DetailModal item={detailItem} onClose={() => setDetailItem(null)} onSaved={() => fetchReport(detailDate)} />
     </div>
   );
 }

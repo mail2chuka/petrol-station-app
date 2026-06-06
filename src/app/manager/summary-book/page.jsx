@@ -55,23 +55,27 @@ function SummaryBookContent() {
 
   if (loading) return <Loading />;
 
+  function fmtNum(n) {
+    return Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   const columns = [
     { header: 'Date', field: 'date' },
     { header: 'Product', field: 'product' },
-    { header: 'Opening Stock (L)', render: (r) => (r.openingStock ?? 0).toFixed(2) },
-    { header: 'Stock In (L)', render: (r) => (r.stockIn ?? 0).toFixed(2) },
+    { header: 'Opening Stock (L)', render: (r) => fmtNum(r.openingStock) },
+    { header: 'Stock In (L)', render: (r) => fmtNum(r.stockIn) },
     {
       header: 'Tolerance (L)',
       render: (r) => {
         const tolerance = (r.sales ?? 0) - ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.closingStock ?? 0));
-        return tolerance.toFixed(2);
+        return fmtNum(tolerance);
       },
     },
-    { header: 'Sales (L)', render: (r) => (r.sales ?? 0).toFixed(2) },
-    { header: 'Price/L (₦)', render: (r) => (r.priceForDay ?? 0).toFixed(2) },
-    { header: 'Sales Amount (₦)', render: (r) => ((r.priceForDay ?? 0) * (r.sales ?? 0)).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
-    { header: 'Shortage Recorded (L)', render: (r) => (r.shortage ?? 0).toFixed(2) },
-    { header: 'Closing Stock (L)', render: (r) => (r.closingStock ?? 0).toFixed(2) },
+    { header: 'Sales (L)', render: (r) => fmtNum(r.sales) },
+    { header: 'Price/L (₦)', render: (r) => fmtNum(r.priceForDay) },
+    { header: 'Sales Amount (₦)', render: (r) => fmtNum((r.priceForDay ?? 0) * (r.sales ?? 0)) },
+    { header: 'Shortage Recorded (L)', render: (r) => fmtNum(r.shortage) },
+    { header: 'Closing Stock (L)', render: (r) => fmtNum(r.closingStock) },
   ];
 
   return (

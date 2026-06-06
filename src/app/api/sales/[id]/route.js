@@ -12,9 +12,9 @@ export async function PATCH(request, { params }) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    if (currentUser.role !== ROLES.SUPERVISOR) {
+    if (![ROLES.SUPERVISOR, ROLES.ADMIN].includes(currentUser.role)) {
       return NextResponse.json(
-        { error: 'Only supervisors can edit sales entries' },
+        { error: 'Only supervisors or admins can edit sales entries' },
         { status: 403 }
       );
     }
@@ -39,7 +39,7 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Sales entry not found' }, { status: 404 });
     }
 
-    if (entry.supervisorId.toString() !== currentUser.id) {
+    if (currentUser.role !== ROLES.ADMIN && entry.supervisorId.toString() !== currentUser.id) {
       await session.abortTransaction();
       return NextResponse.json(
         { error: 'You can only edit your own sales entries' },
