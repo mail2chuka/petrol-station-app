@@ -127,9 +127,9 @@ export async function POST(request, { params }) {
     // Group sales by supervisor
     const salesBySupervisor = {};
     for (const sale of salesEntries) {
-      const sid = sale.supervisorId.toString();
+      const sid = sale.supervisorId?.toString() ?? 'unknown';
       if (!salesBySupervisor[sid]) {
-        salesBySupervisor[sid] = { name: sale.supervisorName, expectedTotal: 0 };
+        salesBySupervisor[sid] = { name: sale.supervisorName || 'Unknown', expectedTotal: 0 };
       }
       salesBySupervisor[sid].expectedTotal += sale.totalAmount || 0;
     }
@@ -137,7 +137,7 @@ export async function POST(request, { params }) {
     // Group payments by supervisor
     const paymentsBySupervisor = {};
     for (const p of paymentRecords) {
-      const sid = p.supervisorId.toString();
+      const sid = p.supervisorId?.toString() ?? 'unknown';
       if (!paymentsBySupervisor[sid]) paymentsBySupervisor[sid] = 0;
       paymentsBySupervisor[sid] += p.totalReceived || 0;
     }
