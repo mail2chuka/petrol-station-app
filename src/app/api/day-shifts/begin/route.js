@@ -5,6 +5,7 @@ import DayShift from '@/models/DayShift';
 import Station from '@/models/Station';
 import PriceHistory from '@/models/PriceHistory';
 import PumpOpening from '@/models/PumpOpening';
+import TankStockEntry from '@/models/TankStockEntry';
 import { requireAuth } from '@/lib/auth';
 import { beginDaySchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
@@ -198,6 +199,60 @@ export async function POST(request) {
       },
       { new: true, upsert: true, session }
     );
+
+    // Auto-create opening TankStockEntry for each active tank,
+    // carrying forward the previous day's closing stock as today's opening.
+    const activeTanks = (station.tanks || []).filter(t => t.isActive);
+    const dayDateUTC = new Date(validatedData.date + 'T00:00:00.000Z');
+
+    for (const tank of activeTanks) {
+      const tankIdStr = tank._id.toString();
+
+      // Find the most recent closing entry for this tank before today
+      const prevClosing = await TankStockEntry.findOne({
+        stationId: validatedData.stationId,
+        tankId: tankIdStr,
+        period: 'closing',
+        date: { $lt: dayDateUTC },
+      }).sort({ date: -1 }).session(session);
+
+      // Prefer manager-confirmed value, fall back to measured, then station.currentStock
+      let openingValue = 0;
+      if (prevClosing) {
+        openingValue = prevClosing.closingStockManager ?? prevClosing.closingStockMeasured ?? 0;
+      } else {
+        const cs = station.currentStock;
+        openingValue = cs instanceof Map
+          ? (cs.get(tank.product) ?? 0)
+          : (cs?.[tank.product] ?? 0);
+      }
+
+      // Upsert — don't overwrite if the manager already entered one today
+      await TankStockEntry.findOneAndUpdate(
+        {
+          stationId: validatedData.stationId,
+          tankId: tankIdStr,
+          date: { $gte: dayDateUTC, $lte: new Date(validatedData.date + 'T23:59:59.999Z') },
+          period: 'opening',
+        },
+        {
+          $setOnInsert: {
+            stationId: validatedData.stationId,
+            stationName: station.name,
+            tankId: tankIdStr,
+            tankLabel: tank.label,
+            product: tank.product,
+            date: dayDateUTC,
+            period: 'opening',
+            openingStock: openingValue,
+            closingStockMeasured: openingValue,
+            recordedBy: currentUser.id,
+            recordedByName: currentUser.name,
+          },
+        },
+        { new: true, upsert: true, session }
+      );
+    }
 
     await session.commitTransaction();
 

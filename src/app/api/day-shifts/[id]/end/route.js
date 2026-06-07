@@ -124,34 +124,38 @@ export async function POST(request, { params }) {
       PaymentRecord.find({ dayShiftId: dayShift._id }).session(session),
     ]);
 
-    // Group sales by supervisor
-    const salesBySupervisor = {};
+    // Reconcile by dispenserId (always set, never null).
+    // Use expectedAmount (liters × price) — totalAmount is 0 because supervisors
+    // only enter liters; the cashier records cash/POS separately.
+    const salesByDispenser = {};
     for (const sale of salesEntries) {
-      const sid = sale.supervisorId?.toString() ?? 'unknown';
-      if (!salesBySupervisor[sid]) {
-        salesBySupervisor[sid] = { name: sale.supervisorName || 'Unknown', expectedTotal: 0 };
+      const did = sale.dispenserId;
+      if (!salesByDispenser[did]) {
+        salesByDispenser[did] = {
+          label: `${sale.dispenserName || did} / ${sale.supervisorName || 'unknown supervisor'}`,
+          expectedTotal: 0,
+        };
       }
-      salesBySupervisor[sid].expectedTotal += sale.totalAmount || 0;
+      salesByDispenser[did].expectedTotal += sale.expectedAmount || 0;
     }
 
-    // Group payments by supervisor
-    const paymentsBySupervisor = {};
+    const paymentsByDispenser = {};
     for (const p of paymentRecords) {
-      const sid = p.supervisorId?.toString() ?? 'unknown';
-      if (!paymentsBySupervisor[sid]) paymentsBySupervisor[sid] = 0;
-      paymentsBySupervisor[sid] += p.totalReceived || 0;
+      const did = p.dispenserId;
+      if (!paymentsByDispenser[did]) paymentsByDispenser[did] = 0;
+      paymentsByDispenser[did] += p.totalReceived || 0;
     }
 
-    // Check: every supervisor with sales must have a payment record
+    // Check: every pump with sales must have a cashier payment collection
     const missingPayments = [];
     const mismatchedPayments = [];
-    for (const [sid, info] of Object.entries(salesBySupervisor)) {
-      const collected = paymentsBySupervisor[sid] ?? 0;
+    for (const [did, info] of Object.entries(salesByDispenser)) {
+      const collected = paymentsByDispenser[did] ?? 0;
       if (collected === 0) {
-        missingPayments.push(info.name);
+        missingPayments.push(info.label);
       } else if (Math.abs(collected - info.expectedTotal) > 0.01) {
         mismatchedPayments.push(
-          `${info.name}: expected ₦${info.expectedTotal.toLocaleString('en-NG', { minimumFractionDigits: 2 })} but cashier collected ₦${collected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
+          `${info.label}: expected ₦${info.expectedTotal.toLocaleString('en-NG', { minimumFractionDigits: 2 })} but collected ₦${collected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
         );
       }
     }

@@ -62,10 +62,12 @@ export async function GET(request) {
       ]),
     ]);
 
-    // Build a reliable pumpId → fuelType map from the station's dispensers
-    const pumpFuelTypeMap = {};
+    // Build pump maps from station dispensers
+    const pumpFuelTypeMap = {};   // dispenserId → fuelType
+    const pumpTankMap = {};       // dispenserId → tankId  (for per-tank sales attribution)
     for (const d of (station?.dispensers || [])) {
       pumpFuelTypeMap[d.dispenserId] = d.fuelType;
+      if (d.tankId) pumpTankMap[d.dispenserId] = d.tankId;
     }
 
     const rows = [];
@@ -89,20 +91,26 @@ export async function GET(request) {
         (r) => new Date(r.date).toISOString().split('T')[0] === dayKey
       );
 
-      const salesByFuel = daySales.reduce(
-        (acc, item) => {
-          acc[item.fuelType] = (acc[item.fuelType] || 0) + item.liters;
-          return acc;
-        },
-        {}
-      );
+      // Attribute sales to specific tanks using pump→tank mapping.
+      // For pumps not mapped to a tank, fall back to fuel-type grouping.
+      const salesByTank = {};        // tankId → liters
+      const salesByFuelFallback = {}; // fuelType → liters (for unmapped pumps)
+      for (const sale of daySales) {
+        const tankId = pumpTankMap[sale.dispenserId];
+        if (tankId) {
+          salesByTank[tankId] = (salesByTank[tankId] || 0) + sale.liters;
+        } else {
+          const ft = sale.fuelType || pumpFuelTypeMap[sale.dispenserId];
+          if (ft) salesByFuelFallback[ft] = (salesByFuelFallback[ft] || 0) + sale.liters;
+        }
+      }
 
-      // Aggregate opening stock, stock in, and closing stock by product across all tanks
+      // Aggregate opening stock, stock in, closing stock, and sales by product across all tanks
       const productAgg = {};
       for (const tank of dayTankEntries) {
         const fuelType = tank.product;
         if (!productAgg[fuelType]) {
-          productAgg[fuelType] = { openingStock: 0, stockIn: 0, closingStock: 0 };
+          productAgg[fuelType] = { openingStock: 0, stockIn: 0, closingStock: 0, sales: 0 };
         }
         productAgg[fuelType].openingStock += tank.openingStock || 0;
         productAgg[fuelType].stockIn += dayStockIns
@@ -111,13 +119,19 @@ export async function GET(request) {
           .reduce((sum, d) => sum + d.litres, 0);
         // closingStockManager preferred; fall back to measured
         productAgg[fuelType].closingStock += tank.closingStockManager ?? tank.closingStockMeasured ?? 0;
+        // Sales attributed via pump→tank mapping for this specific tank
+        productAgg[fuelType].sales += salesByTank[tank.tankId] || 0;
+      }
+      // Add fallback sales for pumps not mapped to a tank
+      for (const [ft, liters] of Object.entries(salesByFuelFallback)) {
+        if (productAgg[ft]) productAgg[ft].sales += liters;
       }
 
       const tolerancePercent = station?.tolerancePercent ?? 0;
 
       for (const [fuelType, agg] of Object.entries(productAgg)) {
         // Sales liters from SalesEntry are already NET (supervisor enters closing-opening-rtt).
-        const salesLitres = salesByFuel[fuelType] || 0;
+        const salesLitres = agg.sales;
         const priceForDay = dayShift.pricesAtStart?.[fuelType] || 0;
         const totalAmount = priceForDay * salesLitres;
         const expectedClosing = agg.openingStock + agg.stockIn - salesLitres;
