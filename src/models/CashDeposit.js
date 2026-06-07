@@ -17,6 +17,12 @@ const cashDepositSchema = new mongoose.Schema(
       required: [true, 'Date is required'],
       index: true,
     },
+    // forDate = the operating day this cash belongs to (may differ from date recorded)
+    forDate: {
+      type: Date,
+      index: true,
+      default: null,
+    },
     amount: {
       type: Number,
       required: [true, 'Amount is required'],
@@ -81,6 +87,7 @@ const cashDepositSchema = new mongoose.Schema(
 
 // Indexes for fast queries
 cashDepositSchema.index({ stationId: 1, date: -1 });
+cashDepositSchema.index({ stationId: 1, forDate: -1 });
 cashDepositSchema.index({ stationId: 1, status: 1, createdAt: -1 });
 cashDepositSchema.index({ initiatedByCashierId: 1, date: -1 });
 

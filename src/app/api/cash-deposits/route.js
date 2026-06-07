@@ -11,6 +11,7 @@ import { notifyAdminDepositSubmitted } from '@/lib/notifications';
 const createCashDepositSchema = z.object({
   stationId: z.string().min(1),
   date: z.string().min(1),
+  forDate: z.string().min(1), // the operating day this cash belongs to
   amount: z.number().positive(),
   bankName: z.string().min(1),
   bankBranch: z.string().optional(),
@@ -28,26 +29,29 @@ export async function GET(request) {
     const stationId = searchParams.get('stationId');
     const status = searchParams.get('status');
     const dateParam = searchParams.get('date');
+    const forDateParam = searchParams.get('forDate'); // operating day
     const monthParam = searchParams.get('month'); // YYYY-MM
     const limit = Math.min(Number(searchParams.get('limit') || 100), 500);
 
     const query = {};
 
-    if (status) {
-      query.status = status;
-    }
+    if (status) query.status = status;
 
-    // Use explicit UTC date boundaries to avoid timezone-related mismatches
-    if (monthParam) {
+    // forDate filter takes precedence over date for operating-day queries
+    if (forDateParam) {
+      query.forDate = {
+        $gte: new Date(forDateParam + 'T00:00:00.000Z'),
+        $lte: new Date(forDateParam + 'T23:59:59.999Z'),
+      };
+    } else if (monthParam) {
       const [y, m] = monthParam.split('-').map(Number);
-      const lastDay = new Date(Date.UTC(y, m, 0)); // day-0 of next month = last day of this month
+      const lastDay = new Date(Date.UTC(y, m, 0));
       lastDay.setUTCHours(23, 59, 59, 999);
       query.date = {
         $gte: new Date(Date.UTC(y, m - 1, 1)),
         $lte: lastDay,
       };
     } else if (dateParam) {
-      // Parse as UTC date to match how deposits are stored (new Date('YYYY-MM-DD') = UTC midnight)
       query.date = {
         $gte: new Date(dateParam + 'T00:00:00.000Z'),
         $lte: new Date(dateParam + 'T23:59:59.999Z'),
@@ -109,7 +113,8 @@ export async function POST(request) {
     const cashDeposit = await CashDeposit.create({
       stationId: payload.stationId,
       stationName: currentUser.stationName || stationUser?.stationName || 'Unknown Station',
-      date: new Date(payload.date + 'T00:00:00.000Z'), // store as UTC midnight to match GET filter
+      date: new Date(payload.date + 'T00:00:00.000Z'),
+      forDate: new Date(payload.forDate + 'T00:00:00.000Z'),
       amount: payload.amount,
       bankName: payload.bankName,
       bankBranch: payload.bankBranch || '',
