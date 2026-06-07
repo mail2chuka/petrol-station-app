@@ -111,7 +111,7 @@ function SummaryBookContent() {
                 {visibleRows.map((r, i) => {
                   const tolerance = (r.sales ?? 0) - ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.closingStock ?? 0));
                   const expTol = r.expectedTolerance ?? 0;
-                  const isFlagged = expTol > 0 && Math.abs(tolerance) > expTol * 1.2;
+                  const isFlagged = expTol > 0 && tolerance < expTol * 0.80;
                   return (
                     <tr key={i} className="hover:bg-gray-50">
                       <td className="px-3 py-2.5 font-medium text-gray-900 whitespace-nowrap">{new Date(r.date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}</td>

@@ -699,7 +699,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                 {visibleRows.map((r, i) => {
                   const tolerance = (r.sales ?? 0) - ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.closingStock ?? 0));
                   const expTol = r.expectedTolerance ?? 0;
-                  const isFlagged = expTol > 0 && Math.abs(tolerance) > expTol * 1.2;
+                  const isFlagged = expTol > 0 && tolerance < expTol * 0.80;
                   const salesAmount = (r.priceForDay ?? 0) * (r.sales ?? 0);
                   return (
                     <ClickRow key={i} onClick={() => onSelectDay(r.date)}>
