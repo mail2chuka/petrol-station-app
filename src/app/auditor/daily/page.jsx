@@ -482,7 +482,7 @@ function DailyReportContent() {
               <Card title="Audit Comment" className="print:hidden">
                 <div className="space-y-3">
                   <p className="text-xs text-gray-500">
-                    Leave a comment for {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}{stationName ? ` — ${stationName}` : ''}.
+                    Leave a comment for {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}{stationName ? ` — ${stationName}` : ''}.
                   </p>
                   <textarea
                     className="w-full min-h-[100px] rounded-xl border-2 border-slate-200 p-3 text-sm focus:outline-none focus:border-ecana-maroon focus:ring-4 focus:ring-ecana-maroon/10 transition-all resize-none"

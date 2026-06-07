@@ -28,7 +28,7 @@ function monthLabel(m) {
 
 function fmtDate(dateVal) {
   return new Date(dateVal).toLocaleDateString('en-NG', {
-    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+    day: 'numeric', month: 'long', year: 'numeric',
   });
 }
 

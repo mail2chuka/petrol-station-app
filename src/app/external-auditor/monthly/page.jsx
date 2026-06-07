@@ -209,7 +209,7 @@ function MonthlyReportContent() {
                     {rows.map(row => (
                       <tr key={row.date} className="border-b border-gray-100 last:border-0">
                         <td className="py-2.5 pr-4 font-medium text-gray-800">
-                          {new Date(row.date + 'T12:00:00').toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          {new Date(row.date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}
                         </td>
                         <td className="py-2.5 pr-4 text-right text-gray-700">{fmt(row.pmsLiters)}</td>
                         <td className="py-2.5 pr-4 text-right text-gray-700">{fmt(row.agoLiters)}</td>

@@ -620,6 +620,7 @@ function SummaryListView({ stationId, onSelectDay }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [productFilter, setProductFilter] = useState('');
 
   const fetchRows = useCallback(async () => {
     if (!stationId) return;
@@ -643,6 +644,8 @@ function SummaryListView({ stationId, onSelectDay }) {
     return Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
+  const visibleRows = productFilter ? rows.filter(r => r.product === productFilter) : rows;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -656,6 +659,14 @@ function SummaryListView({ stationId, onSelectDay }) {
           <input type="date" value={to} min={from} max={today} onChange={e => setTo(e.target.value)}
             className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-ecana-maroon" />
         </div>
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-gray-500 whitespace-nowrap">Product</label>
+          <select value={productFilter} onChange={e => setProductFilter(e.target.value)}
+            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-ecana-maroon bg-white">
+            <option value="">All</option>
+            {['PMS','AGO','LPG','DPK'].map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
         <button onClick={fetchRows} disabled={loading}
           className="px-4 py-1.5 text-sm bg-ecana-maroon text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium">
           {loading ? 'Loading…' : 'Load'}
@@ -665,7 +676,7 @@ function SummaryListView({ stationId, onSelectDay }) {
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
       {loading && <div className="flex justify-center py-10"><div className="spinner" /></div>}
 
-      {!loading && rows.length > 0 && (
+      {!loading && visibleRows.length > 0 && (
         <div className="card-modern overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -676,6 +687,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <TH>Opening Stock (L)</TH>
                   <TH>Stock In (L)</TH>
                   <TH>Tolerance (L)</TH>
+                  <TH>Exp. Tolerance (L)</TH>
                   <TH>Sales (L)</TH>
                   <TH>Price/L (₦)</TH>
                   <TH>Sales Amount (₦)</TH>
@@ -684,18 +696,24 @@ function SummaryListView({ stationId, onSelectDay }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {rows.map((r, i) => {
+                {visibleRows.map((r, i) => {
                   const tolerance = (r.sales ?? 0) - ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.closingStock ?? 0));
+                  const expTol = r.expectedTolerance ?? 0;
+                  const isFlagged = expTol > 0 && Math.abs(tolerance) > expTol * 1.2;
                   const salesAmount = (r.priceForDay ?? 0) * (r.sales ?? 0);
                   return (
                     <ClickRow key={i} onClick={() => onSelectDay(r.date)}>
-                      <TD className="font-medium whitespace-nowrap">{r.date}</TD>
+                      <TD className="font-medium whitespace-nowrap">{new Date(r.date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}</TD>
                       <TD>{r.product || '—'}</TD>
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
                       <TD className={tolerance < 0 ? 'text-red-600 font-medium' : tolerance > 0 ? 'text-green-600' : ''}>
                         {fmtNum(tolerance)}
                       </TD>
+                      <td className={`px-4 py-2.5 text-sm text-gray-700 ${isFlagged ? 'bg-amber-50 text-amber-800 font-semibold' : ''}`}>
+                        {fmtNum(expTol)}
+                        {isFlagged && <span className="ml-1 text-amber-600">⚠</span>}
+                      </td>
                       <TD>{fmtNum(r.sales)}</TD>
                       <TD>{fmtNum(r.priceForDay)}</TD>
                       <TD>{fmtNum(salesAmount)}</TD>

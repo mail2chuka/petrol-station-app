@@ -33,7 +33,8 @@ export async function GET(request) {
       return NextResponse.json({ error: 'stationId and from are required' }, { status: 400 });
     }
 
-    if (currentUser.role !== ROLES.ADMIN && currentUser.stationId !== stationId) {
+    const auditorRoles = [ROLES.DAILY_AUDITOR, ROLES.EXTERNAL_AUDITOR];
+    if (currentUser.role !== ROLES.ADMIN && !auditorRoles.includes(currentUser.role) && currentUser.stationId !== stationId) {
       return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
     }
 
@@ -112,6 +113,8 @@ export async function GET(request) {
         productAgg[fuelType].closingStock += tank.closingStockManager ?? tank.closingStockMeasured ?? 0;
       }
 
+      const tolerancePercent = station?.tolerancePercent ?? 0;
+
       for (const [fuelType, agg] of Object.entries(productAgg)) {
         // Sales liters from SalesEntry are already NET (supervisor enters closing-opening-rtt).
         const salesLitres = salesByFuel[fuelType] || 0;
@@ -120,6 +123,8 @@ export async function GET(request) {
         const expectedClosing = agg.openingStock + agg.stockIn - salesLitres;
         const shortage = Math.max(0, expectedClosing - agg.closingStock);
         const overage = Math.max(0, agg.closingStock - expectedClosing);
+        // expectedTolerance = total dispensed × tolerance %
+        const expectedTolerance = salesLitres * (tolerancePercent / 100);
 
         rows.push({
           date: dayKey,
@@ -133,6 +138,8 @@ export async function GET(request) {
           totalAmount,
           shortage,
           closingStock: agg.closingStock,
+          expectedTolerance,
+          tolerancePercent,
         });
       }
     }

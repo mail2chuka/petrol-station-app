@@ -115,7 +115,7 @@ export default function SupervisorReportPage() {
                       {ri === 0 ? (
                         <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap align-top"
                           rowSpan={dateRows.length}>
-                          {new Date(date + 'T12:00:00').toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          {new Date(date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}
                         </td>
                       ) : null}
                       <td className="px-4 py-2.5 font-medium text-gray-800">{r.pumpLabel}</td>

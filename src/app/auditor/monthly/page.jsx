@@ -202,7 +202,7 @@ export default function MonthlyReportPage() {
                   <tbody>
                     {rows.map((row) => (
                       <tr key={row.date} className="border-b border-slate-100 last:border-0">
-                        <td className="py-2 pr-4 font-medium">{new Date(row.date).toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric' })}</td>
+                        <td className="py-2 pr-4 font-medium whitespace-nowrap">{new Date(row.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
                         <td className="py-2 pr-4">{fmt(row.pmsLiters)}</td>
                         <td className="py-2 pr-4">{fmt(row.agoLiters)}</td>
                         <td className="py-2 pr-4">{fmt(row.expected)}</td>
