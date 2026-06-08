@@ -748,7 +748,10 @@ export default function StationsPage() {
                           tanks[index].product = e.target.value;
                           return { ...p, tanks };
                         })}
-                        options={[{ value: 'PMS', label: 'PMS (Petrol)' }, { value: 'AGO', label: 'AGO (Diesel)' }, { value: 'DPK', label: 'DPK (Kerosene)' }, { value: 'LPG', label: 'LPG (Gas)' }]}
+                        options={(mappingStation?.availableProducts || ALL_FUEL_TYPES).map(p => ({
+                          value: p,
+                          label: p === 'PMS' ? 'PMS (Petrol)' : p === 'AGO' ? 'AGO (Diesel)' : p === 'DPK' ? 'DPK (Kerosene)' : 'LPG (Gas)',
+                        }))}
                       />
                       <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
                         <Input
@@ -766,7 +769,7 @@ export default function StationsPage() {
                       </div>
                     </div>
                   ))}
-                  <Button type="button" variant="secondary" onClick={() => setMappingForm((p) => ({ ...p, tanks: [...p.tanks, { _id: '', label: '', product: 'PMS', capacity: '', isActive: true }] }))}>
+                  <Button type="button" variant="secondary" onClick={() => setMappingForm((p) => ({ ...p, tanks: [...p.tanks, { _id: '', label: '', product: (mappingStation?.availableProducts?.[0] || 'PMS'), capacity: '', isActive: true }] }))}>
                     + Add Extra Tank
                   </Button>
                 </div>
@@ -805,7 +808,10 @@ export default function StationsPage() {
                           dispensers[index].fuelType = e.target.value;
                           return { ...p, dispensers };
                         })}
-                        options={[{ value: 'PMS', label: 'PMS (Petrol)' }, { value: 'AGO', label: 'AGO (Diesel)' }, { value: 'DPK', label: 'DPK (Kerosene)' }, { value: 'LPG', label: 'LPG (Gas)' }]}
+                        options={(mappingStation?.availableProducts || ALL_FUEL_TYPES).map(p => ({
+                          value: p,
+                          label: p === 'PMS' ? 'PMS (Petrol)' : p === 'AGO' ? 'AGO (Diesel)' : p === 'DPK' ? 'DPK (Kerosene)' : 'LPG (Gas)',
+                        }))}
                         className="min-w-0"
                       />
                       <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end lg:col-span-4">
@@ -827,7 +833,7 @@ export default function StationsPage() {
                       </div>
                     </div>
                   ))}
-                  <Button type="button" variant="secondary" onClick={() => setMappingForm((p) => ({ ...p, dispensers: [...p.dispensers, { dispenserId: '', name: '', fuelType: 'PMS', tankId: '', isActive: true }] }))}>
+                  <Button type="button" variant="secondary" onClick={() => setMappingForm((p) => ({ ...p, dispensers: [...p.dispensers, { dispenserId: '', name: '', fuelType: (mappingStation?.availableProducts?.[0] || 'PMS'), tankId: '', isActive: true }] }))}>
                     + Add Extra Pump
                   </Button>
                 </div>
