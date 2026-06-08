@@ -239,7 +239,7 @@ function EndDayPageContent() {
   const totalExpected = salesByFuel.PMS.amount + salesByFuel.AGO.amount;
   const discrepancy = totalCollected - totalExpected;
 
-  // Payment records — separate accountant reconciliation
+  // Payment records — cashier collections per pump
   const totalCash = paymentRecords.reduce((sum, p) => sum + p.cashReceived, 0);
   const totalPos = paymentRecords.reduce((sum, p) => sum + p.posReceived, 0);
 

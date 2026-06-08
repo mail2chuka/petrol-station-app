@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import PaymentRecord from '@/models/PaymentRecord';
 import DayShift from '@/models/DayShift';
+import SalesEntry from '@/models/SalesEntry';
 import { requireAuth } from '@/lib/auth';
 import { paymentRecordSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
@@ -80,6 +81,21 @@ export async function POST(request) {
     const posReceived = posEntries.reduce((s, e) => s + e.amount, 0);
     const totalReceived = validatedData.cashReceived + posReceived;
 
+    // If supervisor not yet assigned to this pump (no meter reading submitted yet),
+    // fall back to the SalesEntry to get who actually sold on this pump today.
+    let supervisorId = assignment.supervisorId;
+    let supervisorName = assignment.supervisorName;
+    if (!supervisorId) {
+      const salesEntry = await SalesEntry.findOne({
+        dayShiftId: dayShift._id,
+        dispenserId: validatedData.dispenserId,
+      }).session(session);
+      if (salesEntry) {
+        supervisorId = salesEntry.supervisorId;
+        supervisorName = salesEntry.supervisorName;
+      }
+    }
+
     // Create payment record
     const paymentRecord = await PaymentRecord.create([{
       dayShiftId: dayShift._id,
@@ -89,8 +105,8 @@ export async function POST(request) {
       dispenserId: validatedData.dispenserId,
       dispenserName: assignment.dispenserName,
       fuelType: assignment.fuelType,
-      supervisorId: assignment.supervisorId,
-      supervisorName: assignment.supervisorName,
+      supervisorId,
+      supervisorName,
       cashReceived: validatedData.cashReceived,
       posEntries,
       posReceived,

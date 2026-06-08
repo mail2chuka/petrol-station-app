@@ -146,17 +146,13 @@ export async function POST(request, { params }) {
       paymentsByDispenser[did] += p.totalReceived || 0;
     }
 
-    // Check: every pump with sales must have a cashier payment collection
+    // Check: every pump with sales must have at least one cashier payment collection.
+    // Amount mismatches are allowed — they are captured in the day summary for reporting.
     const missingPayments = [];
-    const mismatchedPayments = [];
     for (const [did, info] of Object.entries(salesByDispenser)) {
       const collected = paymentsByDispenser[did] ?? 0;
       if (collected === 0) {
         missingPayments.push(info.label);
-      } else if (Math.abs(collected - info.expectedTotal) > 0.01) {
-        mismatchedPayments.push(
-          `${info.label}: expected ₦${info.expectedTotal.toLocaleString('en-NG', { minimumFractionDigits: 2 })} but collected ₦${collected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
-        );
       }
     }
 
@@ -164,14 +160,6 @@ export async function POST(request, { params }) {
       await session.abortTransaction();
       return NextResponse.json(
         { error: `Cashier has not recorded payment collection from: ${missingPayments.join(', ')}. The day cannot be ended until all supervisor payments are collected.` },
-        { status: 400 }
-      );
-    }
-
-    if (mismatchedPayments.length > 0) {
-      await session.abortTransaction();
-      return NextResponse.json(
-        { error: `Payment collected does not match supervisor sales:\n${mismatchedPayments.join('\n')}\nResolve the discrepancy before ending the day.` },
         { status: 400 }
       );
     }

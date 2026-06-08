@@ -18,7 +18,6 @@ function fmt(n) {
 export default function CashierDashboard() {
   const { data: session } = useSession();
   const [activeDayShift, setActiveDayShift] = useState(null);
-  const [supervisors, setSupervisors] = useState([]);
   const [payments, setPayments] = useState([]);
   const [deposits, setDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,19 +28,17 @@ export default function CashierDashboard() {
     if (!stationId) return;
     setLoading(true);
     try {
-      const [shiftRes, usersRes, paymentsRes, depositsRes] = await Promise.all([
+      const [shiftRes, paymentsRes, depositsRes] = await Promise.all([
         fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
-        fetch(`/api/users?role=supervisor&stationId=${stationId}`),
         fetch(`/api/payments?stationId=${stationId}&date=${today()}`),
         fetch(`/api/cash-deposits?stationId=${stationId}&date=${today()}`),
       ]);
 
-      const [shiftData, usersData, paymentsData, depositsData] = await Promise.all([
-        shiftRes.json(), usersRes.json(), paymentsRes.json(), depositsRes.json(),
+      const [shiftData, paymentsData, depositsData] = await Promise.all([
+        shiftRes.json(), paymentsRes.json(), depositsRes.json(),
       ]);
 
       setActiveDayShift((shiftData.dayShifts || [])[0] || null);
-      setSupervisors(usersData.users || []);
       setPayments(paymentsData.paymentRecords || []);
       setDeposits(depositsData.cashDeposits || []);
     } catch (err) {
@@ -55,15 +52,17 @@ export default function CashierDashboard() {
     if (stationId) loadData();
   }, [session]);
 
+  // Track collection per pump (dispenserId), not per supervisor
   const collectedMap = {};
   for (const p of payments) {
-    const sid = p.supervisorId?.toString();
-    if (!collectedMap[sid]) collectedMap[sid] = [];
-    collectedMap[sid].push(p);
+    const did = p.dispenserId;
+    if (!collectedMap[did]) collectedMap[did] = [];
+    collectedMap[did].push(p);
   }
 
-  const uncollectedSups = supervisors.filter(s => !collectedMap[s._id]?.length);
-  const allCollected = supervisors.length > 0 && uncollectedSups.length === 0;
+  const dispensers = activeDayShift?.dispenserAssignments || [];
+  const uncollectedDisps = dispensers.filter(d => !collectedMap[d.dispenserId]?.length);
+  const allCollected = dispensers.length > 0 && uncollectedDisps.length === 0;
 
   const totalCash = payments.reduce((s, p) => s + (p.cashReceived || 0), 0);
   const totalPos = payments.reduce((s, p) => s + (p.posReceived || 0), 0);
@@ -98,8 +97,8 @@ export default function CashierDashboard() {
             <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-4 rounded-xl flex items-center gap-3">
               <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" />
               <div>
-                <p className="font-semibold">All Supervisors Collected — Day can be closed</p>
-                <p className="text-sm mt-0.5">All {supervisors.length} supervisor{supervisors.length !== 1 ? 's' : ''} have been collected from today.</p>
+                <p className="font-semibold">All Pumps Collected — Day can be closed</p>
+                <p className="text-sm mt-0.5">All {dispensers.length} pump{dispensers.length !== 1 ? 's' : ''} have been collected from today.</p>
               </div>
             </div>
           )}
@@ -123,22 +122,27 @@ export default function CashierDashboard() {
             </div>
           </div>
 
-          {activeDayShift && supervisors.length > 0 && (
-            <Card title="Supervisor Collection Status">
+          {activeDayShift && dispensers.length > 0 && (
+            <Card title="Pump Collection Status">
               <div className="divide-y divide-gray-100">
-                {supervisors.map(sup => {
-                  const records = collectedMap[sup._id] || [];
+                {dispensers.map(disp => {
+                  const records = collectedMap[disp.dispenserId] || [];
                   const done = records.length > 0;
-                  const supTotal = records.reduce((s, p) => s + (p.totalReceived || 0), 0);
+                  const dispTotal = records.reduce((s, p) => s + (p.totalReceived || 0), 0);
                   return (
-                    <div key={sup._id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
+                    <div key={disp.dispenserId} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
                       <div className="flex items-center gap-3">
                         <span className={`w-2 h-2 rounded-full shrink-0 ${done ? 'bg-green-500' : 'bg-amber-400'}`} />
-                        <p className="font-medium text-gray-800 text-sm">{sup.name}</p>
+                        <div>
+                          <p className="font-medium text-gray-800 text-sm">{disp.dispenserName}</p>
+                          {disp.supervisorName && (
+                            <p className="text-xs text-gray-400">{disp.supervisorName}</p>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center gap-3">
                         {done ? (
-                          <span className="text-sm font-semibold text-gray-700">₦{fmt(supTotal)}</span>
+                          <span className="text-sm font-semibold text-gray-700">₦{fmt(dispTotal)}</span>
                         ) : (
                           <Link
                             href="/cashier/payments"
@@ -157,7 +161,7 @@ export default function CashierDashboard() {
                   );
                 })}
               </div>
-              {uncollectedSups.length > 0 && (
+              {uncollectedDisps.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-gray-100">
                   <Link
                     href="/cashier/payments"

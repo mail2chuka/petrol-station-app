@@ -173,6 +173,15 @@ export async function POST(request) {
         { new: true, upsert: true, runValidators: false }
       );
 
+      // Claim this pump in the DayShift so cashier can see which supervisor owns it
+      await DayShift.updateOne(
+        { _id: activeShift._id, 'dispenserAssignments.dispenserId': pumpId },
+        { $set: {
+            'dispenserAssignments.$.supervisorId': currentUser.id,
+            'dispenserAssignments.$.supervisorName': currentUser.name,
+        }}
+      );
+
       return NextResponse.json({ reading }, { status: 201 });
     }
 
