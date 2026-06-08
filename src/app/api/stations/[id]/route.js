@@ -52,6 +52,7 @@ export async function PATCH(request, { params }) {
       numberOfPumps,
       tanks,
       dispensers,
+      availableProducts,
       editReason,
     } = body;
 
@@ -94,6 +95,29 @@ export async function PATCH(request, { params }) {
         { error: 'Number of pumps must be 0 or more.' },
         { status: 400 }
       );
+    }
+
+    if (availableProducts !== undefined) {
+      if (!isAdmin) {
+        return NextResponse.json(
+          { error: 'Only admins can update availableProducts.' },
+          { status: 403 }
+        );
+      }
+      const VALID_PRODUCTS = ['PMS', 'AGO', 'DPK', 'LPG'];
+      if (!Array.isArray(availableProducts) || availableProducts.length === 0) {
+        return NextResponse.json(
+          { error: 'availableProducts must be a non-empty array.' },
+          { status: 400 }
+        );
+      }
+      const invalid = availableProducts.find(p => !VALID_PRODUCTS.includes(p));
+      if (invalid) {
+        return NextResponse.json(
+          { error: `Invalid product "${invalid}". Valid options: ${VALID_PRODUCTS.join(', ')}.` },
+          { status: 400 }
+        );
+      }
     }
 
     const previousNumberOfTanks = station.numberOfTanks;
@@ -163,6 +187,7 @@ export async function PATCH(request, { params }) {
     if (location) station.location = location;
     if (code) station.code = String(code).toUpperCase();
     if (isActive !== undefined) station.isActive = isActive;
+    if (availableProducts !== undefined && isAdmin) station.availableProducts = availableProducts;
     if (tolerancePercent !== undefined) {
       station.tolerancePercent = Number(tolerancePercent);
     }

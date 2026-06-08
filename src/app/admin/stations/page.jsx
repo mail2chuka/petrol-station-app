@@ -17,7 +17,11 @@ export default function StationsPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedStation, setSelectedStation] = useState(null);
-  const [priceForm, setPriceForm] = useState({ pms: '', ago: '', reason: '', tolerancePercent: '' });
+  const [priceForm, setPriceForm] = useState({ prices: {}, reason: '', tolerancePercent: '' });
+  const [productsStation, setProductsStation] = useState(null);
+  const [productsForm, setProductsForm] = useState([]);
+  const [savingProducts, setSavingProducts] = useState(false);
+  const [productsError, setProductsError] = useState('');
   const [savingPrices, setSavingPrices] = useState(false);
   const [editingStation, setEditingStation] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -71,17 +75,27 @@ export default function StationsPage() {
     }
   };
 
+  const ALL_FUEL_TYPES = ['PMS', 'AGO', 'DPK', 'LPG'];
+
   const openPriceEditor = (station) => {
     setError('');
     setSuccess('');
     setPriceError('');
     setSelectedStation(station);
-    setPriceForm({
-      pms: station?.currentPrices?.PMS ?? '',
-      ago: station?.currentPrices?.AGO ?? '',
-      reason: '',
-      tolerancePercent: station?.tolerancePercent ?? 2.5,
-    });
+    const products = station?.availableProducts || ['PMS', 'AGO'];
+    const prices = {};
+    for (const p of products) {
+      prices[p] = station?.currentPrices?.[p] ?? '';
+    }
+    setPriceForm({ prices, reason: '', tolerancePercent: station?.tolerancePercent ?? 2.5 });
+  };
+
+  const openProductsEditor = (station) => {
+    setError('');
+    setSuccess('');
+    setProductsError('');
+    setProductsStation(station);
+    setProductsForm(station?.availableProducts ? [...station.availableProducts] : ['PMS', 'AGO']);
   };
 
   const openEditStation = (station) => {
@@ -168,13 +182,15 @@ export default function StationsPage() {
   const savePrices = async () => {
     if (!selectedStation?._id) return;
 
-    const pmsPrice = Number(priceForm.pms);
-    const agoPrice = Number(priceForm.ago);
+    const products = selectedStation?.availableProducts || ['PMS', 'AGO'];
     const tolerancePercent = Number(priceForm.tolerancePercent);
 
-    if (!Number.isFinite(pmsPrice) || pmsPrice <= 0 || !Number.isFinite(agoPrice) || agoPrice <= 0) {
-      setPriceError('Please enter valid positive prices for both PMS and AGO.');
-      return;
+    for (const p of products) {
+      const price = Number(priceForm.prices[p]);
+      if (!Number.isFinite(price) || price <= 0) {
+        setPriceError(`Please enter a valid positive price for ${p}.`);
+        return;
+      }
     }
 
     if (!Number.isFinite(tolerancePercent) || tolerancePercent < 0) {
@@ -187,36 +203,22 @@ export default function StationsPage() {
 
     try {
       const updates = [];
-
-      // Only call the API for values that changed
-      if (pmsPrice !== (selectedStation.currentPrices?.PMS || 0)) {
-        updates.push(
-          fetch(`/api/stations/${selectedStation._id}/prices`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              stationId: selectedStation._id,
-              fuelType: 'PMS',
-              price: pmsPrice,
-              reason: priceForm.reason || 'Price update',
-            }),
-          })
-        );
-      }
-
-      if (agoPrice !== (selectedStation.currentPrices?.AGO || 0)) {
-        updates.push(
-          fetch(`/api/stations/${selectedStation._id}/prices`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              stationId: selectedStation._id,
-              fuelType: 'AGO',
-              price: agoPrice,
-              reason: priceForm.reason || 'Price update',
-            }),
-          })
-        );
+      for (const p of products) {
+        const price = Number(priceForm.prices[p]);
+        if (price !== (selectedStation.currentPrices?.[p] || 0)) {
+          updates.push(
+            fetch(`/api/stations/${selectedStation._id}/prices`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                stationId: selectedStation._id,
+                fuelType: p,
+                price,
+                reason: priceForm.reason || 'Price update',
+              }),
+            })
+          );
+        }
       }
 
       if (updates.length === 0) {
@@ -245,6 +247,35 @@ export default function StationsPage() {
       setPriceError('An error occurred while updating prices.');
     } finally {
       setSavingPrices(false);
+    }
+  };
+
+  const saveProducts = async () => {
+    if (!productsStation?._id) return;
+    if (productsForm.length === 0) {
+      setProductsError('At least one product must be selected.');
+      return;
+    }
+    setSavingProducts(true);
+    setProductsError('');
+    try {
+      const res = await fetch(`/api/stations/${productsStation._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ availableProducts: productsForm }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setProductsError(data.error || 'Failed to update products');
+        return;
+      }
+      setSuccess('Available products updated successfully.');
+      setProductsStation(null);
+      await fetchStations();
+    } catch {
+      setProductsError('An error occurred while updating products.');
+    } finally {
+      setSavingProducts(false);
     }
   };
 
@@ -548,6 +579,9 @@ export default function StationsPage() {
           <Button size="sm" variant="outline" onClick={() => openMappingEditor(row)}>
             Map Pumps/Tanks
           </Button>
+          <Button size="sm" variant="outline" onClick={() => openProductsEditor(row)}>
+            Products
+          </Button>
           {row.isActive ? (
             <Button
               size="sm"
@@ -714,7 +748,7 @@ export default function StationsPage() {
                           tanks[index].product = e.target.value;
                           return { ...p, tanks };
                         })}
-                        options={[{ value: 'PMS', label: 'PMS' }, { value: 'AGO', label: 'AGO' }]}
+                        options={[{ value: 'PMS', label: 'PMS (Petrol)' }, { value: 'AGO', label: 'AGO (Diesel)' }, { value: 'DPK', label: 'DPK (Kerosene)' }, { value: 'LPG', label: 'LPG (Gas)' }]}
                       />
                       <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
                         <Input
@@ -771,7 +805,7 @@ export default function StationsPage() {
                           dispensers[index].fuelType = e.target.value;
                           return { ...p, dispensers };
                         })}
-                        options={[{ value: 'PMS', label: 'PMS' }, { value: 'AGO', label: 'AGO' }]}
+                        options={[{ value: 'PMS', label: 'PMS (Petrol)' }, { value: 'AGO', label: 'AGO (Diesel)' }, { value: 'DPK', label: 'DPK (Kerosene)' }, { value: 'LPG', label: 'LPG (Gas)' }]}
                         className="min-w-0"
                       />
                       <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end lg:col-span-4">
@@ -899,24 +933,18 @@ export default function StationsPage() {
               </div>
 
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input
-                  label="PMS Price (₦/L)"
-                  type="text"
-                  inputMode="decimal"
-                  name="pms"
-                  value={priceForm.pms}
-                  onChange={(e) => setPriceForm((p) => ({ ...p, pms: e.target.value }))}
-                  required
-                />
-                <Input
-                  label="AGO Price (₦/L)"
-                  type="text"
-                  inputMode="decimal"
-                  name="ago"
-                  value={priceForm.ago}
-                  onChange={(e) => setPriceForm((p) => ({ ...p, ago: e.target.value }))}
-                  required
-                />
+                {(selectedStation?.availableProducts || ['PMS', 'AGO']).map(product => (
+                  <Input
+                    key={product}
+                    label={`${product} Price (₦/L)`}
+                    type="text"
+                    inputMode="decimal"
+                    name={product}
+                    value={priceForm.prices[product] ?? ''}
+                    onChange={(e) => setPriceForm((p) => ({ ...p, prices: { ...p.prices, [product]: e.target.value } }))}
+                    required
+                  />
+                ))}
                 <Input
                   label="Tolerance (%)"
                   type="text"
@@ -1061,6 +1089,64 @@ export default function StationsPage() {
                 </Button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {productsStation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close products editor"
+            onClick={() => setProductsStation(null)}
+          />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <p className="text-sm text-gray-500">{productsStation.name}</p>
+                <p className="text-lg font-bold text-gray-900">Available Products</p>
+              </div>
+              <Button variant="secondary" onClick={() => setProductsStation(null)}>Close</Button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Select the fuel products sold at this station. This controls which prices, stock, and tank entries are tracked.
+            </p>
+            <div className="space-y-2 mb-4">
+              {ALL_FUEL_TYPES.map(product => (
+                <label key={product} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 select-none">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-gray-300 text-ecana-maroon cursor-pointer"
+                    checked={productsForm.includes(product)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setProductsForm(prev => [...prev, product]);
+                      } else {
+                        setProductsForm(prev => prev.filter(p => p !== product));
+                      }
+                    }}
+                  />
+                  <div>
+                    <p className="font-medium text-gray-800 text-sm">{product}</p>
+                    <p className="text-xs text-gray-500">
+                      {product === 'PMS' ? 'Premium Motor Spirit (Petrol)' :
+                       product === 'AGO' ? 'Automotive Gas Oil (Diesel)' :
+                       product === 'DPK' ? 'Dual Purpose Kerosene' :
+                       'Liquefied Petroleum Gas'}
+                    </p>
+                  </div>
+                </label>
+              ))}
+            </div>
+            {productsError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 mb-3">
+                {productsError}
+              </div>
+            )}
+            <Button variant="primary" fullWidth size="lg" disabled={savingProducts} onClick={saveProducts}>
+              {savingProducts ? 'Saving...' : 'Save Products'}
+            </Button>
           </div>
         </div>
       )}

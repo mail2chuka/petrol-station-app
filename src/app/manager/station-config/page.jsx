@@ -283,7 +283,7 @@ function StationConfigPageContent() {
                         label="Product"
                         value={tank.product}
                         onChange={e => updateTank(i, 'product', e.target.value)}
-                        options={[{ value: 'PMS', label: 'PMS' }, { value: 'AGO', label: 'AGO' }]}
+                        options={[{ value: 'PMS', label: 'PMS (Petrol)' }, { value: 'AGO', label: 'AGO (Diesel)' }, { value: 'DPK', label: 'DPK (Kerosene)' }, { value: 'LPG', label: 'LPG (Gas)' }]}
                       />
                       <Input
                         label="Capacity (L)"
@@ -390,7 +390,7 @@ function StationConfigPageContent() {
                         label="Fuel Type"
                         value={dispenser.fuelType}
                         onChange={e => updateDispenser(i, 'fuelType', e.target.value)}
-                        options={[{ value: 'PMS', label: 'PMS' }, { value: 'AGO', label: 'AGO' }]}
+                        options={[{ value: 'PMS', label: 'PMS (Petrol)' }, { value: 'AGO', label: 'AGO (Diesel)' }, { value: 'DPK', label: 'DPK (Kerosene)' }, { value: 'LPG', label: 'LPG (Gas)' }]}
                       />
                       <Select
                         label="Mapped Tank"

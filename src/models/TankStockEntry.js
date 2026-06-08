@@ -20,7 +20,7 @@ const tankStockEntrySchema = new mongoose.Schema(
     tankLabel: String,
     product: {
       type: String,
-      enum: ['PMS', 'AGO'],
+      enum: ['PMS', 'AGO', 'DPK', 'LPG'],
       required: true,
     },
     date: {
