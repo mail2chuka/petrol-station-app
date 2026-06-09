@@ -3,6 +3,7 @@ import { z } from 'zod';
 import connectDB from '@/lib/db';
 import MeterReading from '@/models/MeterReading';
 import DayShift from '@/models/DayShift';
+import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { notifyAdminMeterDiscrepancy } from '@/lib/notifications';
@@ -79,20 +80,69 @@ export async function GET(request) {
 }
 
 // POST /api/meter-readings
-// Accepts two action types via body.action:
-//   "opening" — supervisor opens a pump and records the opening meter reading
-//   "closing" — supervisor records the closing meter reading and RTT at end of shift
+// action=admin-seed  — admin seeds initial meter value for a new pump (admin only)
+// action=opening     — supervisor opens a pump (supervisor only)
+// action=flag-opening — supervisor flags an incorrect opening (supervisor only)
+// action=closing     — supervisor records closing reading (supervisor only)
 export async function POST(request) {
   try {
     const currentUser = await requireAuth();
     await connectDB();
 
+    const body = await request.json();
+    const { action = 'opening', stationId, pumpId, pumpLabel: bodyPumpLabel, date } = body;
+
+    // ── ADMIN SEED ACTION ───────────────────────────────────────────────────────
+    if (action === 'admin-seed') {
+      if (currentUser.role !== ROLES.ADMIN) {
+        return NextResponse.json({ error: 'Only admins can seed meter readings.' }, { status: 403 });
+      }
+      const { seedValue } = body;
+      if (!stationId || !pumpId || seedValue === undefined) {
+        return NextResponse.json({ error: 'stationId, pumpId, and seedValue are required.' }, { status: 400 });
+      }
+      const val = Number(seedValue);
+      if (!Number.isFinite(val) || val < 0) {
+        return NextResponse.json({ error: 'seedValue must be a non-negative number.' }, { status: 400 });
+      }
+      const station = await Station.findById(stationId).lean();
+      if (!station) {
+        return NextResponse.json({ error: 'Station not found.' }, { status: 404 });
+      }
+      // Fixed date in the past — never conflicts with real shift records
+      const seedDate = new Date('2000-01-01T00:00:00.000Z');
+      const reading = await MeterReading.findOneAndUpdate(
+        { stationId, pumpId, date: seedDate },
+        {
+          $set: {
+            stationId,
+            stationName: station.name,
+            pumpId,
+            pumpLabel: bodyPumpLabel || pumpId,
+            date: seedDate,
+            opening: val,
+            openingSubmittedAt: new Date(),
+            closing: val,
+            closingSubmittedAt: new Date(),
+            rtt: 0,
+            supervisorId: currentUser.id,
+            supervisorName: currentUser.name,
+            previousDayClosing: null,
+            discrepancyFlag: false,
+            discrepancyComment: null,
+            editedByAdminId: currentUser.id,
+            editedByAdminName: currentUser.name,
+          },
+        },
+        { new: true, upsert: true, runValidators: false }
+      );
+      return NextResponse.json({ reading }, { status: 201 });
+    }
+
+    // ── SUPERVISOR-ONLY ACTIONS ─────────────────────────────────────────────────
     if (currentUser.role !== ROLES.SUPERVISOR) {
       return NextResponse.json({ error: 'Only supervisors can submit meter readings' }, { status: 403 });
     }
-
-    const body = await request.json();
-    const { action = 'opening', stationId, pumpId, pumpLabel: bodyPumpLabel, date } = body;
 
     if (!stationId || !pumpId || !date) {
       return NextResponse.json({ error: 'stationId, pumpId, and date are required' }, { status: 400 });

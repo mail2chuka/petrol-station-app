@@ -22,6 +22,11 @@ export default function StationsPage() {
   const [productsForm, setProductsForm] = useState([]);
   const [savingProducts, setSavingProducts] = useState(false);
   const [productsError, setProductsError] = useState('');
+  const [seedStation, setSeedStation] = useState(null);
+  const [seedForm, setSeedForm] = useState({});
+  const [savingSeeds, setSavingSeeds] = useState(false);
+  const [seedError, setSeedError] = useState('');
+  const [seedSuccess, setSeedSuccess] = useState('');
   const [savingPrices, setSavingPrices] = useState(false);
   const [editingStation, setEditingStation] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -96,6 +101,62 @@ export default function StationsPage() {
     setProductsError('');
     setProductsStation(station);
     setProductsForm(station?.availableProducts ? [...station.availableProducts] : ['PMS', 'AGO']);
+  };
+
+  const openSeedMeters = (station) => {
+    setError(''); setSuccess(''); setSeedError(''); setSeedSuccess('');
+    setSeedStation(station);
+    const initial = {};
+    for (const d of (station?.dispensers || [])) {
+      initial[d.dispenserId] = '';
+    }
+    setSeedForm(initial);
+  };
+
+  const saveSeedMeters = async () => {
+    if (!seedStation?._id) return;
+    const dispensers = seedStation.dispensers || [];
+    const toSave = dispensers.filter(d => seedForm[d.dispenserId] !== '' && seedForm[d.dispenserId] !== undefined);
+    if (toSave.length === 0) {
+      setSeedError('Enter at least one meter reading to save.');
+      return;
+    }
+    for (const d of toSave) {
+      const val = Number(seedForm[d.dispenserId]);
+      if (!Number.isFinite(val) || val < 0) {
+        setSeedError(`Invalid value for ${d.name || d.dispenserId}. Must be a positive number.`);
+        return;
+      }
+    }
+    setSavingSeeds(true); setSeedError(''); setSeedSuccess('');
+    try {
+      const results = await Promise.all(
+        toSave.map(d =>
+          fetch('/api/meter-readings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'admin-seed',
+              stationId: seedStation._id,
+              pumpId: d.dispenserId,
+              pumpLabel: d.name,
+              seedValue: Number(seedForm[d.dispenserId]),
+            }),
+          })
+        )
+      );
+      const failed = results.find(r => !r.ok);
+      if (failed) {
+        const data = await failed.json().catch(() => ({}));
+        setSeedError(data.error || 'Failed to seed one or more pumps.');
+        return;
+      }
+      setSeedSuccess(`Seeded ${toSave.length} pump(s) successfully. Supervisors can now open those pumps.`);
+    } catch {
+      setSeedError('An error occurred while seeding meter readings.');
+    } finally {
+      setSavingSeeds(false);
+    }
   };
 
   const openEditStation = (station) => {
@@ -581,6 +642,9 @@ export default function StationsPage() {
           </Button>
           <Button size="sm" variant="outline" onClick={() => openProductsEditor(row)}>
             Products
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => openSeedMeters(row)}>
+            Seed Meters
           </Button>
           {row.isActive ? (
             <Button
@@ -1095,6 +1159,72 @@ export default function StationsPage() {
                 </Button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {seedStation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close seed meters"
+            onClick={() => { setSeedStation(null); setSeedSuccess(''); setSeedError(''); }}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div>
+                <p className="text-sm text-gray-500">{seedStation.name}</p>
+                <p className="text-lg font-bold text-gray-900">Seed Meter Readings</p>
+              </div>
+              <Button variant="secondary" onClick={() => { setSeedStation(null); setSeedSuccess(''); setSeedError(''); }}>Close</Button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Enter the current physical meter reading for each pump. This is a one-time setup for new pumps that have no history yet. Supervisors will use these values as the opening reading for their first shift.
+            </p>
+
+            {(seedStation.dispensers || []).length === 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+                No dispensers found for this station. Add pumps first via Map Pumps/Tanks.
+              </div>
+            ) : (
+              <div className="space-y-3 mb-4">
+                {(seedStation.dispensers || []).map(d => (
+                  <div key={d.dispenserId} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-800">{d.name || d.dispenserId}</p>
+                      <p className="text-xs text-gray-400">{d.fuelType} · ID: {d.dispenserId}</p>
+                    </div>
+                    <div className="w-36">
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="e.g. 12500"
+                        value={seedForm[d.dispenserId] ?? ''}
+                        onChange={(e) => setSeedForm(prev => ({ ...prev, [d.dispenserId]: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {seedError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 mb-3">
+                {seedError}
+              </div>
+            )}
+            {seedSuccess && (
+              <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 mb-3">
+                {seedSuccess}
+              </div>
+            )}
+
+            {(seedStation.dispensers || []).length > 0 && (
+              <Button variant="primary" fullWidth size="lg" disabled={savingSeeds} onClick={saveSeedMeters}>
+                {savingSeeds ? 'Saving...' : 'Save Initial Readings'}
+              </Button>
+            )}
           </div>
         </div>
       )}
