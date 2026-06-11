@@ -343,19 +343,27 @@ function EndDayPageContent() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {activeTanks.map(tank => {
               const saved = closingByTankId[tank._id];
-              const isEditing = stockEditing[tank._id];
-              const isSaving = stockSaving[tank._id];
-              const errMsg = stockErrors[tank._id];
-              const form = stockForms[tank._id] || { value: '', notes: '' };
+                const isMissing = !saved;
+                const isEditing = stockEditing[tank._id];
+                const isSaving = stockSaving[tank._id];
+                const errMsg = stockErrors[tank._id];
+                const form = stockForms[tank._id] || { value: '', notes: '' };
 
-              return (
-                <div key={tank._id} className="card-modern p-4">
+                return (
+                  <div key={tank._id} className={`card-modern p-4 ${isMissing ? 'border-2 border-red-400 bg-red-50/30' : ''}`}>
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <p className="font-semibold text-gray-800">{tank.label}</p>
-                      <span className={`badge ${tank.product === 'PMS' ? 'badge-success' : 'badge-info'}`}>
-                        {tank.product}
-                      </span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`badge ${tank.product === 'PMS' ? 'badge-success' : 'badge-info'}`}>
+                            {tank.product}
+                          </span>
+                          {isMissing && (
+                            <span className="text-xs font-semibold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
+                              Required
+                            </span>
+                          )}
+                        </div>
                     </div>
                     {saved && !isEditing && (
                       <button
@@ -483,11 +491,16 @@ function EndDayPageContent() {
 
       {/* End Day action */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pb-8">
-        {!allClosingEntered && activeTanks.length > 0 && (
-          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-lg">
-            Enter closing stock for all tanks before ending the day.
-          </p>
-        )}
+        {!allClosingEntered && activeTanks.length > 0 && ((
+          () => {
+            const missingCount = activeTanks.filter(t => !closingByTankId[t._id]).length;
+            return (
+              <p className="text-sm font-medium text-red-700 bg-red-50 border border-red-200 px-4 py-2 rounded-lg">
+                ⛔ {missingCount} tank{missingCount > 1 ? 's' : ''} still need{missingCount === 1 ? 's' : ''} a closing stock reading before the day can end.
+              </p>
+            );
+          }
+        )())}
         <button
           onClick={handleEndDay}
           disabled={submitting || !allClosingEntered}

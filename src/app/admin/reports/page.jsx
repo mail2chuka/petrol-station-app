@@ -687,7 +687,6 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <TH>Opening Stock (L)</TH>
                   <TH>Stock In (L)</TH>
                   <TH>Tolerance (L)</TH>
-                  <TH>Exp. Tolerance (L)</TH>
                   <TH>Sales (L)</TH>
                   <TH>Price/L (₦)</TH>
                   <TH>Sales Amount (₦)</TH>
@@ -697,9 +696,9 @@ function SummaryListView({ stationId, onSelectDay }) {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {visibleRows.map((r, i) => {
-                  const tolerance = (r.sales ?? 0) - ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.closingStock ?? 0));
+                  const tolerance = ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.sales ?? 0)) - (r.closingStock ?? 0);
                   const expTol = r.expectedTolerance ?? 0;
-                  const isFlagged = expTol > 0 && tolerance < expTol * 0.80;
+                  const isFlagged = expTol > 0 && tolerance > expTol;
                   const salesAmount = (r.priceForDay ?? 0) * (r.sales ?? 0);
                   return (
                     <ClickRow key={i} onClick={() => onSelectDay(r.date)}>
@@ -707,12 +706,16 @@ function SummaryListView({ stationId, onSelectDay }) {
                       <TD>{r.product || '—'}</TD>
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
-                      <TD className={tolerance < 0 ? 'text-red-600 font-medium' : tolerance > 0 ? 'text-green-600' : ''}>
-                        {fmtNum(tolerance)}
-                      </TD>
-                      <td className={`px-4 py-2.5 text-sm text-gray-700 ${isFlagged ? 'bg-amber-50 text-amber-800 font-semibold' : ''}`}>
-                        {fmtNum(expTol)}
-                        {isFlagged && <span className="ml-1 text-amber-600">⚠</span>}
+                      <td className={`px-4 py-2.5 text-sm ${isFlagged ? 'bg-red-50' : ''}`}>
+                        <span className={`font-medium block ${tolerance > 0 ? 'text-red-600' : tolerance < 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                          {tolerance === 0 ? '—' : `${tolerance > 0 ? '+' : ''}${fmtNum(tolerance)} L`}
+                          {isFlagged && <span className="ml-1 text-red-500">⚠</span>}
+                        </span>
+                        {expTol > 0 && (
+                          <span className="text-xs text-gray-400 font-normal">
+                            Exp. tol: {fmtNum(expTol)} L ({r.tolerancePercent ?? 0}%)
+                          </span>
+                        )}
                       </td>
                       <TD>{fmtNum(r.sales)}</TD>
                       <TD>{fmtNum(r.priceForDay)}</TD>

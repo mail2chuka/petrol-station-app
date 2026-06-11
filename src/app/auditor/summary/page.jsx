@@ -107,27 +107,34 @@ export default function AuditorSummaryPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  {['Date','Product','Opening Stock (L)','Stock In (L)','Tolerance (L)','Exp. Tolerance (L)','Sales (L)','Price/L (₦)','Sales Amount (₦)','Shortage Recorded (L)','Closing Stock (L)'].map(h => (
+                  {['Date','Product','Opening Stock (L)','Stock In (L)','Tolerance (L)','Sales (L)','Price/L (₦)','Sales Amount (₦)','Shortage Recorded (L)','Closing Stock (L)'].map(h => (
                     <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {visibleRows.map((r, i) => {
-                  const tolerance = (r.sales ?? 0) - ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.closingStock ?? 0));
+                  // tolerance = expected closing - actual closing (positive = stock is missing/shortage)
+                  const tolerance = ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.sales ?? 0)) - (r.closingStock ?? 0);
                   const expTol = r.expectedTolerance ?? 0;
-                  const isFlagged = expTol > 0 && tolerance < expTol * 0.80;
+                  // flag when shortage exceeds the expected tolerance allowance
+                  const isFlagged = expTol > 0 && tolerance > expTol;
                   return (
                     <tr key={i} className="hover:bg-gray-50">
                       <td className="px-3 py-2.5 font-medium text-gray-900 whitespace-nowrap">{new Date(r.date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
                       <td className="px-3 py-2.5 text-gray-700">{r.product || '—'}</td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.openingStock)}</td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.stockIn)}</td>
-                      <td className={`px-3 py-2.5 font-medium ${tolerance < 0 ? 'text-red-600' : tolerance > 0 ? 'text-green-600' : 'text-gray-700'}`}>
-                        {fmtNum(tolerance)}
-                      </td>
-                      <td className={`px-3 py-2.5 ${isFlagged ? 'bg-amber-50 text-amber-800 font-semibold' : 'text-gray-700'}`}>
-                        {fmtNum(expTol)}{isFlagged && <span className="ml-1 text-amber-600">⚠</span>}
+                      <td className={`px-3 py-2.5 ${isFlagged ? 'bg-red-50' : ''}`}>
+                        <span className={`font-medium block ${tolerance > 0 ? 'text-red-600' : tolerance < 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                          {tolerance === 0 ? '—' : `${tolerance > 0 ? '+' : ''}${fmtNum(tolerance)} L`}
+                          {isFlagged && <span className="ml-1 text-red-500">⚠</span>}
+                        </span>
+                        {expTol > 0 && (
+                          <span className="text-xs text-gray-400 font-normal">
+                            Exp. tol: {fmtNum(expTol)} L ({r.tolerancePercent ?? 0}%)
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.sales)}</td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.priceForDay)}</td>
