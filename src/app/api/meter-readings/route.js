@@ -192,15 +192,20 @@ export async function POST(request) {
 
       const previousDayClosing = previousReading?.closing ?? null;
 
-      if (previousDayClosing === null) {
-        return NextResponse.json({
-          error: 'No previous closing found for this pump. An admin must set the opening reading before the shift can begin.',
-          requiresAdminSetup: true,
-        }, { status: 409 });
+      let opening;
+      if (previousDayClosing !== null) {
+        opening = previousDayClosing;
+      } else {
+        // No history — allow manual entry (first-time setup or post-reset)
+        const manualOpening = body.manualOpening !== undefined ? Number(body.manualOpening) : null;
+        if (manualOpening === null || !Number.isFinite(manualOpening) || manualOpening < 0) {
+          return NextResponse.json({
+            error: 'No previous closing found. Enter the current meter reading from the physical pump.',
+            requiresManualEntry: true,
+          }, { status: 409 });
+        }
+        opening = manualOpening;
       }
-
-      // Opening is always equal to previous closing — supervisor cannot change it
-      const opening = previousDayClosing;
 
       const reading = await MeterReading.findOneAndUpdate(
         { stationId, pumpId, date: { $gte: startDate, $lte: endDate } },

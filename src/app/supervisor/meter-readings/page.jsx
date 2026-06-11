@@ -22,6 +22,7 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
   const [flagComment, setFlagComment] = useState('');
   const [closingVal, setClosingVal] = useState('');
   const [rttVal, setRttVal] = useState('0');
+  const [manualOpeningVal, setManualOpeningVal] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -35,18 +36,25 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
     ? (closing - opening - (existing?.rtt ?? 0)).toFixed(2)
     : null;
 
-  // Auto-submit opening — value comes from prevClosing on the server
-  async function autoSetOpening() {
+  async function autoSetOpening(manualVal) {
     setSaving(true); setError('');
+    const body = { action: 'opening', stationId, pumpId: pump.id, pumpLabel: pump.name, date };
+    if (manualVal !== undefined) body.manualOpening = manualVal;
     const res = await fetch('/api/meter-readings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'opening', stationId, pumpId: pump.id, pumpLabel: pump.name, date }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     setSaving(false);
     if (!res.ok) { setError(data.error || 'Failed to set opening.'); return; }
     onSaved();
+  }
+
+  function submitManualOpening() {
+    const val = parseFloat(manualOpeningVal);
+    if (isNaN(val) || val < 0) { setError('Enter a valid meter reading (the number shown on the physical pump display).'); return; }
+    autoSetOpening(val);
   }
 
   async function submitFlag() {
@@ -107,7 +115,7 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
                 <span className="text-xs text-slate-400">(from previous day&apos;s closing)</span>
               </div>
               {error && <p className="text-sm text-red-600">{error}</p>}
-              <button onClick={autoSetOpening} disabled={saving}
+              <button onClick={() => autoSetOpening()} disabled={saving}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-ecana-maroon/40 text-ecana-maroon font-medium text-sm hover:bg-ecana-maroon/5 transition-colors disabled:opacity-50">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -116,8 +124,26 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
               </button>
             </div>
           ) : (
-            <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-              No previous closing found for this pump. An admin must set the opening reading before the shift can begin.
+            <div className="space-y-3">
+              <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+                No previous reading found. Enter the current meter reading shown on the physical pump display.
+              </div>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={manualOpeningVal}
+                onChange={e => { setManualOpeningVal(e.target.value); setError(''); }}
+                placeholder="e.g. 45250"
+                className="w-full px-4 py-3 text-sm border-2 border-amber-300 rounded-xl focus:outline-none focus:border-amber-500"
+              />
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <button onClick={submitManualOpening} disabled={saving || !manualOpeningVal.trim()}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-ecana-maroon/40 text-ecana-maroon font-medium text-sm hover:bg-ecana-maroon/5 transition-colors disabled:opacity-50">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                {saving ? 'Setting opening…' : 'Set Opening & Open Pump'}
+              </button>
             </div>
           )
         )}
@@ -352,12 +378,14 @@ export default function MeterReadingsPage() {
   const openedCount = pumps.filter(p => existingReadings[p.id]?.opening != null).length;
   const closedCount = pumps.filter(p => existingReadings[p.id]?.closing != null).length;
   const unopenedPumps = pumps.filter(p => existingReadings[p.id]?.opening == null);
+  // Only auto-open pumps that have a previous closing — ones with no history need manual entry
+  const autoOpenablePumps = unopenedPumps.filter(p => previousClosings[p.id] != null);
 
   async function openAll() {
-    if (!unopenedPumps.length) return;
+    if (!autoOpenablePumps.length) return;
     setOpeningAll(true);
     await Promise.all(
-      unopenedPumps.map(pump =>
+      autoOpenablePumps.map(pump =>
         fetch('/api/meter-readings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -386,13 +414,13 @@ export default function MeterReadingsPage() {
               <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
               Day is open · {openedCount}/{pumps.length} pumps opened · {closedCount}/{pumps.length} closed
             </div>
-            {unopenedPumps.length > 0 && (
+            {autoOpenablePumps.length > 0 && (
               <button
                 onClick={openAll}
                 disabled={openingAll}
                 className="shrink-0 px-3 py-1 text-xs font-semibold bg-ecana-maroon text-white rounded-lg hover:opacity-90 disabled:opacity-50"
               >
-                {openingAll ? 'Opening…' : `Open All Pumps (${unopenedPumps.length})`}
+                {openingAll ? 'Opening…' : `Open All (${autoOpenablePumps.length})`}
               </button>
             )}
           </div>
