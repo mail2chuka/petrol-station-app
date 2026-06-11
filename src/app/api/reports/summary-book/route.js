@@ -11,10 +11,8 @@ import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
 
 function buildDateRange(from, to) {
-  const start = new Date(from);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(to || from);
-  end.setHours(23, 59, 59, 999);
+  const start = new Date(from + 'T00:00:00.000Z');
+  const end = new Date((to || from) + 'T23:59:59.999Z');
   return { start, end };
 }
 
@@ -105,24 +103,40 @@ export async function GET(request) {
         }
       }
 
-      // Aggregate opening stock, stock in, closing stock, and sales by product across all tanks
+      // Aggregate opening stock, stock in, closing stock, and sales by product across all tanks.
+      // Group by tankId+period first to avoid double-counting when both an opening and a closing
+      // entry exist for the same tank on the same day.
       const productAgg = {};
-      for (const tank of dayTankEntries) {
-        const fuelType = tank.product;
+      const entriesByTankPeriod = {};
+      for (const t of dayTankEntries) {
+        entriesByTankPeriod[`${t.tankId}:${t.period}`] = t;
+      }
+      const uniqueTankIds = [...new Set(dayTankEntries.map(t => t.tankId))];
+      for (const tankId of uniqueTankIds) {
+        // Prefer the closing entry (it carries openingStock forward from the opening entry).
+        // Fall back to the opening-only entry for in-progress shifts.
+        const closingEntry = entriesByTankPeriod[`${tankId}:closing`];
+        const openingEntry = entriesByTankPeriod[`${tankId}:opening`];
+        const entry = closingEntry || openingEntry;
+        if (!entry) continue;
+        const fuelType = entry.product;
         if (!productAgg[fuelType]) {
           productAgg[fuelType] = { openingStock: 0, stockIn: 0, closingStock: 0, sales: 0 };
         }
-        productAgg[fuelType].openingStock += tank.openingStock || 0;
+        productAgg[fuelType].openingStock += entry.openingStock || 0;
         productAgg[fuelType].stockIn += dayStockIns
           .flatMap((movement) => movement.distribution || [])
-          .filter((d) => d.tankId === tank.tankId)
+          .filter((d) => d.tankId === tankId)
           .reduce((sum, d) => sum + d.litres, 0);
-        // closingStockManager preferred; fall back to measured
-        productAgg[fuelType].closingStock += tank.closingStockManager ?? tank.closingStockMeasured ?? 0;
+        // Only closing entries have a real measured closing stock
+        if (closingEntry) {
+          productAgg[fuelType].closingStock +=
+            closingEntry.closingStockManager ?? closingEntry.closingStockMeasured ?? 0;
+        }
         // Sales attributed via pump→tank mapping for this specific tank
-        productAgg[fuelType].sales += salesByTank[tank.tankId] || 0;
+        productAgg[fuelType].sales += salesByTank[tankId] || 0;
       }
-      // Add fallback sales for pumps not mapped to a tank
+      // Add fallback sales for pumps not mapped to a specific tank
       for (const [ft, liters] of Object.entries(salesByFuelFallback)) {
         if (productAgg[ft]) productAgg[ft].sales += liters;
       }

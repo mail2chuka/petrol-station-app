@@ -622,6 +622,31 @@ export default function StationsPage() {
       render: (row) => Number.isFinite(row.numberOfPumps) ? row.numberOfPumps : '-'
     },
     {
+      header: 'Pump-Tank Links',
+      render: (row) => {
+        const dispensers = row.dispensers || [];
+        const total = dispensers.filter(d => d.isActive !== false).length;
+        const unmapped = dispensers.filter(d => d.isActive !== false && !d.tankId).length;
+        if (total === 0) return <span className="text-xs text-gray-400">No pumps</span>;
+        if (unmapped === 0) return (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+            All linked
+          </span>
+        );
+        return (
+          <button
+            onClick={() => openMappingEditor(row)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full hover:bg-amber-100 transition-colors"
+            title={`${unmapped} pump(s) not linked to a tank — click to fix`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            {unmapped}/{total} unlinked — Fix
+          </button>
+        );
+      }
+    },
+    {
       header: 'Actions',
       render: (row) => (
         <div className="flex flex-wrap gap-2 max-w-full">
@@ -840,9 +865,23 @@ export default function StationsPage() {
               </Card>
 
               <Card title="Dispensers / Pumps">
+                {(() => {
+                  const unmappedCount = mappingForm.dispensers.filter(d => d.isActive !== false && !d.tankId).length;
+                  return unmappedCount > 0 ? (
+                    <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 flex items-start gap-2">
+                      <span className="mt-0.5 text-amber-500">⚠</span>
+                      <div>
+                        <span className="font-semibold">{unmappedCount} pump{unmappedCount > 1 ? 's are' : ' is'} not linked to a tank.</span>
+                        {' '}Unlinked pumps cause incorrect tolerance and stock-in figures in all reports. Use the <em>Mapped Tank</em> dropdown on each highlighted row to fix them.
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
                 <div className="space-y-3">
-                  {mappingForm.dispensers.map((dispenser, index) => (
-                    <div key={`mapping-dispenser-row-${index}`} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+                  {mappingForm.dispensers.map((dispenser, index) => {
+                    const isUnmapped = dispenser.isActive !== false && !dispenser.tankId;
+                    return (
+                    <div key={`mapping-dispenser-row-${index}`} className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end rounded-xl p-2 ${isUnmapped ? 'bg-amber-50 border border-amber-200' : ''}`}>
                       <Input
                         label="Pump ID"
                         value={dispenser.dispenserId}
@@ -895,8 +934,14 @@ export default function StationsPage() {
                         />
                         <Button type="button" variant="danger" onClick={() => setMappingForm((p) => ({ ...p, dispensers: p.dispensers.filter((_, i) => i !== index) }))}>Remove</Button>
                       </div>
+                      {isUnmapped && (
+                        <p className="lg:col-span-4 text-xs text-amber-700 font-medium flex items-center gap-1">
+                          <span>⚠</span> Not linked to a tank — select a tank above.
+                        </p>
+                      )}
                     </div>
-                  ))}
+                  );
+                  })}
                   <Button type="button" variant="secondary" onClick={() => setMappingForm((p) => ({ ...p, dispensers: [...p.dispensers, { dispenserId: '', name: '', fuelType: (mappingStation?.availableProducts?.[0] || 'PMS'), tankId: '', isActive: true }] }))}>
                     + Add Extra Pump
                   </Button>

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
+import DayShift from '@/models/DayShift';
 import SalesEntry from '@/models/SalesEntry';
 import PaymentRecord from '@/models/PaymentRecord';
 import StockMovement from '@/models/StockMovement';
@@ -31,20 +32,34 @@ export async function GET(request) {
       );
     }
 
-    const startDate = new Date(date);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(date);
-    endDate.setHours(23, 59, 59, 999);
+    const startDate = new Date(date + 'T00:00:00.000Z');
+    const endDate = new Date(date + 'T23:59:59.999Z');
+
+    // Look up the DayShift for this date so we can query by dayShiftId (prevents
+    // createdAt timezone mismatches where records saved near midnight fall on the wrong day)
+    const dayShift = await DayShift.findOne({
+      stationId,
+      date: { $gte: startDate, $lte: endDate },
+    });
+
+    if (!dayShift) {
+      return NextResponse.json({
+        summary: {
+          totalSalesExpected: 0,
+          totalSalesActual: 0,
+          totalPaymentsCash: 0,
+          totalPaymentsPos: 0,
+          totalPaymentsReceived: 0,
+          totalStockCost: 0,
+          netPosition: 0,
+        },
+        counts: { salesEntries: 0, paymentRecords: 0, stockReceipts: 0 },
+      });
+    }
 
     const [salesEntries, paymentRecords, stockMovements] = await Promise.all([
-      SalesEntry.find({
-        stationId,
-        createdAt: { $gte: startDate, $lte: endDate },
-      }),
-      PaymentRecord.find({
-        stationId,
-        createdAt: { $gte: startDate, $lte: endDate },
-      }),
+      SalesEntry.find({ dayShiftId: dayShift._id }),
+      PaymentRecord.find({ dayShiftId: dayShift._id }),
       StockMovement.find({
         stationId,
         date: { $gte: startDate, $lte: endDate },
@@ -52,7 +67,8 @@ export async function GET(request) {
     ]);
 
     const totalSalesExpected = salesEntries.reduce((sum, s) => sum + (s.expectedAmount || 0), 0);
-    const totalSalesActual = salesEntries.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+    // totalAmount on SalesEntry is never populated; use cashier payment records instead
+    const totalSalesActual = paymentRecords.reduce((sum, p) => sum + (p.totalReceived || 0), 0);
 
     const totalPaymentsCash = paymentRecords.reduce((sum, p) => sum + (p.cashReceived || 0), 0);
     const totalPaymentsPos = paymentRecords.reduce((sum, p) => sum + (p.posReceived || 0), 0);

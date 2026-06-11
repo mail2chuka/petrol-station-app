@@ -31,10 +31,8 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
     }
 
-    const startDate = new Date(date);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(date);
-    endDate.setHours(23, 59, 59, 999);
+    const startDate = new Date(date + 'T00:00:00.000Z');
+    const endDate = new Date(date + 'T23:59:59.999Z');
 
     const dayShift = await DayShift.findOne({
       stationId,

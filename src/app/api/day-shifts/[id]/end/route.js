@@ -166,12 +166,10 @@ export async function POST(request, { params }) {
 
     // Build totalSales dynamically — supports PMS, AGO, DPK, LPG etc.
     const totalSales = {};
-    let totalCollected = 0;
     salesEntries.forEach(sale => {
       if (!totalSales[sale.fuelType]) totalSales[sale.fuelType] = { liters: 0, amount: 0 };
       totalSales[sale.fuelType].liters += sale.liters;
       totalSales[sale.fuelType].amount += sale.expectedAmount;
-      totalCollected += (sale.totalAmount || 0);
     });
 
     const totalPayments = {
@@ -180,7 +178,8 @@ export async function POST(request, { params }) {
     };
 
     const expectedAmount = Object.values(totalSales).reduce((s, v) => s + v.amount, 0);
-    const actualAmount = totalCollected;
+    // actualAmount = total cash + POS collected by cashier (SalesEntry.totalAmount is never populated)
+    const actualAmount = totalPayments.cash + totalPayments.pos;
     const discrepancy = actualAmount - expectedAmount;
 
     // Update station.currentStock from manager-measured closing tank entries

@@ -41,10 +41,8 @@ export async function GET(request) {
       const [y, m] = month.split('-').map(Number);
       query.date = { $gte: new Date(y, m - 1, 1), $lte: new Date(y, m, 0, 23, 59, 59, 999) };
     } else if (date) {
-      const startDate = new Date(date);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(date);
-      endDate.setHours(23, 59, 59, 999);
+      const startDate = new Date(date + 'T00:00:00.000Z');
+      const endDate = new Date(date + 'T23:59:59.999Z');
       query.date = { $gte: startDate, $lte: endDate };
     }
 
@@ -98,10 +96,8 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Tank not found in this station' }, { status: 404 });
     }
 
-    const startDate = new Date(payload.date);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(payload.date);
-    endDate.setHours(23, 59, 59, 999);
+    const startDate = new Date(payload.date + 'T00:00:00.000Z');
+    const endDate = new Date(payload.date + 'T23:59:59.999Z');
 
     // For closing entries: look up today's opening entry to get openingStock
     let openingStock = payload.stockValue;
