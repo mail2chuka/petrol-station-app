@@ -91,6 +91,39 @@ function ReceiveStockPageContent() {
     const quantityValue = Number(formData.quantity || 0);
     const distributionTotal = distribution.reduce((sum, item) => sum + (Number(item.litres) || 0), 0);
 
+    // Capacity check — single tank selected
+    if (formData.tankId) {
+      const selectedTank = tanksForFuelType.find(t => t._id === formData.tankId);
+      if (selectedTank?.capacity > 0) {
+        const currentFuelStock = getStock(station, formData.fuelType);
+        if (currentFuelStock + quantityValue > selectedTank.capacity) {
+          const remaining = Math.max(0, selectedTank.capacity - currentFuelStock);
+          setError(
+            `This quantity would exceed the capacity of ${selectedTank.label} ` +
+            `(capacity: ${selectedTank.capacity.toLocaleString()} L, ` +
+            `current stock: ${currentFuelStock.toFixed(2)} L, ` +
+            `maximum you can add: ${remaining.toFixed(2)} L).`
+          );
+          return;
+        }
+      }
+    }
+
+    // Capacity check — distribution splits
+    if (distribution.length > 0) {
+      for (const item of distribution) {
+        if (!item.tankId || !item.litres) continue;
+        const tank = allTanks.find(t => t._id === item.tankId);
+        if (tank?.capacity > 0 && Number(item.litres) > tank.capacity) {
+          setError(
+            `Split quantity for ${tank.label} (${Number(item.litres).toLocaleString()} L) ` +
+            `exceeds that tank's capacity of ${tank.capacity.toLocaleString()} L.`
+          );
+          return;
+        }
+      }
+    }
+
     if (distribution.length > 0 && Math.abs(distributionTotal - quantityValue) > 0.001) {
       setError('Tank distribution total must equal quantity delivered.');
       return;
@@ -223,6 +256,20 @@ function ReceiveStockPageContent() {
                 ...tanksForFuelType.map(t => ({ value: t._id, label: `${t.label} (cap: ${(t.capacity || 0).toLocaleString()} L)` })),
               ]}
             />
+            {formData.tankId && (() => {
+              const tank = tanksForFuelType.find(t => t._id === formData.tankId);
+              if (!tank?.capacity) return null;
+              const currentFuelStock = getStock(station, formData.fuelType);
+              const remaining = Math.max(0, tank.capacity - currentFuelStock);
+              const willExceed = formData.quantity && (currentFuelStock + Number(formData.quantity)) > tank.capacity;
+              return (
+                <div className={`mb-4 px-4 py-3 rounded-xl text-sm ${willExceed ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-slate-50'}`}>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Tank Capacity</p>
+                  <p className="font-semibold text-gray-800">{tank.capacity.toLocaleString()} L total · <span className={willExceed ? 'text-amber-700' : 'text-green-700'}>{remaining.toFixed(2)} L remaining</span></p>
+                  {willExceed && <p className="text-xs mt-1 font-medium">This quantity will exceed tank capacity.</p>}
+                </div>
+              );
+            })()}
 
             <Input
               label="Expected Quantity (Litres)"

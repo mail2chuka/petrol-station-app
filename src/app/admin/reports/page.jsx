@@ -762,11 +762,13 @@ function SummaryListView({ stationId, onSelectDay }) {
     return { ...r, overage, shortage, expTol, diffPercent, salesAmount, sales };
   });
 
-  const totalSales    = computedRows.reduce((s, r) => s + r.sales, 0);
-  const totalSalesAmt = computedRows.reduce((s, r) => s + r.salesAmount, 0);
-  const totalOverage  = computedRows.reduce((s, r) => s + r.overage, 0);
-  const totalShortage = computedRows.reduce((s, r) => s + r.shortage, 0);
-  const totalStockIn  = computedRows.reduce((s, r) => s + (r.stockIn ?? 0), 0);
+  const totalSales      = computedRows.reduce((s, r) => s + r.sales, 0);
+  const totalSalesAmt   = computedRows.reduce((s, r) => s + r.salesAmount, 0);
+  const totalOverage    = computedRows.reduce((s, r) => s + r.overage, 0);
+  const totalShortage   = computedRows.reduce((s, r) => s + r.shortage, 0);
+  const totalStockIn    = computedRows.reduce((s, r) => s + (r.stockIn ?? 0), 0);
+  const totalExpTol     = computedRows.reduce((s, r) => s + r.expTol, 0);
+  const totalDiffPct    = totalSales > 0 ? ((totalOverage - totalExpTol) / totalSales) * 100 : 0;
 
   return (
     <div className="space-y-4">
@@ -826,12 +828,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                         {r.overage > 0 ? (
                           <>
                             <span className="font-medium block text-gray-800">{fmtNum(r.overage)}</span>
-                            {r.expTol > 0 && (
-                              <span className="text-xs text-gray-400 font-normal block">
-                                Exp: {fmtNum(r.expTol)} ({r.tolerancePercent ?? 0}%)
-                              </span>
-                            )}
-                            {r.expTol > 0 && r.sales > 0 && (
+                            {r.sales > 0 && (
                               <span className={`text-xs font-medium block ${r.diffPercent >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
                                 {r.diffPercent >= 0 ? '+' : ''}{r.diffPercent.toFixed(2)}%
                               </span>
@@ -857,7 +854,14 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide">Totals</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{totalStockIn > 0 ? fmtNum(totalStockIn) : '—'}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{totalOverage > 0 ? fmtNum(totalOverage) : '—'}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800">
+                    {totalOverage > 0 ? fmtNum(totalOverage) : '—'}
+                    {totalOverage > 0 && totalSales > 0 && (
+                      <span className={`block text-xs font-medium ${totalDiffPct >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                        {totalDiffPct >= 0 ? '+' : ''}{totalDiffPct.toFixed(2)}%
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalSales)}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtN(totalSalesAmt)}</td>
