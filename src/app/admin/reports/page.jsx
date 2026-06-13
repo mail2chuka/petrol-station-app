@@ -604,6 +604,18 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                           );
                         })}
                       </tbody>
+                      <tfoot>
+                        <tr className="bg-gray-50 border-t-2 border-t-gray-200">
+                          <td colSpan={5} className="px-4 py-2.5 text-sm font-bold text-gray-700">Total</td>
+                          <td className="px-4 py-2.5 text-sm font-bold text-gray-900">
+                            {fmtNum(filteredReadings.reduce((sum, r) => {
+                              if (r.closing == null) return sum;
+                              return sum + Math.max(0, r.closing - r.opening - (r.rtt || 0));
+                            }, 0))}
+                          </td>
+                          <td />
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 </>
