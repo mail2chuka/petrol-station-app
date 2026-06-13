@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
 
 function fmtN(n) {
@@ -29,10 +29,14 @@ function todayStr() {
   return new Date().toISOString().split('T')[0];
 }
 
-export default function AttendantsPage() {
+function AttendantsPageContent() {
   const { data: session } = useSession();
   const router = useRouter();
-  const stationId = session?.user?.stationId;
+  const searchParams = useSearchParams();
+  const stationId =
+    session?.user?.role === 'admin'
+      ? searchParams.get('stationId')
+      : session?.user?.stationId;
 
   // Registration form
   const [name, setName] = useState('');
@@ -363,5 +367,13 @@ export default function AttendantsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AttendantsPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-16"><div className="spinner" /></div>}>
+      <AttendantsPageContent />
+    </Suspense>
   );
 }

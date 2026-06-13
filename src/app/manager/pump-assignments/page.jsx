@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
 
 function todayStr() {
@@ -187,9 +188,13 @@ function PumpCard({ pump, assignment, attendants, stationId, date, isToday, onSa
   );
 }
 
-export default function PumpAssignmentsPage() {
+function PumpAssignmentsPageContent() {
   const { data: session } = useSession();
-  const stationId = session?.user?.stationId;
+  const searchParams = useSearchParams();
+  const stationId =
+    session?.user?.role === 'admin'
+      ? searchParams.get('stationId')
+      : session?.user?.stationId;
 
   const [date, setDate] = useState(todayStr());
   const [pumps, setPumps] = useState([]);
@@ -361,5 +366,13 @@ export default function PumpAssignmentsPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function PumpAssignmentsPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-16"><div className="spinner" /></div>}>
+      <PumpAssignmentsPageContent />
+    </Suspense>
   );
 }

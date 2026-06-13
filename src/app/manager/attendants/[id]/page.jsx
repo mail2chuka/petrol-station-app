@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Card from '@/components/Card';
 
@@ -26,11 +26,15 @@ function ratingBadge(rate) {
   return { label: 'At Risk', cls: 'bg-orange-100 text-orange-800' };
 }
 
-export default function AttendantDetailPage() {
+function AttendantDetailPageContent() {
   const { id } = useParams();
   const router = useRouter();
   const { data: session } = useSession();
-  const stationId = session?.user?.stationId;
+  const searchParams = useSearchParams();
+  const stationId =
+    session?.user?.role === 'admin'
+      ? searchParams.get('stationId')
+      : session?.user?.stationId;
 
   const [attendant, setAttendant] = useState(null);
   const [from, setFrom] = useState(firstOfMonth());
@@ -267,5 +271,13 @@ export default function AttendantDetailPage() {
         </div>
       </Card>
     </div>
+  );
+}
+
+export default function AttendantDetailPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-16"><div className="spinner" /></div>}>
+      <AttendantDetailPageContent />
+    </Suspense>
   );
 }
