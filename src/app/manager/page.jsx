@@ -129,10 +129,9 @@ function ManagerDashboardContent() {
     setDispenserModalLoading(true);
     setDispenserReadings([]);
     try {
-      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
-      const res = await fetch(`/api/meter-readings?stationId=${activeStationId}&date=${today}`);
+      const res = await fetch(`/api/meter-readings?stationId=${activeStationId}&lastPerPump=true`);
       const data = await res.json();
-      setDispenserReadings(data.meterReadings || data.readings || []);
+      setDispenserReadings(data.meterReadings || []);
     } catch {
       setDispenserReadings([]);
     } finally {
@@ -309,7 +308,14 @@ function ManagerDashboardContent() {
                       <div key={d.dispenserId} className="rounded-xl border border-slate-200 overflow-hidden">
                         <div className="px-4 py-2 bg-orange-50 font-bold text-sm text-orange-900 flex items-center justify-between">
                           <span>{d.name || d.dispenserId}</span>
-                          <span className="text-xs font-medium text-orange-600">{PRODUCT_LABELS[d.fuelType] || d.fuelType}</span>
+                          <div className="text-right">
+                            <span className="text-xs font-medium text-orange-600">{PRODUCT_LABELS[d.fuelType] || d.fuelType}</span>
+                            {r?.date && (
+                              <p className="text-xs font-normal text-orange-400">
+                                {new Date(r.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </p>
+                            )}
+                          </div>
                         </div>
                         {r ? (
                           <div className="grid grid-cols-4 divide-x divide-slate-100 bg-white">
@@ -336,7 +342,7 @@ function ManagerDashboardContent() {
                           </div>
                         ) : (
                           <div className="px-4 py-3 bg-white text-sm text-gray-400 italic">
-                            No meter reading recorded today
+                            No meter reading on record
                           </div>
                         )}
                         {r?.supervisorName && (

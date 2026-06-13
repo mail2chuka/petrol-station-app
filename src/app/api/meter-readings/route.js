@@ -28,6 +28,32 @@ export async function GET(request) {
       ? currentUser.stationId
       : stationId;
 
+    // ── Special mode: absolute last reading per pump ──────────────────────────
+    const lastPerPump = searchParams.get('lastPerPump');
+    if (lastPerPump) {
+      const matchStage = scopedStationId
+        ? { stationId: new (require('mongoose').Types.ObjectId)(scopedStationId) }
+        : {};
+      const lastReadings = await MeterReading.aggregate([
+        { $match: matchStage },
+        { $sort: { date: -1, createdAt: -1 } },
+        {
+          $group: {
+            _id: '$pumpId',
+            pumpId: { $first: '$pumpId' },
+            pumpLabel: { $first: '$pumpLabel' },
+            fuelType: { $first: '$fuelType' },
+            opening: { $first: '$opening' },
+            closing: { $first: '$closing' },
+            rtt: { $first: '$rtt' },
+            date: { $first: '$date' },
+            supervisorName: { $first: '$supervisorName' },
+          },
+        },
+      ]);
+      return NextResponse.json({ meterReadings: lastReadings });
+    }
+
     // ── Special mode: last closing per pump before a date ─────────────────────
     if (lastClosingBefore) {
       const beforeDate = new Date(lastClosingBefore + 'T00:00:00.000Z');
