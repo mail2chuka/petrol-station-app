@@ -55,7 +55,12 @@ function ManagerDashboardContent() {
   const [loading, setLoading] = useState(true);
   const [stockModal, setStockModal] = useState(null);
   const [stockModalEntries, setStockModalEntries] = useState([]);
+  const [stockModalReadings, setStockModalReadings] = useState([]);
   const [stockModalLoading, setStockModalLoading] = useState(false);
+
+  const [dispenserModal, setDispenserModal] = useState(false);
+  const [dispenserReadings, setDispenserReadings] = useState([]);
+  const [dispenserModalLoading, setDispenserModalLoading] = useState(false);
 
   const buildManagerHref = (path) => {
     if (session?.user?.role === 'admin' && adminStationId) {
