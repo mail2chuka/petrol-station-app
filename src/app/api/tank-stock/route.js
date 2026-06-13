@@ -34,6 +34,27 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
     }
 
+    // ── Special mode: last closing dipstick per tank ──────────────────────────
+    if (searchParams.get('lastPerTank')) {
+      const lastClosings = await TankStockEntry.aggregate([
+        { $match: { stationId, period: 'closing', closingStockMeasured: { $ne: null } } },
+        { $sort: { date: -1, createdAt: -1 } },
+        {
+          $group: {
+            _id: '$tankId',
+            tankId:               { $first: '$tankId' },
+            tankLabel:            { $first: '$tankLabel' },
+            product:              { $first: '$product' },
+            closingStockMeasured: { $first: '$closingStockMeasured' },
+            date:                 { $first: '$date' },
+            supervisorName:       { $first: '$supervisorName' },
+          },
+        },
+        { $sort: { product: 1, tankLabel: 1 } },
+      ]);
+      return NextResponse.json({ lastClosings });
+    }
+
     const query = { stationId };
 
     const month = searchParams.get('month'); // YYYY-MM

@@ -53,9 +53,8 @@ function ManagerDashboardContent() {
   const [station, setStation] = useState(null);
   const [activeDayShift, setActiveDayShift] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [stockModal, setStockModal] = useState(null);
-  const [stockModalEntries, setStockModalEntries] = useState([]);
-  const [stockModalReadings, setStockModalReadings] = useState([]);
+  const [stockModal, setStockModal] = useState(false);
+  const [stockModalClosings, setStockModalClosings] = useState([]);
   const [stockModalLoading, setStockModalLoading] = useState(false);
 
   const [dispenserModal, setDispenserModal] = useState(false);
@@ -100,25 +99,16 @@ function ManagerDashboardContent() {
     }
   };
 
-  const openStockModal = async (product) => {
-    setStockModal({ product });
+  const openStockModal = async () => {
+    setStockModal(true);
     setStockModalLoading(true);
-    setStockModalEntries([]);
-    setStockModalReadings([]);
+    setStockModalClosings([]);
     try {
-      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
-      const [tankRes, readingsRes] = await Promise.all([
-        fetch(`/api/tank-stock?stationId=${activeStationId}&date=${today}`),
-        fetch(`/api/meter-readings?stationId=${activeStationId}&date=${today}`),
-      ]);
-      const tankData = await tankRes.json();
-      const readingsData = await readingsRes.json();
-      const entries = (tankData.entries || []).filter((e) => e.product === product);
-      setStockModalEntries(entries);
-      setStockModalReadings(readingsData.meterReadings || readingsData.readings || []);
+      const res = await fetch(`/api/tank-stock?stationId=${activeStationId}&lastPerTank=true`);
+      const data = await res.json();
+      setStockModalClosings(data.lastClosings || []);
     } catch {
-      setStockModalEntries([]);
-      setStockModalReadings([]);
+      setStockModalClosings([]);
     } finally {
       setStockModalLoading(false);
     }
@@ -153,33 +143,12 @@ function ManagerDashboardContent() {
     ? station.availableProducts
     : ['PMS', 'AGO'];
 
-  const modalProduct = stockModal?.product;
-  const modalColors = PRODUCT_COLORS[modalProduct] || PRODUCT_COLORS.PMS;
-
-  // Build pump→tank map from station dispensers (for the selected product)
-  const pumpTankMap = {};
-  for (const d of (station?.dispensers || [])) {
-    if (d.tankId && d.fuelType === modalProduct) pumpTankMap[d.dispenserId] = d.tankId;
+  // Group last closings by product for the stock modal
+  const closingsByProduct = {};
+  for (const t of stockModalClosings) {
+    if (!closingsByProduct[t.product]) closingsByProduct[t.product] = [];
+    closingsByProduct[t.product].push(t);
   }
-  // Sales by tankId from today's meter readings
-  const salesByTankId = {};
-  for (const r of stockModalReadings) {
-    const tankId = pumpTankMap[r.pumpId];
-    if (!tankId) continue;
-    const netSold = Math.max(0, (r.closing || 0) - (r.opening || 0) - (r.rtt || 0));
-    salesByTankId[tankId] = (salesByTankId[tankId] || 0) + netSold;
-  }
-
-  // Group tank stock entries by tankId
-  const tankMap = {};
-  for (const entry of stockModalEntries) {
-    if (!tankMap[entry.tankId]) {
-      tankMap[entry.tankId] = { tankId: entry.tankId, tankLabel: entry.tankLabel || entry.tankId, opening: null, closing: null };
-    }
-    if (entry.period === 'opening') tankMap[entry.tankId].opening = entry;
-    if (entry.period === 'closing') tankMap[entry.tankId].closing = entry;
-  }
-  const tankRows = Object.values(tankMap);
 
   // Dispenser modal data — index readings by pumpId
   const readingByPumpId = {};
@@ -192,19 +161,19 @@ function ManagerDashboardContent() {
 
   return (
     <div className="space-y-6">
-      {/* ── Stock modal ── */}
+      {/* ── Fuel Stock modal ── */}
       {stockModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <button type="button" className="absolute inset-0 bg-black/50" onClick={() => setStockModal(null)} />
+          <button type="button" className="absolute inset-0 bg-black/50" onClick={() => setStockModal(false)} />
           <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden">
-            <div className={`${modalColors.header} p-4 text-white`}>
+            <div className="bg-slate-700 p-4 text-white">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold opacity-80 uppercase tracking-wide">Per-Tank Stock</p>
-                  <p className="text-xl font-black">{PRODUCT_LABELS[modalProduct] || modalProduct}</p>
-                  <p className="text-xs opacity-70 mt-0.5">{station?.name} — Today</p>
+                  <p className="text-xs font-semibold opacity-80 uppercase tracking-wide">Last Closing Dipstick Per Tank</p>
+                  <p className="text-xl font-black">Fuel Stock</p>
+                  <p className="text-xs opacity-70 mt-0.5">{station?.name}</p>
                 </div>
-                <Button variant="secondary" onClick={() => setStockModal(null)}>Close</Button>
+                <Button variant="secondary" onClick={() => setStockModal(false)}>Close</Button>
               </div>
             </div>
 
@@ -213,66 +182,55 @@ function ManagerDashboardContent() {
                 <div className="flex items-center justify-center py-10">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600" />
                 </div>
-              ) : tankRows.length === 0 ? (
+              ) : stockModalClosings.length === 0 ? (
                 <div className="text-center py-10">
                   <p className="text-4xl mb-2">🛢️</p>
-                  <p className="text-gray-600 font-semibold">No tank readings for today</p>
-                  <p className="text-xs text-gray-400 mt-1">Recorded when supervisors enter opening/closing dipstick</p>
+                  <p className="text-gray-600 font-semibold">No closing dipstick readings on record</p>
+                  <p className="text-xs text-gray-400 mt-1">Entered by supervisors via Tank Dipstick</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {tankRows.map((row) => {
-                    const openStock = row.opening?.openingStock ?? null;
-                    const closingDipstick = row.closing?.closingStockMeasured ?? null;
-                    // Last measured = closing dipstick if done, else opening stock
-                    const lastMeasured = closingDipstick ?? openStock;
-                    const soldToday = salesByTankId[row.tankId] ?? 0;
-                    const estimated = lastMeasured != null ? Math.max(0, lastMeasured - soldToday) : null;
-                    const hasReading = lastMeasured != null;
-
+                <div className="space-y-4">
+                  {availableProducts.map(product => {
+                    const tanks = closingsByProduct[product] || [];
+                    const colors = PRODUCT_COLORS[product] || PRODUCT_COLORS.PMS;
                     return (
-                      <div key={row.tankId} className="rounded-xl border border-slate-200 overflow-hidden">
-                        <div className={`px-4 py-2 ${modalColors.badge} font-bold text-sm flex items-center justify-between`}>
-                          <span>{row.tankLabel}</span>
-                          {closingDipstick != null
-                            ? <span className="text-xs font-medium opacity-70">Closing measured</span>
-                            : openStock != null
-                            ? <span className="text-xs font-medium opacity-70">Opening only</span>
-                            : null}
-                        </div>
-                        <div className="grid grid-cols-3 divide-x divide-slate-100 bg-white">
-                          <div className="p-3 text-center">
-                            <p className="text-xs text-gray-500 font-semibold mb-1">Last Measured</p>
-                            <p className="text-lg font-black text-gray-800">
-                              {hasReading ? `${Number(lastMeasured).toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : '—'}
-                            </p>
+                      <div key={product}>
+                        <p className={`text-xs font-bold uppercase tracking-wide mb-2 ${colors.text.replace('bg-clip-text bg-gradient-to-br', '').trim()} text-slate-600`}>
+                          {PRODUCT_LABELS[product] || product}
+                        </p>
+                        {tanks.length === 0 ? (
+                          <p className="text-xs text-gray-400 italic px-2">No closing reading recorded</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {tanks.map(t => (
+                              <div key={t.tankId} className={`rounded-xl border border-slate-200 overflow-hidden`}>
+                                <div className={`px-4 py-2 ${colors.badge} font-semibold text-sm flex items-center justify-between`}>
+                                  <span>{t.tankLabel}</span>
+                                  <span className="text-xs font-normal opacity-70">
+                                    {new Date(t.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 divide-x divide-slate-100 bg-white">
+                                  <div className="p-3 text-center">
+                                    <p className="text-xs text-gray-500 font-semibold mb-1">Last Closing</p>
+                                    <p className="text-xl font-black text-gray-800">
+                                      {Number(t.closingStockMeasured).toLocaleString('en-NG', { maximumFractionDigits: 1 })}L
+                                    </p>
+                                  </div>
+                                  <div className="p-3 text-center">
+                                    <p className="text-xs text-gray-500 font-semibold mb-1">Entered By</p>
+                                    <p className="text-sm font-semibold text-gray-700">{t.supervisorName || '—'}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                          <div className="p-3 text-center">
-                            <p className="text-xs text-gray-500 font-semibold mb-1">Sold Today</p>
-                            <p className="text-lg font-black text-amber-700">
-                              {soldToday > 0 ? `${soldToday.toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : '—'}
-                            </p>
-                          </div>
-                          <div className="p-3 text-center">
-                            <p className="text-xs text-gray-500 font-semibold mb-1">Est. Now</p>
-                            <p className={`text-lg font-black ${estimated === null ? 'text-gray-400' : estimated < 500 ? 'text-amber-600' : 'text-green-700'}`}>
-                              {estimated !== null ? `${estimated.toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : '—'}
-                            </p>
-                          </div>
-                        </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               )}
-
-              <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs text-slate-500">
-                Total station stock for {modalProduct}:{' '}
-                <span className="font-bold text-slate-700">
-                  {(station?.currentStock?.[modalProduct] ?? 0).toLocaleString()}L
-                </span>
-                <span className="ml-2 opacity-60">(Est. Now = Last Measured − Sold Today)</span>
-              </div>
             </div>
           </div>
         </div>
@@ -375,29 +333,32 @@ function ManagerDashboardContent() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        {availableProducts.map((product) => {
-          const colors = PRODUCT_COLORS[product] || PRODUCT_COLORS.PMS;
-          return (
-            <button
-              key={product}
-              type="button"
-              onClick={() => openStockModal(product)}
-              className={`group bg-gradient-to-br ${colors.card} rounded-2xl border-2 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden cursor-pointer text-left w-full`}
-            >
-              <div className={`absolute top-0 right-0 w-32 h-32 ${colors.bg} rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500`} />
-              <div className="text-center relative z-10">
-                <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">{product} Stock</p>
-                <p className={`text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br ${colors.text}`}>
-                  {(station?.currentStock?.[product] ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}L
-                </p>
-                <p className="text-sm text-gray-600 mt-2 font-semibold">
-                  ₦{station?.currentPrices?.[product]?.toFixed(2) || '0.00'}/L
-                </p>
-                <p className="text-xs text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">Tap for tank breakdown</p>
-              </div>
-            </button>
-          );
-        })}
+        {/* Single Fuel Stock card */}
+        <button
+          type="button"
+          onClick={openStockModal}
+          className="group bg-gradient-to-br from-slate-50 via-white to-slate-100 rounded-2xl border-2 border-slate-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden cursor-pointer text-left w-full"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-slate-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500" />
+          <div className="relative z-10">
+            <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">Fuel Stock</p>
+            <div className="space-y-1.5">
+              {availableProducts.map(product => {
+                const colors = PRODUCT_COLORS[product] || PRODUCT_COLORS.PMS;
+                const vol = station?.currentStock?.[product] ?? 0;
+                return (
+                  <div key={product} className="flex items-center justify-between">
+                    <span className={`text-xs font-bold uppercase ${colors.badge.replace('bg-', 'text-').split(' ')[0]} text-gray-600`}>{product}</span>
+                    <span className="text-sm font-black text-gray-800">
+                      {vol.toLocaleString('en-NG', { maximumFractionDigits: 0 })}L
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-gray-400 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">Tap for tank breakdown</p>
+          </div>
+        </button>
 
         <div className="group bg-gradient-to-br from-purple-50 via-white to-purple-100 rounded-2xl border-2 border-purple-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-purple-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>

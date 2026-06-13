@@ -641,8 +641,8 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                         {tankRows.map(([tankId, tank]) => {
                           const openingVal = tank.opening?.closingStockMeasured;
                           const closingVal = tank.closing?.closingStockMeasured;
-                          const volumeUsed = openingVal != null && closingVal != null
-                            ? (openingVal - closingVal).toFixed(2) : '—';
+                          const volumeSold = openingVal != null && closingVal != null
+                            ? (openingVal - closingVal) : null;
                           const rowColor = tankColorMap[tankId] || '';
                           const enteredBy = tank.closing?.supervisorName || tank.opening?.supervisorName || '—';
                           return (
@@ -650,12 +650,25 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                               <TD className="font-medium">{tank.label || tankId}</TD>
                               <TD>{openingVal != null ? fmtNum(openingVal) : <span className="text-amber-500 text-xs">Pending</span>}</TD>
                               <TD>{closingVal != null ? fmtNum(closingVal) : <span className="text-amber-500 text-xs">Pending</span>}</TD>
-                              <TD className="font-medium">{volumeUsed}</TD>
+                              <TD className="font-medium">{volumeSold != null ? fmtNum(volumeSold) : '—'}</TD>
                               <TD className="text-gray-500">{enteredBy}</TD>
                             </tr>
                           );
                         })}
                       </tbody>
+                      <tfoot>
+                        <tr className="bg-gray-50 border-t-2 border-t-gray-200">
+                          <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-gray-700">Total</td>
+                          <td className="px-4 py-2.5 text-sm font-bold text-gray-900">
+                            {fmtNum(tankRows.reduce((sum, [, tank]) => {
+                              const o = tank.opening?.closingStockMeasured;
+                              const c = tank.closing?.closingStockMeasured;
+                              return sum + (o != null && c != null ? o - c : 0);
+                            }, 0))}
+                          </td>
+                          <td />
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
               }
