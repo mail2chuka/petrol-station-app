@@ -389,6 +389,7 @@ function ToleranceHeader() {
 function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
   const [activeSection, setActiveSection] = useState('supervisor');
   const [cashierSubTab, setCashierSubTab] = useState('collections');
+  const [supervisorFuel, setSupervisorFuel] = useState('');
 
   const s = report?.summary;
 
@@ -525,31 +526,66 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
         const assignments = report.dayShift?.dispenserAssignments || [];
         const tankColorMap = buildTankColorMap(assignments);
         const pumpTankMap = {};
-        for (const d of assignments) pumpTankMap[d.dispenserId] = d.tankId;
+        const pumpFuelMap = {};
+        for (const d of assignments) {
+          pumpTankMap[d.dispenserId] = d.tankId;
+          pumpFuelMap[d.dispenserId] = d.fuelType;
+        }
+
+        // Derive available fuel types for the filter
+        const allFuels = [...new Set(
+          report.meterReadings.map(r => r.fuelType || pumpFuelMap[r.pumpId]).filter(Boolean)
+        )].sort();
+
+        const filteredReadings = supervisorFuel
+          ? report.meterReadings.filter(r => (r.fuelType || pumpFuelMap[r.pumpId]) === supervisorFuel)
+          : report.meterReadings;
 
         // Group tank stock entries by tankId for the dipstick table
         const tankEntryMap = {};
         for (const entry of (report.tankStockEntries || [])) {
-          if (!tankEntryMap[entry.tankId]) {
-            tankEntryMap[entry.tankId] = { label: entry.tankLabel, product: entry.product };
+          if (!supervisorFuel || entry.product === supervisorFuel) {
+            if (!tankEntryMap[entry.tankId]) {
+              tankEntryMap[entry.tankId] = { label: entry.tankLabel, product: entry.product };
+            }
+            tankEntryMap[entry.tankId][entry.period] = entry;
           }
-          tankEntryMap[entry.tankId][entry.period] = entry;
         }
         const tankRows = Object.entries(tankEntryMap);
 
         return (
           <div className="space-y-4">
+            {/* ── Product filter ── */}
+            {allFuels.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">Product:</span>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setSupervisorFuel('')}
+                    className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${!supervisorFuel ? 'bg-ecana-maroon text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  >All</button>
+                  {allFuels.map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setSupervisorFuel(f)}
+                      className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${supervisorFuel === f ? 'bg-ecana-maroon text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >{f}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ── Pump Meter Readings ── */}
             <Card title="Pump Meter Readings">
-              {report.meterReadings.length === 0
-                ? <p className="text-sm text-gray-400 py-4 text-center">No meter readings recorded for this day.</p>
+              {filteredReadings.length === 0
+                ? <p className="text-sm text-gray-400 py-4 text-center">No meter readings recorded{supervisorFuel ? ` for ${supervisorFuel}` : ''} for this day.</p>
                 : <>
                   <p className="text-xs text-gray-400 mb-3">Click a row to see full details. Row colour indicates linked tank.</p>
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead><tr><TH>Pump</TH><TH>Supervisor</TH><TH>Opening</TH><TH>Closing</TH><TH>RTT</TH><TH>Net Sold (L)</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
-                        {report.meterReadings.map((r, i) => {
+                        {filteredReadings.map((r, i) => {
                           const tankId = pumpTankMap[r.pumpId];
                           const rowColor = tankId ? tankColorMap[tankId] || '' : '';
                           const netSold = r.closing != null ? Math.max(0, r.closing - r.opening - (r.rtt || 0)).toFixed(2) : '—';
@@ -725,6 +761,7 @@ function SummaryListView({ stationId, onSelectDay }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedFuel, setSelectedFuel] = useState('');
 
   const fetchRows = useCallback(async () => {
     if (!stationId) return;
@@ -749,7 +786,7 @@ function SummaryListView({ stationId, onSelectDay }) {
   }
 
   // Use API's pre-computed overage/shortage (already mutually exclusive per row)
-  const computedRows = rows.map(r => {
+  const computedRows = rows.filter(r => !selectedFuel || r.fuelType === selectedFuel).map(r => {
     const overage = r.overage ?? 0;
     const shortage = r.shortage ?? 0;
     const expTol = r.expectedTolerance ?? 0;
@@ -780,6 +817,17 @@ function SummaryListView({ stationId, onSelectDay }) {
           <label className="text-xs text-gray-500 whitespace-nowrap">To</label>
           <input type="date" value={to} min={from} max={today} onChange={e => setTo(e.target.value)}
             className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-ecana-maroon" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-gray-500 whitespace-nowrap">Product</label>
+          <select
+            value={selectedFuel}
+            onChange={e => setSelectedFuel(e.target.value)}
+            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-ecana-maroon bg-white"
+          >
+            <option value="">All</option>
+            {['PMS', 'AGO', 'LPG', 'DPK'].map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
         </div>
         <button onClick={fetchRows} disabled={loading}
           className="px-4 py-1.5 text-sm bg-ecana-maroon text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium">
