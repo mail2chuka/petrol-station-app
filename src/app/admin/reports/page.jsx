@@ -708,20 +708,22 @@ function SummaryListView({ stationId, onSelectDay }) {
     return Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  // Compute per-row tolerance values, then totals
+  // Use API's pre-computed overage/shortage (already mutually exclusive per row)
   const computedRows = rows.map(r => {
-    const tolerance = ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.sales ?? 0)) - (r.closingStock ?? 0);
+    const overage = r.overage ?? 0;
+    const shortage = r.shortage ?? 0;
     const expTol = r.expectedTolerance ?? 0;
     const sales = r.sales ?? 0;
-    const diffPercent = sales > 0 ? ((tolerance - expTol) / sales) * 100 : 0;
+    // % annotation: how far actual overage deviates from expected tolerance, as % of sales
+    const diffPercent = sales > 0 ? ((overage - expTol) / sales) * 100 : 0;
     const salesAmount = (r.priceForDay ?? 0) * sales;
-    return { ...r, tolerance, expTol, diffPercent, salesAmount, sales };
+    return { ...r, overage, shortage, expTol, diffPercent, salesAmount, sales };
   });
 
-  const totalSales     = computedRows.reduce((s, r) => s + r.sales, 0);
-  const totalSalesAmt  = computedRows.reduce((s, r) => s + r.salesAmount, 0);
-  const totalTolerance = computedRows.reduce((s, r) => s + r.tolerance, 0);
-  const totalShortage  = computedRows.reduce((s, r) => s + (r.shortage ?? 0), 0);
+  const totalSales    = computedRows.reduce((s, r) => s + r.sales, 0);
+  const totalSalesAmt = computedRows.reduce((s, r) => s + r.salesAmount, 0);
+  const totalOverage  = computedRows.reduce((s, r) => s + r.overage, 0);
+  const totalShortage = computedRows.reduce((s, r) => s + r.shortage, 0);
 
   return (
     <div className="space-y-4">
@@ -754,7 +756,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <TH>Date</TH>
                   <TH>Opening Stock (L)</TH>
                   <TH>Stock In (L)</TH>
-                  <TH>Tolerance</TH>
+                  <TH>Overage (L)</TH>
                   <TH>Sales (L)</TH>
                   <TH>Price/L (₦)</TH>
                   <TH>Sales Amount (₦)</TH>
@@ -777,25 +779,31 @@ function SummaryListView({ stationId, onSelectDay }) {
                       </TD>
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
-                      <td className={`px-4 py-2.5 text-sm ${r.tolerance > 0 && r.expTol > 0 && r.tolerance > r.expTol ? 'bg-amber-50' : ''}`}>
-                        <span className={`font-medium block ${r.tolerance > 0 ? 'text-amber-600' : r.tolerance < 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                          {r.tolerance === 0 ? '—' : `${r.tolerance > 0 ? '+' : ''}${fmtNum(r.tolerance)}`}
-                        </span>
-                        {r.expTol > 0 && (
-                          <span className="text-xs text-gray-400 font-normal block">
-                            Exp: {fmtNum(r.expTol)} ({r.tolerancePercent ?? 0}%)
-                          </span>
-                        )}
-                        {r.expTol > 0 && r.sales > 0 && (
-                          <span className={`text-xs font-medium block ${r.diffPercent >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {r.diffPercent >= 0 ? '+' : ''}{r.diffPercent.toFixed(2)}%
-                          </span>
+                      <td className="px-4 py-2.5 text-sm">
+                        {r.overage > 0 ? (
+                          <>
+                            <span className="font-medium block text-green-600">+{fmtNum(r.overage)}</span>
+                            {r.expTol > 0 && (
+                              <span className="text-xs text-gray-400 font-normal block">
+                                Exp: {fmtNum(r.expTol)} ({r.tolerancePercent ?? 0}%)
+                              </span>
+                            )}
+                            {r.expTol > 0 && r.sales > 0 && (
+                              <span className={`text-xs font-medium block ${r.diffPercent >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                                {r.diffPercent >= 0 ? '+' : ''}{r.diffPercent.toFixed(2)}%
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-gray-400">—</span>
                         )}
                       </td>
                       <TD>{fmtNum(r.sales)}</TD>
                       <TD>{fmtNum(r.priceForDay)}</TD>
                       <TD>{fmtNum(r.salesAmount)}</TD>
-                      <TD className={r.shortage > 0 ? 'text-amber-600 font-medium' : ''}>{fmtNum(r.shortage)}</TD>
+                      <TD className={r.shortage > 0 ? 'text-amber-600 font-medium' : 'text-gray-400'}>
+                        {r.shortage > 0 ? fmtNum(r.shortage) : '—'}
+                      </TD>
                       <TD>{fmtNum(r.closingStock)}</TD>
                     </ClickRow>
                   );
@@ -806,11 +814,11 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide">Totals</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalTolerance)}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-green-700">{totalOverage > 0 ? `+${fmtNum(totalOverage)}` : '—'}</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalSales)}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtN(totalSalesAmt)}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalShortage)}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-amber-700">{totalShortage > 0 ? fmtNum(totalShortage) : '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                 </tr>
               </tfoot>

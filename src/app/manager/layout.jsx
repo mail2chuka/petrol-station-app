@@ -12,6 +12,8 @@ const managerMenuItems = [
   { label: 'Dashboard', href: '/manager' },
   { label: 'Station Config', href: '/manager/station-config' },
   { label: 'Begin Day', href: '/manager/begin-day' },
+  { label: 'Attendants', href: '/manager/attendants' },
+  { label: 'Pump Assignments', href: '/manager/pump-assignments' },
   { label: 'Supervisor Entries', href: '/manager/supervisor-entries' },
   { label: 'Cashier Entries', href: '/manager/cashier-entries' },
   { label: 'Summary Book', href: '/manager/summary-book' },
