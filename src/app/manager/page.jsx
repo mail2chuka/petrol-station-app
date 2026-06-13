@@ -104,16 +104,39 @@ function ManagerDashboardContent() {
     setStockModal({ product });
     setStockModalLoading(true);
     setStockModalEntries([]);
+    setStockModalReadings([]);
     try {
-      const today = new Date().toLocaleDateString('en-CA');
-      const res = await fetch(`/api/tank-stock?stationId=${activeStationId}&date=${today}`);
-      const data = await res.json();
-      const entries = (data.entries || []).filter((e) => e.product === product);
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+      const [tankRes, readingsRes] = await Promise.all([
+        fetch(`/api/tank-stock?stationId=${activeStationId}&date=${today}`),
+        fetch(`/api/meter-readings?stationId=${activeStationId}&date=${today}`),
+      ]);
+      const tankData = await tankRes.json();
+      const readingsData = await readingsRes.json();
+      const entries = (tankData.entries || []).filter((e) => e.product === product);
       setStockModalEntries(entries);
+      setStockModalReadings(readingsData.meterReadings || readingsData.readings || []);
     } catch {
       setStockModalEntries([]);
+      setStockModalReadings([]);
     } finally {
       setStockModalLoading(false);
+    }
+  };
+
+  const openDispenserModal = async () => {
+    setDispenserModal(true);
+    setDispenserModalLoading(true);
+    setDispenserReadings([]);
+    try {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+      const res = await fetch(`/api/meter-readings?stationId=${activeStationId}&date=${today}`);
+      const data = await res.json();
+      setDispenserReadings(data.meterReadings || data.readings || []);
+    } catch {
+      setDispenserReadings([]);
+    } finally {
+      setDispenserModalLoading(false);
     }
   };
 
