@@ -191,19 +191,15 @@ function ManagerDashboardContent() {
 
   return (
     <div className="space-y-6">
+      {/* ── Stock modal ── */}
       {stockModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/50"
-            aria-label="Close stock breakdown"
-            onClick={() => setStockModal(null)}
-          />
+          <button type="button" className="absolute inset-0 bg-black/50" onClick={() => setStockModal(null)} />
           <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden">
             <div className={`${modalColors.header} p-4 text-white`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold opacity-80 uppercase tracking-wide">Per-Tank Breakdown</p>
+                  <p className="text-xs font-semibold opacity-80 uppercase tracking-wide">Per-Tank Stock</p>
                   <p className="text-xl font-black">{PRODUCT_LABELS[modalProduct] || modalProduct}</p>
                   <p className="text-xs opacity-70 mt-0.5">{station?.name} — Today</p>
                 </div>
@@ -219,37 +215,47 @@ function ManagerDashboardContent() {
               ) : tankRows.length === 0 ? (
                 <div className="text-center py-10">
                   <p className="text-4xl mb-2">🛢️</p>
-                  <p className="text-gray-600 font-semibold">No tank stock entries for today</p>
-                  <p className="text-xs text-gray-400 mt-1">Entries are recorded when supervisors begin/end their shift</p>
+                  <p className="text-gray-600 font-semibold">No tank readings for today</p>
+                  <p className="text-xs text-gray-400 mt-1">Recorded when supervisors enter opening/closing dipstick</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {tankRows.map((row) => {
                     const openStock = row.opening?.openingStock ?? null;
-                    const closeStock = row.closing?.closingStockManager ?? row.closing?.closingStockMeasured ?? null;
-                    const variance = row.closing?.variance ?? null;
+                    const closingDipstick = row.closing?.closingStockMeasured ?? null;
+                    // Last measured = closing dipstick if done, else opening stock
+                    const lastMeasured = closingDipstick ?? openStock;
+                    const soldToday = salesByTankId[row.tankId] ?? 0;
+                    const estimated = lastMeasured != null ? Math.max(0, lastMeasured - soldToday) : null;
+                    const hasReading = lastMeasured != null;
+
                     return (
-                      <div key={row.tankLabel} className="rounded-xl border border-slate-200 overflow-hidden">
-                        <div className={`px-4 py-2 ${modalColors.badge} font-bold text-sm`}>
-                          {row.tankLabel}
+                      <div key={row.tankId} className="rounded-xl border border-slate-200 overflow-hidden">
+                        <div className={`px-4 py-2 ${modalColors.badge} font-bold text-sm flex items-center justify-between`}>
+                          <span>{row.tankLabel}</span>
+                          {closingDipstick != null
+                            ? <span className="text-xs font-medium opacity-70">Closing measured</span>
+                            : openStock != null
+                            ? <span className="text-xs font-medium opacity-70">Opening only</span>
+                            : null}
                         </div>
                         <div className="grid grid-cols-3 divide-x divide-slate-100 bg-white">
                           <div className="p-3 text-center">
-                            <p className="text-xs text-gray-500 font-semibold mb-1">Opening</p>
+                            <p className="text-xs text-gray-500 font-semibold mb-1">Last Measured</p>
                             <p className="text-lg font-black text-gray-800">
-                              {openStock !== null ? `${openStock.toLocaleString()}L` : '—'}
+                              {hasReading ? `${Number(lastMeasured).toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : '—'}
                             </p>
                           </div>
                           <div className="p-3 text-center">
-                            <p className="text-xs text-gray-500 font-semibold mb-1">Closing</p>
-                            <p className="text-lg font-black text-gray-800">
-                              {closeStock !== null ? `${closeStock.toLocaleString()}L` : '—'}
+                            <p className="text-xs text-gray-500 font-semibold mb-1">Sold Today</p>
+                            <p className="text-lg font-black text-amber-700">
+                              {soldToday > 0 ? `${soldToday.toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : '—'}
                             </p>
                           </div>
                           <div className="p-3 text-center">
-                            <p className="text-xs text-gray-500 font-semibold mb-1">Variance</p>
-                            <p className={`text-lg font-black ${variance === null ? 'text-gray-400' : variance < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                              {variance !== null ? `${variance > 0 ? '+' : ''}${variance.toLocaleString()}L` : '—'}
+                            <p className="text-xs text-gray-500 font-semibold mb-1">Est. Now</p>
+                            <p className={`text-lg font-black ${estimated === null ? 'text-gray-400' : estimated < 500 ? 'text-amber-600' : 'text-green-700'}`}>
+                              {estimated !== null ? `${estimated.toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : '—'}
                             </p>
                           </div>
                         </div>
@@ -260,10 +266,89 @@ function ManagerDashboardContent() {
               )}
 
               <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs text-slate-500">
-                Total station stock for {modalProduct}: <span className="font-bold text-slate-700">
+                Total station stock for {modalProduct}:{' '}
+                <span className="font-bold text-slate-700">
                   {(station?.currentStock?.[modalProduct] ?? 0).toLocaleString()}L
                 </span>
+                <span className="ml-2 opacity-60">(Est. Now = Last Measured − Sold Today)</span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Dispenser modal ── */}
+      {dispenserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button type="button" className="absolute inset-0 bg-black/50" onClick={() => setDispenserModal(false)} />
+          <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="bg-orange-600 p-4 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold opacity-80 uppercase tracking-wide">Today's Readings</p>
+                  <p className="text-xl font-black">Dispensers</p>
+                  <p className="text-xs opacity-70 mt-0.5">{station?.name}</p>
+                </div>
+                <Button variant="secondary" onClick={() => setDispenserModal(false)}>Close</Button>
+              </div>
+            </div>
+
+            <div className="p-4 max-h-[70vh] overflow-y-auto">
+              {dispenserModalLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600" />
+                </div>
+              ) : allDispensers.length === 0 ? (
+                <p className="text-center text-gray-500 py-10">No dispensers configured.</p>
+              ) : (
+                <div className="space-y-3">
+                  {allDispensers.map(d => {
+                    const r = readingByPumpId[d.dispenserId] || null;
+                    const netSold = r ? Math.max(0, (r.closing || 0) - (r.opening || 0) - (r.rtt || 0)) : null;
+                    return (
+                      <div key={d.dispenserId} className="rounded-xl border border-slate-200 overflow-hidden">
+                        <div className="px-4 py-2 bg-orange-50 font-bold text-sm text-orange-900 flex items-center justify-between">
+                          <span>{d.name || d.dispenserId}</span>
+                          <span className="text-xs font-medium text-orange-600">{PRODUCT_LABELS[d.fuelType] || d.fuelType}</span>
+                        </div>
+                        {r ? (
+                          <div className="grid grid-cols-4 divide-x divide-slate-100 bg-white">
+                            <div className="p-3 text-center">
+                              <p className="text-xs text-gray-500 font-semibold mb-1">Opening</p>
+                              <p className="text-base font-black text-gray-800">{Number(r.opening || 0).toLocaleString()}</p>
+                            </div>
+                            <div className="p-3 text-center">
+                              <p className="text-xs text-gray-500 font-semibold mb-1">Closing</p>
+                              <p className="text-base font-black text-gray-800">
+                                {r.closing != null ? Number(r.closing).toLocaleString() : '—'}
+                              </p>
+                            </div>
+                            <div className="p-3 text-center">
+                              <p className="text-xs text-gray-500 font-semibold mb-1">RTT</p>
+                              <p className="text-base font-black text-gray-500">{Number(r.rtt || 0).toLocaleString()}</p>
+                            </div>
+                            <div className="p-3 text-center">
+                              <p className="text-xs text-gray-500 font-semibold mb-1">Net Sold</p>
+                              <p className="text-base font-black text-green-700">
+                                {netSold != null ? `${netSold.toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : '—'}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="px-4 py-3 bg-white text-sm text-gray-400 italic">
+                            No meter reading recorded today
+                          </div>
+                        )}
+                        {r?.supervisorName && (
+                          <div className="px-4 py-1.5 bg-slate-50 text-xs text-slate-500 border-t border-slate-100">
+                            Entered by {r.supervisorName}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
