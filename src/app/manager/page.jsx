@@ -397,15 +397,20 @@ function ManagerDashboardContent() {
           </div>
         </div>
 
-        <div className="group bg-gradient-to-br from-orange-50 via-white to-orange-100 rounded-2xl border-2 border-orange-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
+        <button
+          type="button"
+          onClick={openDispenserModal}
+          className="group bg-gradient-to-br from-orange-50 via-white to-orange-100 rounded-2xl border-2 border-orange-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden cursor-pointer text-left w-full"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500" />
           <div className="text-center relative z-10">
             <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Dispensers</p>
             <p className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-orange-600 to-orange-800">
-              {station?.dispensers?.length || 0}
+              {allDispensers.length || 0}
             </p>
+            <p className="text-xs text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">Tap for meter readings</p>
           </div>
-        </div>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
