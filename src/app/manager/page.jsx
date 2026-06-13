@@ -187,6 +187,8 @@ function ManagerDashboardContent() {
     readingByPumpId[r.pumpId] = r;
   }
   const allDispensers = (station?.dispensers || []).filter(d => d.isActive !== false);
+  const tankLabelMap = {};
+  for (const t of (station?.tanks || [])) tankLabelMap[t._id] = t.label;
 
   return (
     <div className="space-y-6">
@@ -307,7 +309,14 @@ function ManagerDashboardContent() {
                     return (
                       <div key={d.dispenserId} className="rounded-xl border border-slate-200 overflow-hidden">
                         <div className="px-4 py-2 bg-orange-50 font-bold text-sm text-orange-900 flex items-center justify-between">
-                          <span>{d.name || d.dispenserId}</span>
+                          <div>
+                            <span>{d.name || d.dispenserId}</span>
+                            {d.tankId && (
+                              <p className="text-xs font-normal text-orange-500 mt-0.5">
+                                Tank: {tankLabelMap[d.tankId] || d.tankId}
+                              </p>
+                            )}
+                          </div>
                           <div className="text-right">
                             <span className="text-xs font-medium text-orange-600">{PRODUCT_LABELS[d.fuelType] || d.fuelType}</span>
                             {r?.date && (
