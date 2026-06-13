@@ -157,16 +157,37 @@ function ManagerDashboardContent() {
   const modalProduct = stockModal?.product;
   const modalColors = PRODUCT_COLORS[modalProduct] || PRODUCT_COLORS.PMS;
 
-  // Group modal entries by tankId
+  // Build pump→tank map from station dispensers (for the selected product)
+  const pumpTankMap = {};
+  for (const d of (station?.dispensers || [])) {
+    if (d.tankId && d.fuelType === modalProduct) pumpTankMap[d.dispenserId] = d.tankId;
+  }
+  // Sales by tankId from today's meter readings
+  const salesByTankId = {};
+  for (const r of stockModalReadings) {
+    const tankId = pumpTankMap[r.pumpId];
+    if (!tankId) continue;
+    const netSold = Math.max(0, (r.closing || 0) - (r.opening || 0) - (r.rtt || 0));
+    salesByTankId[tankId] = (salesByTankId[tankId] || 0) + netSold;
+  }
+
+  // Group tank stock entries by tankId
   const tankMap = {};
   for (const entry of stockModalEntries) {
     if (!tankMap[entry.tankId]) {
-      tankMap[entry.tankId] = { tankLabel: entry.tankLabel || entry.tankId, opening: null, closing: null };
+      tankMap[entry.tankId] = { tankId: entry.tankId, tankLabel: entry.tankLabel || entry.tankId, opening: null, closing: null };
     }
     if (entry.period === 'opening') tankMap[entry.tankId].opening = entry;
     if (entry.period === 'closing') tankMap[entry.tankId].closing = entry;
   }
   const tankRows = Object.values(tankMap);
+
+  // Dispenser modal data — index readings by pumpId
+  const readingByPumpId = {};
+  for (const r of dispenserReadings) {
+    readingByPumpId[r.pumpId] = r;
+  }
+  const allDispensers = (station?.dispensers || []).filter(d => d.isActive !== false);
 
   return (
     <div className="space-y-6">
