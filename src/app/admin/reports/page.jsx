@@ -621,7 +621,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                           <TH>Tank</TH>
                           <TH>Opening Dipstick (L)</TH>
                           <TH>Closing Dipstick (L)</TH>
-                          <TH>Volume Used (L)</TH>
+                          <TH>Volume Sold (L)</TH>
                           <TH>Entered By</TH>
                         </tr>
                       </thead>
