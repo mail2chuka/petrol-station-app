@@ -583,7 +583,6 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                       <thead>
                         <tr>
                           <TH>Tank</TH>
-                          <TH>Product</TH>
                           <TH>Opening Dipstick (L)</TH>
                           <TH>Closing Dipstick (L)</TH>
                           <TH>Volume Used (L)</TH>
@@ -601,7 +600,6 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                           return (
                             <tr key={tankId} className={`border-b border-gray-100 ${rowColor}`}>
                               <TD className="font-medium">{tank.label || tankId}</TD>
-                              <TD>{tank.product}</TD>
                               <TD>{openingVal != null ? fmtNum(openingVal) : <span className="text-amber-500 text-xs">Pending</span>}</TD>
                               <TD>{closingVal != null ? fmtNum(closingVal) : <span className="text-amber-500 text-xs">Pending</span>}</TD>
                               <TD className="font-medium">{volumeUsed}</TD>

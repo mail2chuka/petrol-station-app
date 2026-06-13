@@ -7,6 +7,14 @@ import Input from '@/components/Input';
 import Button from '@/components/Button';
 import DateCalendar from '@/components/DateCalendar';
 
+const TANK_COLORS = [
+  { border: 'border-l-blue-400',   bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-400'   },
+  { border: 'border-l-green-400',  bg: 'bg-green-50',  text: 'text-green-700',  dot: 'bg-green-400'  },
+  { border: 'border-l-amber-400',  bg: 'bg-amber-50',  text: 'text-amber-700',  dot: 'bg-amber-400'  },
+  { border: 'border-l-purple-400', bg: 'bg-purple-50', text: 'text-purple-700', dot: 'bg-purple-400' },
+  { border: 'border-l-rose-400',   bg: 'bg-rose-50',   text: 'text-rose-700',   dot: 'bg-rose-400'   },
+];
+
 function today() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
 }
@@ -17,7 +25,7 @@ function fmtTime(dt) {
 }
 
 // Lifecycle: not-started → opening auto-set → (optional flag) → closing entered → done
-function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSaved }) {
+function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSaved, tankColor, tankLabel }) {
   const [stage, setStage] = useState('idle'); // 'idle' | 'flag_form' | 'closing_form'
   const [flagComment, setFlagComment] = useState('');
   const [closingVal, setClosingVal] = useState('');
@@ -94,11 +102,18 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
   else if (openingDone) { statusColor = 'bg-blue-100 text-blue-700'; statusLabel = 'Open'; }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+    <div className={`bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm border-l-4 ${tankColor?.border || 'border-l-gray-200'}`}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <div>
           <p className="font-semibold text-slate-900">{pump.name}</p>
-          {pump.fuelType && <p className="text-xs text-slate-500">{pump.fuelType}</p>}
+          <div className="flex items-center gap-2 mt-0.5">
+            {pump.fuelType && <p className="text-xs text-slate-500">{pump.fuelType}</p>}
+            {tankLabel && (
+              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${tankColor?.bg || ''} ${tankColor?.text || 'text-gray-600'}`}>
+                {tankLabel}
+              </span>
+            )}
+          </div>
         </div>
         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor}`}>{statusLabel}</span>
       </div>
@@ -292,6 +307,9 @@ export default function MeterReadingsPage() {
   const [loading, setLoading] = useState(false);
   const [date, setDate] = useState(today());
   const [markedDates, setMarkedDates] = useState({});
+  const [tankStockEntries, setTankStockEntries] = useState([]);
+  const [pumpTankMap, setPumpTankMap] = useState({});  // dispenserId → { tankId, tankLabel }
+  const [tankColorIndex, setTankColorIndex] = useState({}); // tankId → index into TANK_COLORS
 
   const fetchMonthMarks = useCallback(async (monthStr) => {
     if (!stationId) return;
@@ -314,12 +332,14 @@ export default function MeterReadingsPage() {
     if (!stationId) return;
     setLoading(true);
     try {
-      const [shiftsRes, readingsRes] = await Promise.all([
+      const [shiftsRes, readingsRes, tankRes] = await Promise.all([
         fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
         fetch(`/api/meter-readings?stationId=${stationId}&date=${dateStr}`),
+        fetch(`/api/tank-stock?stationId=${stationId}&date=${dateStr}`),
       ]);
       const shiftsData = await shiftsRes.json();
       const readingsData = await readingsRes.json();
+      const tankData = await tankRes.json();
 
       const activeShift = (shiftsData.dayShifts || [])[0] || null;
       setActiveDayShift(activeShift);
@@ -328,15 +348,15 @@ export default function MeterReadingsPage() {
       for (const r of (readingsData.readings || [])) readingsMap[r.pumpId] = r;
       setExistingReadings(readingsMap);
 
-      // Fetch the MOST RECENT closing for each pump before today — regardless of which date.
-      // This is what the API also compares against, so both always agree.
+      setTankStockEntries(tankData.entries || []);
+
       const prevRes = await fetch(
         `/api/meter-readings?stationId=${stationId}&lastClosingBefore=${dateStr}`
       );
       const prevData = await prevRes.json();
       const prevMap = {};
       for (const r of (prevData.lastClosings || [])) {
-        prevMap[r._id] = r.closing; // _id is pumpId from the aggregate $group
+        prevMap[r._id] = r.closing;
       }
       setPreviousClosings(prevMap);
 
@@ -344,13 +364,25 @@ export default function MeterReadingsPage() {
       const shiftDispensers = activeShift?.dispenserAssignments || [];
       const readingEntries = Object.values(readingsMap);
 
+      // Build pump→tank map and assign color indices per tank
+      const ptMap = {};
+      const colorIdx = {};
+      let nextColor = 0;
       if (shiftDispensers.length > 0) {
+        for (const d of shiftDispensers) {
+          if (d.tankId) {
+            ptMap[d.dispenserId] = { tankId: d.tankId, tankLabel: d.tankLabel || d.tankId };
+            if (colorIdx[d.tankId] === undefined) colorIdx[d.tankId] = nextColor++ % TANK_COLORS.length;
+          }
+        }
         setPumps(shiftDispensers.map(d => ({ id: d.dispenserId, name: d.dispenserName, fuelType: d.fuelType })));
       } else if (readingEntries.length > 0) {
         setPumps(readingEntries.map(r => ({ id: r.pumpId, name: r.pumpLabel || r.pumpId, fuelType: '' })));
       } else {
         setPumps([]);
       }
+      setPumpTankMap(ptMap);
+      setTankColorIndex(colorIdx);
     } catch (err) {
       console.error('Error loading meter readings:', err);
     } finally {
@@ -455,18 +487,81 @@ export default function MeterReadingsPage() {
                 : 'No active shift and no readings for this date.'}
             </div>
           ) : (
-            pumps.map(pump => (
-              <PumpCard
-                key={pump.id}
-                pump={pump}
-                existing={existingReadings[pump.id] || null}
-                prevClosing={previousClosings[pump.id] ?? null}
-                canEdit={canEdit}
-                stationId={stationId}
-                date={date}
-                onSaved={() => fetchData(date)}
-              />
-            ))
+            <>
+              {pumps.map(pump => {
+                const tankInfo = pumpTankMap[pump.id];
+                const colorIdx = tankInfo ? tankColorIndex[tankInfo.tankId] : undefined;
+                const tankColor = colorIdx !== undefined ? TANK_COLORS[colorIdx] : null;
+                return (
+                  <PumpCard
+                    key={pump.id}
+                    pump={pump}
+                    existing={existingReadings[pump.id] || null}
+                    prevClosing={previousClosings[pump.id] ?? null}
+                    canEdit={canEdit}
+                    stationId={stationId}
+                    date={date}
+                    onSaved={() => fetchData(date)}
+                    tankColor={tankColor}
+                    tankLabel={tankInfo?.tankLabel}
+                  />
+                );
+              })}
+
+              {/* ── Tank dipstick summary ── */}
+              {(() => {
+                // Group tankStockEntries by tankId
+                const tMap = {};
+                for (const e of tankStockEntries) {
+                  if (!tMap[e.tankId]) tMap[e.tankId] = { label: e.tankLabel || e.tankId, product: e.product };
+                  tMap[e.tankId][e.period] = e;
+                }
+                const rows = Object.entries(tMap);
+                if (rows.length === 0) return null;
+                return (
+                  <div className="mt-2 rounded-2xl border border-slate-200 overflow-hidden">
+                    <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Tank Dipstick Summary</p>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {rows.map(([tankId, tank]) => {
+                        const colorIdx = tankColorIndex[tankId];
+                        const tc = colorIdx !== undefined ? TANK_COLORS[colorIdx] : null;
+                        const opening = tank.opening?.closingStockMeasured;
+                        const closing = tank.closing?.closingStockMeasured;
+                        const dispensed = opening != null && closing != null ? Math.max(0, opening - closing) : null;
+                        return (
+                          <div key={tankId} className={`flex items-center gap-4 px-4 py-3 border-l-4 ${tc?.border || 'border-l-gray-200'}`}>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-semibold ${tc?.text || 'text-slate-700'}`}>{tank.label}</p>
+                              <p className="text-xs text-slate-400">{tank.product}</p>
+                            </div>
+                            <div className="text-center px-3">
+                              <p className="text-xs text-slate-400 mb-0.5">Opening</p>
+                              <p className="text-sm font-bold text-slate-800">
+                                {opening != null ? `${Number(opening).toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : <span className="text-amber-500 text-xs font-medium">—</span>}
+                              </p>
+                            </div>
+                            <div className="text-center px-3">
+                              <p className="text-xs text-slate-400 mb-0.5">Closing</p>
+                              <p className="text-sm font-bold text-slate-800">
+                                {closing != null ? `${Number(closing).toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : <span className="text-amber-500 text-xs font-medium">Pending</span>}
+                              </p>
+                            </div>
+                            <div className="text-center px-3">
+                              <p className="text-xs text-slate-400 mb-0.5">Dispensed</p>
+                              <p className={`text-sm font-bold ${dispensed != null ? 'text-emerald-700' : 'text-slate-300'}`}>
+                                {dispensed != null ? `${dispensed.toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : '—'}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
           )}
         </div>
       </div>
