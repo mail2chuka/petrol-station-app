@@ -17,10 +17,33 @@ function fmtDate(d) {
 const STATUS_PILL = {
   pending:  'bg-amber-100 text-amber-700',
   approved: 'bg-green-100 text-green-700',
-  queried:  'bg-red-100 text-red-700',
-  rejected: 'bg-red-100 text-red-700',
-  query:    'bg-red-100 text-red-700',
+  queried:  'bg-amber-100 text-amber-700',
+  rejected: 'bg-amber-100 text-amber-700',
+  query:    'bg-amber-100 text-amber-700',
 };
+
+const TANK_COLORS = [
+  'bg-pink-100',
+  'bg-blue-100',
+  'bg-green-100',
+  'bg-orange-100',
+  'bg-purple-100',
+  'bg-teal-100',
+  'bg-yellow-100',
+  'bg-indigo-100',
+  'bg-rose-100',
+  'bg-cyan-100',
+];
+
+function buildTankColorMap(dispenserAssignments = []) {
+  const seen = [];
+  for (const d of dispenserAssignments) {
+    if (d.tankId && !seen.includes(d.tankId)) seen.push(d.tankId);
+  }
+  const map = {};
+  seen.forEach((id, i) => { map[id] = TANK_COLORS[i % TANK_COLORS.length]; });
+  return map;
+}
 
 function Pill({ status }) {
   const label = status === 'query' ? 'queried' : status;
@@ -63,7 +86,7 @@ function DetailModal({ item, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
-  const editableTypes = ['sale', 'reading', 'payment'];
+  const editableTypes = ['sale', 'reading', 'payment', 'deposit'];
 
   function startEdit() {
     const d = item.data;
@@ -73,6 +96,8 @@ function DetailModal({ item, onClose, onSaved }) {
       setForm({ opening: d.opening ?? '', closing: d.closing ?? '', rtt: d.rtt ?? 0 });
     } else if (item.type === 'payment') {
       setForm({ cashReceived: d.cashReceived ?? 0, posReceived: d.posReceived ?? 0 });
+    } else if (item.type === 'deposit') {
+      setForm({ amount: d.amount ?? 0 });
     }
     setSaveError('');
     setEditing(true);
@@ -97,6 +122,9 @@ function DetailModal({ item, onClose, onSaved }) {
       } else if (item.type === 'payment') {
         url = `/api/payments/${d._id}`;
         body = { cashReceived: parseFloat(form.cashReceived) || 0, posReceived: parseFloat(form.posReceived) || 0 };
+      } else if (item.type === 'deposit') {
+        url = `/api/cash-deposits/${d._id}`;
+        body = { amount: parseFloat(form.amount) };
       }
       const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json();
@@ -245,6 +273,15 @@ function DetailModal({ item, onClose, onSaved }) {
         {d.approvedByAdminName && <Row label="Reviewed By" value={d.approvedByAdminName} />}
       </dl>
     );
+    editBody = (
+      <div className="space-y-3 text-sm">
+        <Row label="Bank" value={d.bankName} />
+        <Row label="Deposited By" value={d.initiatedByCashierName} />
+        <div className="border-t pt-3 mt-2 space-y-2">
+          <EditField label="Amount (₦)" name="amount" value={form.amount} onChange={handleChange} />
+        </div>
+      </div>
+    );
   }
 
   const canEdit = editableTypes.includes(item.type);
@@ -274,7 +311,7 @@ function DetailModal({ item, onClose, onSaved }) {
 
         {editing && (
           <div className="mt-5 space-y-2">
-            {saveError && <p className="text-xs text-red-600">{saveError}</p>}
+            {saveError && <p className="text-xs text-amber-700">{saveError}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={() => { setEditing(false); setSaveError(''); }}
                 className="px-4 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">
@@ -292,9 +329,9 @@ function DetailModal({ item, onClose, onSaved }) {
   );
 }
 
-function ClickRow({ children, onClick }) {
+function ClickRow({ children, onClick, className = '' }) {
   return (
-    <tr onClick={onClick} className="hover:bg-blue-50 cursor-pointer transition-colors">
+    <tr onClick={onClick} className={`hover:opacity-80 cursor-pointer transition-opacity ${className}`}>
       {children}
     </tr>
   );
@@ -309,7 +346,6 @@ function TH({ children }) {
 // ── Day Detail View (4-section) ───────────────────────────────────────────────
 function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
   const [activeSection, setActiveSection] = useState('supervisor');
-  const [supervisorSubTab, setSupervisorSubTab] = useState('sales');
   const [cashierSubTab, setCashierSubTab] = useState('collections');
 
   const s = report?.summary;
@@ -366,7 +402,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
         <Card>
           <div className="text-center">
             <p className="text-xs text-gray-500 mb-1">Discrepancy</p>
-            <p className={`text-xl font-bold ${s.discrepancy > 0 ? 'text-green-600' : s.discrepancy < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+            <p className={`text-xl font-bold ${s.discrepancy > 0 ? 'text-green-600' : s.discrepancy < 0 ? 'text-amber-600' : 'text-gray-600'}`}>
               {s.discrepancy >= 0 ? '+' : ''}{fmtN(s.discrepancy)}
             </p>
           </div>
@@ -412,24 +448,29 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
           )}
 
           <Card title="Pump Assignments">
-            <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
+            <p className="text-xs text-gray-400 mb-3">Click a row to see full details. Row colour indicates linked tank.</p>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead><tr><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Price / L</TH></tr></thead>
+                <thead><tr><TH>Pump</TH><TH>Fuel</TH><TH>Tank</TH><TH>Supervisor</TH><TH>Price / L</TH></tr></thead>
                 <tbody className="divide-y divide-gray-100">
-                  {report.dayShift.dispenserAssignments.map((d, i) => {
-                    const price = report.dayShift.pricesAtStart instanceof Map
-                      ? report.dayShift.pricesAtStart.get(d.fuelType)
-                      : report.dayShift.pricesAtStart?.[d.fuelType];
-                    return (
-                      <ClickRow key={i} onClick={() => setDetailItem({ type: 'assignment', data: { ...d, priceAtStart: price } })}>
-                        <TD className="font-medium">{d.dispenserName}</TD>
-                        <TD>{d.fuelType}</TD>
-                        <TD>{d.supervisorName || '—'}</TD>
-                        <TD>{fmtNum(price)}</TD>
-                      </ClickRow>
-                    );
-                  })}
+                  {(() => {
+                    const tcMap = buildTankColorMap(report.dayShift.dispenserAssignments);
+                    return report.dayShift.dispenserAssignments.map((d, i) => {
+                      const price = report.dayShift.pricesAtStart instanceof Map
+                        ? report.dayShift.pricesAtStart.get(d.fuelType)
+                        : report.dayShift.pricesAtStart?.[d.fuelType];
+                      const rowColor = d.tankId ? tcMap[d.tankId] || '' : '';
+                      return (
+                        <ClickRow key={i} className={rowColor} onClick={() => setDetailItem({ type: 'assignment', data: { ...d, priceAtStart: price } })}>
+                          <TD className="font-medium">{d.dispenserName}</TD>
+                          <TD>{d.fuelType}</TD>
+                          <TD>{d.tankLabel || '—'}</TD>
+                          <TD>{d.supervisorName || '—'}</TD>
+                          <TD>{fmtNum(price)}</TD>
+                        </ClickRow>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -438,101 +479,125 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
       )}
 
       {/* ── SUPERVISOR INPUTS ── */}
-      {activeSection === 'supervisor' && (
-        <div className="space-y-4">
-          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-            {[{ key: 'sales', label: 'Sales' }, { key: 'readings', label: 'Meter Readings' }].map(t => (
-              <button key={t.key} onClick={() => setSupervisorSubTab(t.key)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${supervisorSubTab === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
+      {activeSection === 'supervisor' && (() => {
+        const assignments = report.dayShift?.dispenserAssignments || [];
+        const tankColorMap = buildTankColorMap(assignments);
+        const pumpTankMap = {};
+        for (const d of assignments) pumpTankMap[d.dispenserId] = d.tankId;
 
-          {supervisorSubTab === 'sales' && (
-            <Card title="Sales Entries">
-              {report.salesEntries.length === 0
-                ? <p className="text-sm text-gray-400 py-4 text-center">No sales recorded for this day.</p>
-                : <>
-                  <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead><tr><TH>Time</TH><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Liters (L)</TH><TH>Expected (₦)</TH></tr></thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {report.salesEntries.map((sale, i) => (
-                          <ClickRow key={sale._id || i} onClick={() => setDetailItem({ type: 'sale', data: sale })}>
-                            <TD>{new Date(sale.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</TD>
-                            <TD className="font-medium">{sale.dispenserName}</TD>
-                            <TD>{sale.fuelType}</TD>
-                            <TD>{sale.supervisorName}</TD>
-                            <TD>{Number(sale.liters).toFixed(2)}</TD>
-                            <TD>{fmtNum(sale.expectedAmount)}</TD>
-                          </ClickRow>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              }
-            </Card>
-          )}
+        // Group tank stock entries by tankId for the dipstick table
+        const tankEntryMap = {};
+        for (const entry of (report.tankStockEntries || [])) {
+          if (!tankEntryMap[entry.tankId]) {
+            tankEntryMap[entry.tankId] = { label: entry.tankLabel, product: entry.product };
+          }
+          tankEntryMap[entry.tankId][entry.period] = entry;
+        }
+        const tankRows = Object.entries(tankEntryMap);
 
-          {supervisorSubTab === 'readings' && (
-            <Card title="Meter Readings">
+        return (
+          <div className="space-y-4">
+            {/* ── Pump Meter Readings ── */}
+            <Card title="Pump Meter Readings">
               {report.meterReadings.length === 0
                 ? <p className="text-sm text-gray-400 py-4 text-center">No meter readings recorded for this day.</p>
                 : <>
-                  <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
+                  <p className="text-xs text-gray-400 mb-3">Click a row to see full details. Row colour indicates linked tank.</p>
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead><tr><TH>Pump</TH><TH>Supervisor</TH><TH>Opening</TH><TH>Closing</TH><TH>RTT</TH><TH>Status</TH></tr></thead>
+                      <thead><tr><TH>Pump</TH><TH>Supervisor</TH><TH>Opening</TH><TH>Closing</TH><TH>RTT</TH><TH>Net Sold (L)</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
-                        {report.meterReadings.map((r, i) => (
-                          <ClickRow key={r._id || i} onClick={() => setDetailItem({ type: 'reading', data: r })}>
-                            <TD className="font-medium">{r.pumpLabel || r.pumpId}</TD>
-                            <TD>{r.supervisorName}</TD>
-                            <TD>{r.opening}</TD>
-                            <TD>{r.closing ?? '—'}</TD>
-                            <TD>{r.rtt ?? 0}</TD>
-                            <TD>
-                              <div className="flex items-center gap-1.5">
+                        {report.meterReadings.map((r, i) => {
+                          const tankId = pumpTankMap[r.pumpId];
+                          const rowColor = tankId ? tankColorMap[tankId] || '' : '';
+                          const netSold = r.closing != null ? Math.max(0, r.closing - r.opening - (r.rtt || 0)).toFixed(2) : '—';
+                          return (
+                            <ClickRow key={r._id || i} className={rowColor} onClick={() => setDetailItem({ type: 'reading', data: r })}>
+                              <TD className="font-medium">{r.pumpLabel || r.pumpId}</TD>
+                              <TD>{r.supervisorName}</TD>
+                              <TD>{r.opening}</TD>
+                              <TD>{r.closing ?? '—'}</TD>
+                              <TD>{r.rtt ?? 0}</TD>
+                              <TD className="font-medium">{netSold}</TD>
+                              <TD>
                                 <Pill status={r.managerReviewStatus || 'pending'} />
-                                {r.discrepancyFlag && <span className="text-amber-500 text-xs">⚠</span>}
-                              </div>
-                            </TD>
-                          </ClickRow>
-                        ))}
+                              </TD>
+                            </ClickRow>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 </>
               }
             </Card>
-          )}
 
-          {report.supervisorSummaries.length > 0 && (
-            <Card title="Supervisor Summary">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead><tr><TH>Supervisor</TH><TH>Liters (L)</TH><TH>Expected (₦)</TH><TH>Cash (₦)</TH><TH>POS (₦)</TH><TH>Total (₦)</TH></tr></thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {report.supervisorSummaries.map((sup, i) => (
-                      <tr key={i}>
-                        <TD className="font-medium">{sup.supervisorName}</TD>
-                        <TD>{sup.totalLiters.toFixed(2)}</TD>
-                        <TD>{fmtNum(sup.totalExpected)}</TD>
-                        <TD>{fmtNum(sup.totalCash)}</TD>
-                        <TD>{fmtNum(sup.totalPos)}</TD>
-                        <TD className="font-semibold">{fmtNum(sup.totalPaymentReceived)}</TD>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            {/* ── Tank Dipstick Readings ── */}
+            <Card title="Tank Dipstick Readings">
+              {tankRows.length === 0
+                ? <p className="text-sm text-gray-400 py-4 text-center">No tank readings recorded for this day.</p>
+                : <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr>
+                          <TH>Tank</TH>
+                          <TH>Product</TH>
+                          <TH>Opening Dipstick (L)</TH>
+                          <TH>Closing Dipstick (L)</TH>
+                          <TH>Volume Used (L)</TH>
+                          <TH>Entered By</TH>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {tankRows.map(([tankId, tank]) => {
+                          const openingVal = tank.opening?.closingStockMeasured;
+                          const closingVal = tank.closing?.closingStockMeasured;
+                          const volumeUsed = openingVal != null && closingVal != null
+                            ? (openingVal - closingVal).toFixed(2) : '—';
+                          const rowColor = tankColorMap[tankId] || '';
+                          const enteredBy = tank.closing?.supervisorName || tank.opening?.supervisorName || '—';
+                          return (
+                            <tr key={tankId} className={`border-b border-gray-100 ${rowColor}`}>
+                              <TD className="font-medium">{tank.label || tankId}</TD>
+                              <TD>{tank.product}</TD>
+                              <TD>{openingVal != null ? fmtNum(openingVal) : <span className="text-amber-500 text-xs">Pending</span>}</TD>
+                              <TD>{closingVal != null ? fmtNum(closingVal) : <span className="text-amber-500 text-xs">Pending</span>}</TD>
+                              <TD className="font-medium">{volumeUsed}</TD>
+                              <TD className="text-gray-500">{enteredBy}</TD>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+              }
             </Card>
-          )}
-        </div>
-      )}
+
+            {/* ── Supervisor Summary ── */}
+            {report.supervisorSummaries.length > 0 && (
+              <Card title="Supervisor Summary">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead><tr><TH>Supervisor</TH><TH>Liters (L)</TH><TH>Expected (₦)</TH><TH>Cash (₦)</TH><TH>POS (₦)</TH><TH>Total (₦)</TH></tr></thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {report.supervisorSummaries.map((sup, i) => (
+                        <tr key={i}>
+                          <TD className="font-medium">{sup.supervisorName}</TD>
+                          <TD>{sup.totalLiters.toFixed(2)}</TD>
+                          <TD>{fmtNum(sup.totalExpected)}</TD>
+                          <TD>{fmtNum(sup.totalCash)}</TD>
+                          <TD>{fmtNum(sup.totalPos)}</TD>
+                          <TD className="font-semibold">{fmtNum(sup.totalPaymentReceived)}</TD>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── CASHIER INPUTS ── */}
       {activeSection === 'cashier' && (
@@ -607,7 +672,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
   );
 }
 
-// ── Summary list view (replaces ReportPeriodList) ────────────────────────────
+// ── Summary list view ────────────────────────────────────────────────────────
 function SummaryListView({ stationId, onSelectDay }) {
   const today = new Date().toISOString().split('T')[0];
   const firstOfMonth = (() => {
@@ -620,7 +685,6 @@ function SummaryListView({ stationId, onSelectDay }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [productFilter, setProductFilter] = useState('');
 
   const fetchRows = useCallback(async () => {
     if (!stationId) return;
@@ -644,7 +708,20 @@ function SummaryListView({ stationId, onSelectDay }) {
     return Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  const visibleRows = productFilter ? rows.filter(r => r.product === productFilter) : rows;
+  // Compute per-row tolerance values, then totals
+  const computedRows = rows.map(r => {
+    const tolerance = ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.sales ?? 0)) - (r.closingStock ?? 0);
+    const expTol = r.expectedTolerance ?? 0;
+    const sales = r.sales ?? 0;
+    const diffPercent = sales > 0 ? ((tolerance - expTol) / sales) * 100 : 0;
+    const salesAmount = (r.priceForDay ?? 0) * sales;
+    return { ...r, tolerance, expTol, diffPercent, salesAmount, sales };
+  });
+
+  const totalSales     = computedRows.reduce((s, r) => s + r.sales, 0);
+  const totalSalesAmt  = computedRows.reduce((s, r) => s + r.salesAmount, 0);
+  const totalTolerance = computedRows.reduce((s, r) => s + r.tolerance, 0);
+  const totalShortage  = computedRows.reduce((s, r) => s + (r.shortage ?? 0), 0);
 
   return (
     <div className="space-y-4">
@@ -659,73 +736,84 @@ function SummaryListView({ stationId, onSelectDay }) {
           <input type="date" value={to} min={from} max={today} onChange={e => setTo(e.target.value)}
             className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-ecana-maroon" />
         </div>
-        <div className="flex items-center gap-1.5">
-          <label className="text-xs text-gray-500 whitespace-nowrap">Product</label>
-          <select value={productFilter} onChange={e => setProductFilter(e.target.value)}
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-ecana-maroon bg-white">
-            <option value="">All</option>
-            {['PMS','AGO','LPG','DPK'].map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </div>
         <button onClick={fetchRows} disabled={loading}
           className="px-4 py-1.5 text-sm bg-ecana-maroon text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium">
           {loading ? 'Loading…' : 'Load'}
         </button>
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
+      {error && <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">{error}</div>}
       {loading && <div className="flex justify-center py-10"><div className="spinner" /></div>}
 
-      {!loading && visibleRows.length > 0 && (
+      {!loading && computedRows.length > 0 && (
         <div className="card-modern overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50">
                   <TH>Date</TH>
-                  <TH>Product</TH>
                   <TH>Opening Stock (L)</TH>
                   <TH>Stock In (L)</TH>
-                  <TH>Tolerance (L)</TH>
+                  <TH>Tolerance</TH>
                   <TH>Sales (L)</TH>
                   <TH>Price/L (₦)</TH>
                   <TH>Sales Amount (₦)</TH>
-                  <TH>Shortage Recorded (L)</TH>
+                  <TH>Shortage (L)</TH>
                   <TH>Closing Stock (L)</TH>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {visibleRows.map((r, i) => {
-                  const tolerance = ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.sales ?? 0)) - (r.closingStock ?? 0);
-                  const expTol = r.expectedTolerance ?? 0;
-                  const isFlagged = expTol > 0 && tolerance > expTol;
-                  const salesAmount = (r.priceForDay ?? 0) * (r.sales ?? 0);
+              <tbody>
+                {computedRows.map((r, i) => {
+                  const prevDate = i > 0 ? computedRows[i - 1].date : null;
+                  const isNewDate = prevDate !== r.date;
                   return (
-                    <ClickRow key={i} onClick={() => onSelectDay(r.date)}>
-                      <TD className="font-medium whitespace-nowrap">{new Date(r.date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}</TD>
-                      <TD>{r.product || '—'}</TD>
+                    <ClickRow
+                      key={i}
+                      onClick={() => onSelectDay(r.date)}
+                      className={isNewDate && i > 0 ? 'border-t-2 border-t-gray-300' : ''}
+                    >
+                      <TD className="font-medium whitespace-nowrap">
+                        {new Date(r.date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      </TD>
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
-                      <td className={`px-4 py-2.5 text-sm ${isFlagged ? 'bg-red-50' : ''}`}>
-                        <span className={`font-medium block ${tolerance > 0 ? 'text-red-600' : tolerance < 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                          {tolerance === 0 ? '—' : `${tolerance > 0 ? '+' : ''}${fmtNum(tolerance)} L`}
-                          {isFlagged && <span className="ml-1 text-red-500">⚠</span>}
+                      <td className={`px-4 py-2.5 text-sm ${r.tolerance > 0 && r.expTol > 0 && r.tolerance > r.expTol ? 'bg-amber-50' : ''}`}>
+                        <span className={`font-medium block ${r.tolerance > 0 ? 'text-amber-600' : r.tolerance < 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                          {r.tolerance === 0 ? '—' : `${r.tolerance > 0 ? '+' : ''}${fmtNum(r.tolerance)}`}
                         </span>
-                        {expTol > 0 && (
-                          <span className="text-xs text-gray-400 font-normal">
-                            Exp. tol: {fmtNum(expTol)} L ({r.tolerancePercent ?? 0}%)
+                        {r.expTol > 0 && (
+                          <span className="text-xs text-gray-400 font-normal block">
+                            Exp: {fmtNum(r.expTol)} ({r.tolerancePercent ?? 0}%)
+                          </span>
+                        )}
+                        {r.expTol > 0 && r.sales > 0 && (
+                          <span className={`text-xs font-medium block ${r.diffPercent >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {r.diffPercent >= 0 ? '+' : ''}{r.diffPercent.toFixed(2)}%
                           </span>
                         )}
                       </td>
                       <TD>{fmtNum(r.sales)}</TD>
                       <TD>{fmtNum(r.priceForDay)}</TD>
-                      <TD>{fmtNum(salesAmount)}</TD>
-                      <TD className={r.shortage > 0 ? 'text-red-600 font-medium' : ''}>{fmtNum(r.shortage)}</TD>
+                      <TD>{fmtNum(r.salesAmount)}</TD>
+                      <TD className={r.shortage > 0 ? 'text-amber-600 font-medium' : ''}>{fmtNum(r.shortage)}</TD>
                       <TD>{fmtNum(r.closingStock)}</TD>
                     </ClickRow>
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="bg-gray-100 border-t-2 border-t-gray-300">
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide">Totals</td>
+                  <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                  <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalTolerance)}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalSales)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtN(totalSalesAmt)}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalShortage)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
@@ -869,7 +957,7 @@ export default function AdminReportsPage() {
           </div>
 
           {detailError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{detailError}</div>
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">{detailError}</div>
           )}
 
           <DayDetail

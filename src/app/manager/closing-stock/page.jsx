@@ -29,12 +29,6 @@ function ClosingStockPageContent() {
   const [tankStockEntries, setTankStockEntries] = useState([]);
   const [markedDates, setMarkedDates] = useState({});
   const [loadingMonth, setLoadingMonth] = useState(false);
-
-  const [stockForms, setStockForms] = useState({});
-  const [stockEditing, setStockEditing] = useState({});
-  const [stockSaving, setStockSaving] = useState({});
-  const [stockErrors, setStockErrors] = useState({});
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -94,7 +88,6 @@ function ClosingStockPageContent() {
       setStation(stationObj);
       const entries = tsData.entries || [];
       setTankStockEntries(entries);
-      initForms(stationObj, entries);
     } catch (err) {
       setError(`Failed to load data: ${err.message || 'Please try again.'}`);
     } finally {
@@ -102,87 +95,6 @@ function ClosingStockPageContent() {
     }
   };
 
-  const initForms = (stationObj, entries) => {
-    const activeTanks = (stationObj?.tanks || []).filter(t => t.isActive !== false);
-    const closingByTankId = {};
-    for (const e of entries.filter(e => e.period === 'closing')) {
-      closingByTankId[e.tankId] = e;
-    }
-    const newForms = {};
-    const newEditing = {};
-    for (const tank of activeTanks) {
-      const saved = closingByTankId[tank._id];
-      newForms[tank._id] = saved
-        ? { value: String(saved.closingStockMeasured), notes: saved.notes || '' }
-        : { value: '', notes: '' };
-      newEditing[tank._id] = !saved;
-    }
-    setStockForms(newForms);
-    setStockEditing(newEditing);
-    setStockErrors({});
-  };
-
-  const refreshTankStock = async () => {
-    const tsRes = await fetch(`/api/tank-stock?stationId=${activeStationId}&date=${date}`);
-    const tsData = await tsRes.json();
-    const entries = tsData.entries || [];
-    setTankStockEntries(entries);
-    initForms(station, entries);
-  };
-
-  const handleFormChange = (tankId, field, value) => {
-    setStockForms(prev => ({ ...prev, [tankId]: { ...prev[tankId], [field]: value } }));
-  };
-
-  const handleSave = async (tank) => {
-    const form = stockForms[tank._id] || { value: '', notes: '' };
-    const value = parseFloat(form.value);
-    if (isNaN(value) || value < 0) {
-      setStockErrors(prev => ({ ...prev, [tank._id]: 'Enter a valid stock value (0 or greater)' }));
-      return;
-    }
-    setStockErrors(prev => ({ ...prev, [tank._id]: '' }));
-    setStockSaving(prev => ({ ...prev, [tank._id]: true }));
-    try {
-      const res = await fetch('/api/tank-stock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          stationId: activeStationId,
-          tankId: tank._id,
-          date,
-          period: 'closing',
-          stockValue: value,
-          notes: form.notes || '',
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setStockErrors(prev => ({ ...prev, [tank._id]: data.error || 'Failed to save' }));
-      } else {
-        await refreshTankStock();
-      }
-    } catch {
-      setStockErrors(prev => ({ ...prev, [tank._id]: 'Network error. Please try again.' }));
-    } finally {
-      setStockSaving(prev => ({ ...prev, [tank._id]: false }));
-    }
-  };
-
-  const handleStartEdit = (tankId) => {
-    setStockEditing(prev => ({ ...prev, [tankId]: true }));
-  };
-
-  const handleCancelEdit = (tankId) => {
-    const saved = tankStockEntries.find(e => e.tankId === tankId && e.period === 'closing');
-    if (saved) {
-      setStockForms(prev => ({
-        ...prev,
-        [tankId]: { value: String(saved.closingStockMeasured), notes: saved.notes || '' },
-      }));
-    }
-    setStockEditing(prev => ({ ...prev, [tankId]: false }));
-  };
 
   if (!activeStationId) {
     return (
@@ -206,14 +118,18 @@ function ClosingStockPageContent() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-800">Closing Stock</h1>
+        <h1 className="text-3xl font-bold text-gray-800">Tank Dipstick Readings</h1>
         <p className="text-gray-500 mt-1">
-          Record the measured stock remaining in each tank at end of day. Amber days have no closing entry yet.
+          View tank opening and closing dipstick readings entered by supervisors for the selected date.
         </p>
       </div>
 
+      <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-xl text-sm">
+        Tank dipstick readings are now entered by supervisors. This page shows a read-only view of what was recorded.
+      </div>
+
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">{error}</div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
@@ -247,7 +163,7 @@ function ClosingStockPageContent() {
           {allEntered && (
             <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-green-500" />
-              All tanks have closing stock recorded for this date.
+              All tanks have closing dipstick readings recorded for this date.
             </div>
           )}
 
@@ -255,107 +171,65 @@ function ClosingStockPageContent() {
             {activeTanks.length === 0 ? (
               <Card>
                 <p className="text-amber-700 text-sm font-medium">No active tanks configured for this station.</p>
-                <p className="text-gray-500 text-xs mt-1">Go to <strong>Station Config</strong> and add tanks before recording closing stock.</p>
+                <p className="text-gray-500 text-xs mt-1">Go to <strong>Station Config</strong> and add tanks.</p>
               </Card>
             ) : (
               activeTanks.map(tank => {
                 const saved = closingByTankId[tank._id];
                 const opening = openingByTankId[tank._id];
-                const isEditing = stockEditing[tank._id];
-                const isSaving = stockSaving[tank._id];
-                const errMsg = stockErrors[tank._id];
-                const form = stockForms[tank._id] || { value: '', notes: '' };
+                const openingDipstick = opening?.closingStockMeasured;
+                const closingDipstick = saved?.closingStockMeasured;
+                const volumeUsed = openingDipstick != null && closingDipstick != null
+                  ? (openingDipstick - closingDipstick) : null;
 
                 return (
                   <div key={tank._id} className="card-modern p-5">
-                    <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-start justify-between mb-4">
                       <div>
                         <p className="font-semibold text-gray-800">{tank.label}</p>
                         <span className={`badge ${tank.product === 'PMS' ? 'badge-success' : 'badge-info'}`}>
                           {tank.product}
                         </span>
                       </div>
-                      {saved && !isEditing && (
-                        <button
-                          onClick={() => handleStartEdit(tank._id)}
-                          className="text-sm text-ecana-maroon hover:underline font-medium"
-                        >
-                          Edit
-                        </button>
+                      {!saved && (
+                        <span className="text-xs text-amber-600 font-medium bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
+                          Awaiting supervisor
+                        </span>
                       )}
                     </div>
 
-                    {/* Opening stock reference */}
-                    {opening && (
-                      <p className="text-xs text-gray-400 mb-3">
-                        Opening stock: {fmt(opening.openingStock)} L
-                      </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-blue-50 rounded-xl p-3">
+                        <p className="text-xs text-blue-600 font-medium uppercase tracking-wide mb-1">Opening Dipstick</p>
+                        <p className="text-xl font-bold text-gray-900">
+                          {openingDipstick != null ? fmt(openingDipstick) : <span className="text-gray-400 text-base font-normal">—</span>}
+                          {openingDipstick != null && <span className="text-sm font-normal text-gray-500 ml-1">L</span>}
+                        </p>
+                        {opening?.supervisorName && (
+                          <p className="text-xs text-gray-400 mt-1">by {opening.supervisorName}</p>
+                        )}
+                      </div>
+                      <div className="bg-emerald-50 rounded-xl p-3">
+                        <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide mb-1">Closing Dipstick</p>
+                        <p className="text-xl font-bold text-gray-900">
+                          {closingDipstick != null ? fmt(closingDipstick) : <span className="text-gray-400 text-base font-normal">—</span>}
+                          {closingDipstick != null && <span className="text-sm font-normal text-gray-500 ml-1">L</span>}
+                        </p>
+                        {saved?.supervisorName && (
+                          <p className="text-xs text-gray-400 mt-1">by {saved.supervisorName}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {volumeUsed != null && (
+                      <div className="mt-3 flex items-center justify-between bg-slate-50 rounded-xl px-4 py-2.5 text-sm">
+                        <span className="text-gray-500">Volume Used</span>
+                        <span className="font-bold text-gray-900">{fmt(volumeUsed)} L</span>
+                      </div>
                     )}
 
-                    {saved && !isEditing ? (
-                      <div>
-                        <p className="text-3xl font-bold text-gray-800">
-                          {fmt(saved.closingStockMeasured)}{' '}
-                          <span className="text-lg font-normal text-gray-500">L</span>
-                        </p>
-                        {opening && (
-                          <p className={`text-sm mt-1 font-medium ${
-                            saved.variance < 0 ? 'text-red-600' : saved.variance > 0 ? 'text-green-600' : 'text-gray-500'
-                          }`}>
-                            Variance: {saved.variance >= 0 ? '+' : ''}{fmt(saved.variance)} L
-                          </p>
-                        )}
-                        {saved.notes && (
-                          <p className="text-xs text-gray-500 mt-1">{saved.notes}</p>
-                        )}
-                        <p className="text-xs text-gray-400 mt-1">by {saved.supervisorName}</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Closing Stock (Litres)
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            className="input-modern"
-                            placeholder="0"
-                            value={form.value}
-                            onChange={e => handleFormChange(tank._id, 'value', e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Notes (optional)
-                          </label>
-                          <input
-                            type="text"
-                            className="input-modern"
-                            placeholder="Any observations…"
-                            value={form.notes}
-                            onChange={e => handleFormChange(tank._id, 'notes', e.target.value)}
-                          />
-                        </div>
-                        {errMsg && <p className="text-sm text-red-600">{errMsg}</p>}
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleSave(tank)}
-                            disabled={isSaving}
-                            className="btn-modern btn-primary text-sm px-4 py-2 disabled:opacity-60"
-                          >
-                            {isSaving ? 'Saving…' : 'Save'}
-                          </button>
-                          {saved && (
-                            <button
-                              onClick={() => handleCancelEdit(tank._id)}
-                              className="btn-modern text-sm px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200"
-                            >
-                              Cancel
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                    {saved?.notes && (
+                      <p className="text-xs text-gray-500 mt-2">{saved.notes}</p>
                     )}
                   </div>
                 );
