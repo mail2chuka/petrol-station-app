@@ -36,8 +36,10 @@ export async function GET(request) {
 
     // ── Special mode: last closing dipstick per tank ──────────────────────────
     if (searchParams.get('lastPerTank')) {
+      const mongoose = require('mongoose');
+      const stationObjId = new mongoose.Types.ObjectId(stationId);
       const lastClosings = await TankStockEntry.aggregate([
-        { $match: { stationId, period: 'closing', closingStockMeasured: { $ne: null } } },
+        { $match: { stationId: stationObjId, period: 'closing', closingStockMeasured: { $ne: null } } },
         { $sort: { date: -1, createdAt: -1 } },
         {
           $group: {

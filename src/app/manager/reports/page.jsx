@@ -13,8 +13,11 @@ function fmt(n) {
     : '0.00';
 }
 
+const PRODUCT_LABELS = { PMS: 'PMS (Petrol)', AGO: 'AGO (Diesel)', DPK: 'DPK (Kerosene)', LPG: 'LPG (Gas)' };
+
 // ── Day detail content (manager perspective) ──────────────────────────────────
-function ManagerDayDetail({ report, loading }) {
+function ManagerDayDetail({ report, loading, station }) {
+  const [selectedProduct, setSelectedProduct] = useState('');
   if (loading) return <div className="flex justify-center py-16"><div className="spinner" /></div>;
 
   if (!report) return (
@@ -64,6 +67,32 @@ function ManagerDayDetail({ report, loading }) {
         </div>
       </div>
 
+      {/* Product Stock */}
+      {station && (
+        <Card title="Product Stock">
+          <div className="flex items-center gap-4 flex-wrap">
+            <select
+              value={selectedProduct}
+              onChange={e => setSelectedProduct(e.target.value)}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-ecana-maroon bg-white"
+            >
+              <option value="">Select product…</option>
+              {(station.availableProducts || ['PMS', 'AGO']).map(p => (
+                <option key={p} value={p}>{PRODUCT_LABELS[p] || p}</option>
+              ))}
+            </select>
+            {selectedProduct && (
+              <div className="flex items-baseline gap-2">
+                <span className="text-sm font-semibold text-gray-600">{selectedProduct} Stock:</span>
+                <span className="text-2xl font-black text-gray-900">
+                  {(station.currentStock?.[selectedProduct] ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 1 })}L
+                </span>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Cashier collections summary */}
       <Card title="Cashier Collections">
         {!report.paymentRecords?.length ? (
@@ -93,7 +122,7 @@ function ManagerDayDetail({ report, loading }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-gray-200">
-                  {['Supervisor', 'Litres Sold', 'Expected', 'Cash Recv.', 'POS Recv.', 'Total Recv.'].map((h, i) => (
+                  {['Supervisor', 'Volume Sold', 'Expected', 'Cash Recv.', 'POS Recv.', 'Total Recv.'].map((h, i) => (
                     <th key={h} className={`pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide ${i > 0 ? 'text-right' : ''}`}>{h}</th>
                   ))}
                 </tr>
@@ -122,7 +151,7 @@ function ManagerDayDetail({ report, loading }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-gray-200">
-                  {['Pump', 'Opening', 'Closing', 'RTT', 'Net Litres', 'Supervisor'].map((h, i) => (
+                  {['Pump', 'Opening', 'Closing', 'RTT', 'Volume Sold', 'Supervisor'].map((h, i) => (
                     <th key={h} className={`pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide ${i > 0 && i < 5 ? 'text-right' : ''}`}>{h}</th>
                   ))}
                 </tr>
@@ -230,6 +259,18 @@ function ManagerReportsPageContent() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [station, setStation] = useState(null);
+
+  useEffect(() => {
+    if (!stationId) return;
+    fetch('/api/stations')
+      .then(r => r.json())
+      .then(d => {
+        const found = (d.stations || []).find(s => s._id === stationId);
+        if (found) setStation(found);
+      })
+      .catch(() => {});
+  }, [stationId]);
 
   // Reset when station changes
   useEffect(() => {
@@ -314,7 +355,7 @@ function ManagerReportsPageContent() {
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>
           )}
 
-          <ManagerDayDetail report={report} loading={loading} />
+          <ManagerDayDetail report={report} loading={loading} station={station} />
         </div>
       )}
     </div>
