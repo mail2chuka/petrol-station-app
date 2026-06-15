@@ -26,6 +26,8 @@ export default function AdminFlagsPage() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterSeverity, setFilterSeverity] = useState('');
 
+  const [fetchError, setFetchError] = useState('');
+
   // Per-flag action state: { [flagId]: { resolveOpen, resolutionNote, submitting, error } }
   const [actionState, setActionState] = useState({});
 
@@ -45,6 +47,7 @@ export default function AdminFlagsPage() {
 
   const fetchFlags = async () => {
     setLoading(true);
+    setFetchError('');
     try {
       const params = new URLSearchParams();
       if (filterStation) params.set('stationId', filterStation);
@@ -52,8 +55,14 @@ export default function AdminFlagsPage() {
       if (filterSeverity) params.set('severity', filterSeverity);
       const res = await fetch(`/api/flags?${params.toString()}`);
       const data = await res.json();
-      setFlags(data.flags || []);
+      if (!res.ok) {
+        setFetchError(data.error || `Error ${res.status}`);
+        setFlags([]);
+      } else {
+        setFlags(data.flags || []);
+      }
     } catch (err) {
+      setFetchError('Network error — could not reach server.');
       console.error('Error fetching flags:', err);
     } finally {
       setLoading(false);
@@ -176,6 +185,10 @@ export default function AdminFlagsPage() {
           />
         </div>
       </Card>
+
+      {fetchError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{fetchError}</div>
+      )}
 
       <Card title={`Flags ${flags.length > 0 ? `(${flags.length})` : ''}`}>
         {loading ? (
