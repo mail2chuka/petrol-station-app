@@ -118,12 +118,12 @@ function ManagerDayDetail({ report, loading, station }) {
       {/* Supervisor summary */}
       {report.supervisorSummaries?.length > 0 && (
         <Card title="Supervisor Summary">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[350px]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-white">
                 <tr className="text-left border-b border-gray-200">
                   {['Supervisor', 'Volume Sold', 'Expected', 'Cash Recv.', 'POS Recv.', 'Total Recv.'].map((h, i) => (
-                    <th key={h} className={`pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide ${i > 0 ? 'text-right' : ''}`}>{h}</th>
+                    <th key={h} className={`pb-3 pr-4 font-bold text-gray-700 text-xs uppercase tracking-wide bg-white ${i > 0 ? 'text-right' : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -147,12 +147,12 @@ function ManagerDayDetail({ report, loading, station }) {
       {/* Meter readings */}
       {report.meterReadings?.length > 0 && (
         <Card title="Meter Readings">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[350px]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-white">
                 <tr className="text-left border-b border-gray-200">
                   {['Pump', 'Opening', 'Closing', 'RTT', 'Volume Sold', 'Supervisor'].map((h, i) => (
-                    <th key={h} className={`pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide ${i > 0 && i < 5 ? 'text-right' : ''}`}>{h}</th>
+                    <th key={h} className={`pb-3 pr-4 font-bold text-gray-700 text-xs uppercase tracking-wide bg-white ${i > 0 && i < 5 ? 'text-right' : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -190,15 +190,15 @@ function ManagerDayDetail({ report, loading, station }) {
         const tanks = Object.values(tankMap);
         return (
           <Card title="Tank Dipstick Readings">
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[350px]">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-white">
                   <tr className="text-left border-b border-gray-200">
-                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide">Tank</th>
-                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Opening (L)</th>
-                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Closing (L)</th>
-                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Volume Sold (L)</th>
-                    <th className="pb-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Entered By</th>
+                    <th className="pb-3 pr-4 font-bold text-gray-700 text-xs uppercase tracking-wide bg-white">Tank</th>
+                    <th className="pb-3 pr-4 font-bold text-gray-700 text-xs uppercase tracking-wide text-right bg-white">Opening (L)</th>
+                    <th className="pb-3 pr-4 font-bold text-gray-700 text-xs uppercase tracking-wide text-right bg-white">Closing (L)</th>
+                    <th className="pb-3 pr-4 font-bold text-gray-700 text-xs uppercase tracking-wide text-right bg-white">Volume Sold (L)</th>
+                    <th className="pb-3 font-bold text-gray-700 text-xs uppercase tracking-wide bg-white">Entered By</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">

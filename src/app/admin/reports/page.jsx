@@ -340,13 +340,13 @@ function TD({ children, className = '' }) {
   return <td className={`px-4 py-2.5 text-sm text-gray-700 ${className}`}>{children}</td>;
 }
 function TH({ children }) {
-  return <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left bg-gray-50">{children}</th>;
+  return <th className="px-4 py-2.5 text-xs font-bold text-gray-700 uppercase tracking-wide text-left bg-gray-50 sticky top-0 z-10">{children}</th>;
 }
 
 function ToleranceHeader() {
   const [open, setOpen] = useState(false);
   return (
-    <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left bg-gray-50">
+    <th className="px-4 py-2.5 text-xs font-bold text-gray-700 uppercase tracking-wide text-left bg-gray-50 sticky top-0 z-10">
       <div className="flex items-center gap-1.5 relative">
         <span>Tolerance</span>
         <button
@@ -492,7 +492,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
 
           <Card title="Pump Assignments">
             <p className="text-xs text-gray-400 mb-3">Click a row to see full details. Row colour indicates linked tank.</p>
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[350px]">
               <table className="w-full">
                 <thead><tr><TH>Pump</TH><TH>Fuel</TH><TH>Tank</TH><TH>Supervisor</TH><TH>Price / L</TH></tr></thead>
                 <tbody className="divide-y divide-gray-100">
@@ -581,7 +581,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                 ? <p className="text-sm text-gray-400 py-4 text-center">No meter readings recorded{supervisorFuel ? ` for ${supervisorFuel}` : ''} for this day.</p>
                 : <>
                   <p className="text-xs text-gray-400 mb-3">Click a row to see full details. Row colour indicates linked tank.</p>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-auto max-h-[350px]">
                     <table className="w-full">
                       <thead><tr><TH>Pump</TH><TH>Supervisor</TH><TH>Opening</TH><TH>Closing</TH><TH>RTT</TH><TH>Net Sold (L)</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
@@ -626,7 +626,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
             <Card title="Tank Dipstick Readings">
               {tankRows.length === 0
                 ? <p className="text-sm text-gray-400 py-4 text-center">No tank readings recorded for this day.</p>
-                : <div className="overflow-x-auto">
+                : <div className="overflow-auto max-h-[350px]">
                     <table className="w-full">
                       <thead>
                         <tr>
@@ -677,7 +677,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
             {/* ── Supervisor Summary ── */}
             {report.supervisorSummaries.length > 0 && (
               <Card title="Supervisor Summary">
-                <div className="overflow-x-auto">
+                <div className="overflow-auto max-h-[350px]">
                   <table className="w-full">
                     <thead><tr><TH>Supervisor</TH><TH>Liters (L)</TH><TH>Expected (₦)</TH><TH>Cash (₦)</TH><TH>POS (₦)</TH><TH>Total (₦)</TH></tr></thead>
                     <tbody className="divide-y divide-gray-100">
@@ -718,7 +718,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                 ? <p className="text-sm text-gray-400 py-4 text-center">No collections recorded for this day.</p>
                 : <>
                   <p className="text-xs text-gray-400 mb-3">Click a row to see full POS breakdown.</p>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-auto max-h-[350px]">
                     <table className="w-full">
                       <thead><tr><TH>Time</TH><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Cash</TH><TH>POS</TH><TH>Total</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
@@ -748,7 +748,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                 ? <p className="text-sm text-gray-400 py-4 text-center">No bank deposits recorded for this day.</p>
                 : <>
                   <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-auto max-h-[350px]">
                     <table className="w-full">
                       <thead><tr><TH>Amount</TH><TH>Bank</TH><TH>Deposited By</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
@@ -865,7 +865,7 @@ function SummaryListView({ stationId, onSelectDay }) {
 
       {!loading && computedRows.length > 0 && (
         <div className="card-modern overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[70vh]">
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50">
@@ -906,7 +906,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                       <TD>{fmtNum(r.sales)}</TD>
                       <TD>{fmtNum(r.priceForDay)}</TD>
                       <TD>{fmtNum(r.salesAmount)}</TD>
-                      <TD className={r.shortage > 0 ? 'text-amber-600 font-medium' : 'text-gray-400'}>
+                      <TD className={r.shortage > 0 ? 'bg-pink-100 text-pink-700 font-medium' : 'text-gray-400'}>
                         {r.shortage > 0 ? fmtNum(r.shortage) : '—'}
                       </TD>
                       <TD>{fmtNum(r.closingStock)}</TD>
@@ -930,7 +930,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalSales)}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtN(totalSalesAmt)}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-amber-700">{totalShortage > 0 ? fmtNum(totalShortage) : '—'}</td>
+                  <td className={`px-4 py-3 text-sm font-bold ${totalShortage > 0 ? 'bg-pink-100 text-pink-700' : 'text-gray-400'}`}>{totalShortage > 0 ? fmtNum(totalShortage) : '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                 </tr>
               </tfoot>
@@ -1033,14 +1033,24 @@ export default function AdminReportsPage() {
       {/* Header + station selector */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h1 className="text-3xl font-bold text-gray-800">Reports</h1>
-        <div className="w-64">
-          <Select
-            label="Station"
-            name="station"
-            value={selectedStation}
-            onChange={e => setSelectedStation(e.target.value)}
-            options={stationOptions}
-          />
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-bold text-gray-700 uppercase tracking-wide">Station</label>
+          <div className="relative">
+            <select
+              value={selectedStation}
+              onChange={e => setSelectedStation(e.target.value)}
+              className="w-full font-bold text-gray-900 text-sm border-2 border-ecana-maroon rounded-xl px-4 py-2.5 bg-white focus:outline-none focus:ring-4 focus:ring-ecana-maroon/10 appearance-none cursor-pointer pr-10 min-w-[220px]"
+            >
+              {stationOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg className="w-5 h-5 text-ecana-maroon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
         </div>
       </div>
 
