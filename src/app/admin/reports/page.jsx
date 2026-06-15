@@ -928,8 +928,8 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">
                     {totalOverage > 0 ? fmtNum(totalOverage) : '—'}
                     {totalOverage > 0 && totalSales > 0 && (
-                      <span className={`block text-xs font-medium ${totalDiffPct >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                        {totalDiffPct >= 0 ? '+' : ''}{totalDiffPct.toFixed(2)}%
+                      <span className={`block text-xs font-medium ${(totalOverage - totalExpTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                        {(totalOverage - totalExpTol) >= 0 ? '+' : ''}{fmtNum(totalOverage - totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(0)}%)
                       </span>
                     )}
                   </td>

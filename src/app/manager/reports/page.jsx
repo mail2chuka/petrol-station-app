@@ -180,41 +180,58 @@ function ManagerDayDetail({ report, loading, station }) {
       )}
 
       {/* Tank stock */}
-      {report.tankStockEntries?.length > 0 && (
-        <Card title="Tank Stock">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left border-b border-gray-200">
-                  <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide">Tank</th>
-                  <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide">Period</th>
-                  <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Stock (L)</th>
-                  <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Variance</th>
-                  <th className="pb-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">By</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {report.tankStockEntries.map((e, i) => (
-                  <tr key={i}>
-                    <td className="py-3 pr-4 font-medium text-gray-800">
-                      {e.tankLabel || e.tankId}
-                      <span className={`ml-2 badge ${e.product === 'PMS' ? 'badge-success' : 'badge-info'}`}>{e.product}</span>
-                    </td>
-                    <td className="py-3 pr-4">
-                      <span className={`badge ${e.period === 'opening' ? 'badge-info' : 'badge-warning'}`}>{e.period}</span>
-                    </td>
-                    <td className="py-3 pr-4 text-right font-semibold text-gray-800">{fmt(e.closingStockMeasured)}</td>
-                    <td className={`py-3 pr-4 text-right font-semibold ${e.variance < 0 ? 'text-red-600' : e.variance > 0 ? 'text-green-600' : 'text-gray-500'}`}>
-                      {e.variance >= 0 ? '+' : ''}{fmt(e.variance)}
-                    </td>
-                    <td className="py-3 text-gray-600 text-xs">{e.supervisorName}</td>
+      {report.tankStockEntries?.length > 0 && (() => {
+        // Group by tankId, collect opening and closing entries
+        const tankMap = {};
+        for (const e of report.tankStockEntries) {
+          if (!tankMap[e.tankId]) tankMap[e.tankId] = { label: e.tankLabel || e.tankId, product: e.product };
+          tankMap[e.tankId][e.period] = e;
+        }
+        const tanks = Object.values(tankMap);
+        return (
+          <Card title="Tank Dipstick Readings">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left border-b border-gray-200">
+                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide">Tank</th>
+                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Opening (L)</th>
+                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Closing (L)</th>
+                    <th className="pb-3 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wide text-right">Volume Sold (L)</th>
+                    <th className="pb-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Entered By</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {tanks.map((t, i) => {
+                    const opening = t.opening?.closingStockMeasured ?? null;
+                    const closing = t.closing?.closingStockMeasured ?? null;
+                    const volumeSold = opening != null && closing != null ? opening - closing : null;
+                    const enteredBy = t.closing?.supervisorName || t.opening?.supervisorName || '—';
+                    return (
+                      <tr key={i}>
+                        <td className="py-3 pr-4 font-medium text-gray-800">
+                          {t.label}
+                          <span className={`ml-2 badge ${t.product === 'PMS' ? 'badge-success' : 'badge-info'}`}>{t.product}</span>
+                        </td>
+                        <td className="py-3 pr-4 text-right text-gray-600">
+                          {opening != null ? fmt(opening) : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="py-3 pr-4 text-right font-semibold text-gray-800">
+                          {closing != null ? fmt(closing) : <span className="text-amber-500 text-xs">Pending</span>}
+                        </td>
+                        <td className="py-3 pr-4 text-right font-semibold text-emerald-700">
+                          {volumeSold != null ? fmt(volumeSold) : '—'}
+                        </td>
+                        <td className="py-3 text-gray-600 text-xs">{enteredBy}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* Dispenser assignments */}
       {report.dayShift.dispenserAssignments?.length > 0 && (

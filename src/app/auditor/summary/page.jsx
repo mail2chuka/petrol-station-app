@@ -125,14 +125,11 @@ export default function AuditorSummaryPage() {
                       <td className="px-3 py-2.5 text-gray-700">{r.product || '—'}</td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.openingStock)}</td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.stockIn)}</td>
-                      <td className={`px-3 py-2.5 ${isFlagged ? 'bg-red-50' : ''}`}>
-                        <span className={`font-medium block ${tolerance > 0 ? 'text-red-600' : tolerance < 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                          {tolerance === 0 ? '—' : `${tolerance > 0 ? '+' : ''}${fmtNum(tolerance)} L`}
-                          {isFlagged && <span className="ml-1 text-red-500">⚠</span>}
-                        </span>
-                        {expTol > 0 && (
-                          <span className="text-xs text-gray-400 font-normal">
-                            Exp. tol: {fmtNum(expTol)} L ({r.tolerancePercent ?? 0}%)
+                      <td className="px-3 py-2.5">
+                        <span className="block text-gray-800">{tolerance === 0 ? '—' : fmtNum(tolerance)}</span>
+                        {(r.sales ?? 0) > 0 && expTol > 0 && (
+                          <span className={`text-xs font-medium block ${(tolerance - expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {(tolerance - expTol) >= 0 ? '+' : ''}{fmtNum(tolerance - expTol)} ({r.tolerancePercent ?? ((expTol / (r.sales ?? 1)) * 100).toFixed(0)}%)
                           </span>
                         )}
                       </td>

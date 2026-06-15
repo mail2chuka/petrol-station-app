@@ -118,8 +118,13 @@ function SummaryBookContent() {
                       <td className="px-3 py-2.5 text-gray-700">{r.product || '—'}</td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.openingStock)}</td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.stockIn)}</td>
-                      <td className={`px-3 py-2.5 font-medium ${tolerance < 0 ? 'text-red-600' : tolerance > 0 ? 'text-green-600' : 'text-gray-700'}`}>
-                        {fmtNum(tolerance)}
+                      <td className="px-3 py-2.5">
+                        <span className="block text-gray-800">{fmtNum(tolerance)}</span>
+                        {(r.sales ?? 0) > 0 && (
+                          <span className={`text-xs font-medium block ${(tolerance - expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {(tolerance - expTol) >= 0 ? '+' : ''}{fmtNum(tolerance - expTol)} ({((expTol / (r.sales ?? 0)) * 100).toFixed(0)}%)
+                          </span>
+                        )}
                       </td>
                       <td className={`px-3 py-2.5 ${isFlagged ? 'bg-amber-50 text-amber-800 font-semibold' : 'text-gray-700'}`}>
                         {fmtNum(expTol)}{isFlagged && <span className="ml-1 text-amber-600">⚠</span>}
