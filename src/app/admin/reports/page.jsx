@@ -895,18 +895,12 @@ function SummaryListView({ stationId, onSelectDay }) {
                       </TD>
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
-                      <td className="px-4 py-2.5 text-sm">
-                        {r.overage > 0 ? (
-                          <>
-                            <span className="font-medium block text-gray-800">{fmtNum(r.overage)}</span>
-                            {r.sales > 0 && (
-                              <span className={`text-xs font-medium block ${r.diffPercent >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                                {r.diffPercent >= 0 ? '+' : ''}{r.diffPercent.toFixed(2)}%
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-gray-400">—</span>
+                      <td className="px-4 py-2.5 text-sm font-bold text-gray-800">
+                        {r.overage > 0 ? fmtNum(r.overage) : '—'}
+                        {r.overage > 0 && r.sales > 0 && (
+                          <span className={`block text-xs font-medium ${(r.overage - r.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {(r.overage - r.expTol) >= 0 ? '+' : ''}{fmtNum(r.overage - r.expTol)} ({((r.expTol / r.sales) * 100).toFixed(0)}%)
+                          </span>
                         )}
                       </td>
                       <TD>{fmtNum(r.sales)}</TD>
