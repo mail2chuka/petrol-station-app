@@ -811,7 +811,7 @@ function SummaryListView({ stationId, onSelectDay }) {
   }
 
   // Use API's pre-computed overage/shortage (already mutually exclusive per row)
-  const computedRows = rows.filter(r => !selectedFuel || r.fuelType === selectedFuel).map(r => {
+  const computedRows = rows.filter(r => !selectedFuel || r.product === selectedFuel).map(r => {
     const overage = r.overage ?? 0;
     const shortage = r.shortage ?? 0;
     const expTol = r.expectedTolerance ?? 0;
