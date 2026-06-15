@@ -340,13 +340,13 @@ function TD({ children, className = '' }) {
   return <td className={`px-4 py-2.5 text-sm text-gray-700 ${className}`}>{children}</td>;
 }
 function TH({ children }) {
-  return <th className="px-4 py-2.5 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-left bg-ecana-maroon-100 sticky top-0 z-10">{children}</th>;
+  return <th className="px-4 py-2.5 text-xs uppercase tracking-wide text-left">{children}</th>;
 }
 
 function ToleranceHeader() {
   const [open, setOpen] = useState(false);
   return (
-    <th className="px-4 py-2.5 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-left bg-ecana-maroon-100 sticky top-0 z-10">
+    <th className="px-4 py-2.5 text-xs uppercase tracking-wide text-left">
       <div className="flex items-center gap-1.5 relative">
         <span>Tolerance</span>
         <button

@@ -219,16 +219,6 @@
     background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
   }
 
-  /* Global table header: themed background, bold text, sticky on scroll */
-  thead th {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background-color: var(--color-ecana-maroon-100) !important;
-    color: var(--color-ecana-maroon-800) !important;
-    font-weight: 700 !important;
-  }
-
   /* Card styles */
   .card-modern {
     background: white;
@@ -485,4 +475,22 @@
     background: #dbeafe;
     color: #1e40af;
   }
+}
+
+/* ── Global table headers ────────────────────────────────────────────────────
+   Outside all @layer blocks so this wins the cascade over every Tailwind
+   utility class without needing !important. */
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: #8B1E3F;   /* ecana-maroon — same as primary buttons */
+  color: white;
+  font-weight: 700;
+}
+
+/* Remove any row-level background inside thead so th cells are the only
+   coloured surface (prevents the tr bg from bleeding between cells). */
+thead tr {
+  background: none;
 }

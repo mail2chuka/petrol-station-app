@@ -94,7 +94,7 @@ export default function Table({ columns, data, onRowClick, emptyMessage = 'No da
       <div className="hidden sm:block overflow-auto max-h-[60vh] rounded-xl border border-slate-200/80">
         <table className="min-w-[1100px] w-full">
           <thead>
-            <tr className="bg-slate-50/80">
+            <tr>
               {columns.map((column, index) => (
                 <th
                   key={index}

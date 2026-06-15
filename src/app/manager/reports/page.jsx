@@ -120,10 +120,10 @@ function ManagerDayDetail({ report, loading, station }) {
         <Card title="Supervisor Summary">
           <div className="overflow-auto max-h-[350px]">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
+              <thead>
                 <tr className="text-left">
                   {['Supervisor', 'Volume Sold', 'Expected', 'Cash Recv.', 'POS Recv.', 'Total Recv.'].map((h, i) => (
-                    <th key={h} className={`py-3 pr-4 pl-2 font-bold text-ecana-maroon-800 text-xs uppercase tracking-wide bg-ecana-maroon-100 ${i > 0 ? 'text-right' : ''}`}>{h}</th>
+                    <th key={h} className={`py-3 pr-4 pl-2 text-xs uppercase tracking-wide ${i > 0 ? 'text-right' : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -149,10 +149,10 @@ function ManagerDayDetail({ report, loading, station }) {
         <Card title="Meter Readings">
           <div className="overflow-auto max-h-[350px]">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
+              <thead>
                 <tr className="text-left">
                   {['Pump', 'Opening', 'Closing', 'RTT', 'Volume Sold', 'Supervisor'].map((h, i) => (
-                    <th key={h} className={`py-3 pr-4 pl-2 font-bold text-ecana-maroon-800 text-xs uppercase tracking-wide bg-ecana-maroon-100 ${i > 0 && i < 5 ? 'text-right' : ''}`}>{h}</th>
+                    <th key={h} className={`py-3 pr-4 pl-2 text-xs uppercase tracking-wide ${i > 0 && i < 5 ? 'text-right' : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -192,13 +192,13 @@ function ManagerDayDetail({ report, loading, station }) {
           <Card title="Tank Dipstick Readings">
             <div className="overflow-auto max-h-[350px]">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10">
+                <thead>
                   <tr className="text-left">
-                    <th className="py-3 px-2 font-bold text-ecana-maroon-800 text-xs uppercase tracking-wide bg-ecana-maroon-100">Tank</th>
-                    <th className="py-3 px-2 font-bold text-ecana-maroon-800 text-xs uppercase tracking-wide text-right bg-ecana-maroon-100">Opening (L)</th>
-                    <th className="py-3 px-2 font-bold text-ecana-maroon-800 text-xs uppercase tracking-wide text-right bg-ecana-maroon-100">Closing (L)</th>
-                    <th className="py-3 px-2 font-bold text-ecana-maroon-800 text-xs uppercase tracking-wide text-right bg-ecana-maroon-100">Volume Sold (L)</th>
-                    <th className="py-3 px-2 font-bold text-ecana-maroon-800 text-xs uppercase tracking-wide bg-ecana-maroon-100">Entered By</th>
+                    <th className="py-3 px-2 text-xs uppercase tracking-wide">Tank</th>
+                    <th className="py-3 px-2 text-xs uppercase tracking-wide text-right">Opening (L)</th>
+                    <th className="py-3 px-2 text-xs uppercase tracking-wide text-right">Closing (L)</th>
+                    <th className="py-3 px-2 text-xs uppercase tracking-wide text-right">Volume Sold (L)</th>
+                    <th className="py-3 px-2 text-xs uppercase tracking-wide">Entered By</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">

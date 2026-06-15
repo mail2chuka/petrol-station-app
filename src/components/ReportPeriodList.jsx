@@ -204,13 +204,13 @@ export default function ReportPeriodList({ stationId, onSelectDay }) {
             <table className="w-full">
               <thead>
                 <tr>
-                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-left sticky top-0 z-10 bg-ecana-maroon-100">Date</th>
-                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-left sticky top-0 z-10 bg-ecana-maroon-100">Status</th>
-                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-right sticky top-0 z-10 bg-ecana-maroon-100">Liters (L)</th>
-                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-right sticky top-0 z-10 bg-ecana-maroon-100">Expected (₦)</th>
-                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-right sticky top-0 z-10 bg-ecana-maroon-100">Cash (₦)</th>
-                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-right sticky top-0 z-10 bg-ecana-maroon-100">POS (₦)</th>
-                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-right sticky top-0 z-10 bg-ecana-maroon-100">Discrepancy (₦)</th>
+                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-left">Date</th>
+                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-left">Status</th>
+                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-right">Liters (L)</th>
+                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-right">Expected (₦)</th>
+                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-right">Cash (₦)</th>
+                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-right">POS (₦)</th>
+                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-right">Discrepancy (₦)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
