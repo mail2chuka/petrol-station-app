@@ -340,13 +340,13 @@ function TD({ children, className = '' }) {
   return <td className={`px-4 py-2.5 text-sm text-gray-700 ${className}`}>{children}</td>;
 }
 function TH({ children }) {
-  return <th className="px-4 py-2.5 text-xs font-bold text-gray-700 uppercase tracking-wide text-left bg-gray-50 sticky top-0 z-10">{children}</th>;
+  return <th className="px-4 py-2.5 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-left bg-ecana-maroon-100 sticky top-0 z-10">{children}</th>;
 }
 
 function ToleranceHeader() {
   const [open, setOpen] = useState(false);
   return (
-    <th className="px-4 py-2.5 text-xs font-bold text-gray-700 uppercase tracking-wide text-left bg-gray-50 sticky top-0 z-10">
+    <th className="px-4 py-2.5 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-left bg-ecana-maroon-100 sticky top-0 z-10">
       <div className="flex items-center gap-1.5 relative">
         <span>Tolerance</span>
         <button
@@ -868,7 +868,7 @@ function SummaryListView({ stationId, onSelectDay }) {
           <div className="overflow-auto max-h-[70vh]">
             <table className="w-full">
               <thead>
-                <tr className="bg-gray-50">
+                <tr>
                   <TH>Date</TH>
                   <TH>Opening Stock (L)</TH>
                   <TH>Stock In (L)</TH>
@@ -906,8 +906,8 @@ function SummaryListView({ stationId, onSelectDay }) {
                       <TD>{fmtNum(r.sales)}</TD>
                       <TD>{fmtNum(r.priceForDay)}</TD>
                       <TD>{fmtNum(r.salesAmount)}</TD>
-                      <TD className={r.shortage > 0 ? 'bg-pink-100 text-pink-700 font-medium' : 'text-gray-400'}>
-                        {r.shortage > 0 ? fmtNum(r.shortage) : '—'}
+                      <TD className={r.shortage > 0 ? 'text-pink-600 font-medium' : r.overage > 0 ? 'text-green-600 font-medium' : 'text-gray-400'}>
+                        {r.shortage > 0 ? fmtNum(r.shortage) : r.overage > 0 ? fmtNum(r.overage) : '—'}
                       </TD>
                       <TD>{fmtNum(r.closingStock)}</TD>
                     </ClickRow>
@@ -930,7 +930,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalSales)}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtN(totalSalesAmt)}</td>
-                  <td className={`px-4 py-3 text-sm font-bold ${totalShortage > 0 ? 'bg-pink-100 text-pink-700' : 'text-gray-400'}`}>{totalShortage > 0 ? fmtNum(totalShortage) : '—'}</td>
+                  <td className={`px-4 py-3 text-sm font-bold ${totalShortage > 0 ? 'text-pink-600' : totalOverage > 0 ? 'text-green-600' : 'text-gray-400'}`}>{totalShortage > 0 ? fmtNum(totalShortage) : totalOverage > 0 ? fmtNum(totalOverage) : '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                 </tr>
               </tfoot>

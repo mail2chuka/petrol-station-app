@@ -203,14 +203,14 @@ export default function ReportPeriodList({ stationId, onSelectDay }) {
           <div className="overflow-auto max-h-[70vh]">
             <table className="w-full">
               <thead>
-                <tr className="bg-gray-50">
-                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wide text-left sticky top-0 z-10 bg-gray-50">Date</th>
-                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wide text-left sticky top-0 z-10 bg-gray-50">Status</th>
-                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wide text-right sticky top-0 z-10 bg-gray-50">Liters (L)</th>
-                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wide text-right sticky top-0 z-10 bg-gray-50">Expected (₦)</th>
-                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wide text-right sticky top-0 z-10 bg-gray-50">Cash (₦)</th>
-                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wide text-right sticky top-0 z-10 bg-gray-50">POS (₦)</th>
-                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wide text-right sticky top-0 z-10 bg-gray-50">Discrepancy (₦)</th>
+                <tr>
+                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-left sticky top-0 z-10 bg-ecana-maroon-100">Date</th>
+                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-left sticky top-0 z-10 bg-ecana-maroon-100">Status</th>
+                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-right sticky top-0 z-10 bg-ecana-maroon-100">Liters (L)</th>
+                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-right sticky top-0 z-10 bg-ecana-maroon-100">Expected (₦)</th>
+                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-right sticky top-0 z-10 bg-ecana-maroon-100">Cash (₦)</th>
+                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-right sticky top-0 z-10 bg-ecana-maroon-100">POS (₦)</th>
+                  <th className="px-4 py-3 text-xs font-bold text-ecana-maroon-800 uppercase tracking-wide text-right sticky top-0 z-10 bg-ecana-maroon-100">Discrepancy (₦)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
