@@ -272,7 +272,7 @@ function EndDayPageContent() {
         {pumpRows.length === 0 ? (
           <p className="text-gray-400 text-sm">No pumps assigned for this shift.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[60vh]">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-gray-200">

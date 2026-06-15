@@ -90,7 +90,7 @@ export default function SupervisorReportPage() {
         <div className="text-center py-16 text-gray-400 text-sm">No readings found for this date range.</div>
       ) : (
         <div className="card-modern overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[60vh]">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">

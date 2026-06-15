@@ -159,7 +159,7 @@ export default function MeterBookPage() {
 
             {readings.length > 0 && !loading && (
               <Card title={`Meter Readings — ${selectedDate}`}>
-                <div className="overflow-x-auto">
+                <div className="overflow-auto max-h-[60vh]">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase tracking-wide">

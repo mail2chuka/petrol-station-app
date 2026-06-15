@@ -326,7 +326,7 @@ function DailyReportContent() {
 
                 {report.supervisorSummaries?.length > 0 && (
                   <Card title="Supervisor Summary">
-                    <div className="overflow-x-auto">
+                    <div className="overflow-auto max-h-[60vh]">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left border-b border-gray-200">
@@ -360,7 +360,7 @@ function DailyReportContent() {
 
                 {report.meterReadings?.length > 0 && (
                   <Card title="Meter Readings">
-                    <div className="overflow-x-auto">
+                    <div className="overflow-auto max-h-[60vh]">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left border-b border-gray-200">
@@ -394,7 +394,7 @@ function DailyReportContent() {
 
                 {report.tankStockEntries?.length > 0 && (
                   <Card title="Tank Stock">
-                    <div className="overflow-x-auto">
+                    <div className="overflow-auto max-h-[60vh]">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left border-b border-gray-200">

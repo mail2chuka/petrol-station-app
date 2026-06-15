@@ -332,7 +332,7 @@ function PumpAssignmentsPageContent() {
           ) : logEntries.length === 0 ? (
             <p className="text-sm text-gray-400 py-4 text-center">No reassignments recorded for this date.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[60vh]">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50">

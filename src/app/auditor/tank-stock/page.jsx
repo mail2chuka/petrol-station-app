@@ -174,7 +174,7 @@ export default function AuditorTankStockPage() {
 
             {Object.keys(byTank).length > 0 && !loading && (
               <Card title={`Tank Stock — ${selectedDate}`}>
-                <div className="overflow-x-auto">
+                <div className="overflow-auto max-h-[60vh]">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase tracking-wide">

@@ -187,7 +187,7 @@ export default function MonthlyReportPage() {
             </div>
 
             <Card title={`Daily Breakdown — ${months[Number(month) - 1]} ${year}`}>
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[60vh]">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase tracking-wide">

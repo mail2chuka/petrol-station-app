@@ -232,7 +232,7 @@ export default function AdminMaterialsProductsPage() {
               )}
 
               {product.units && product.units.length > 0 && (
-                <div className="mt-4 overflow-x-auto">
+                <div className="mt-4 overflow-auto max-h-[60vh]">
                   <table className="w-full text-sm text-left">
                     <thead>
                       <tr className="border-b text-slate-500">

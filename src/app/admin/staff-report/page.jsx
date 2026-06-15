@@ -283,7 +283,7 @@ export default function StaffReportPage() {
         </div>
       ) : (
         <div className="card-modern overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[60vh]">
             <table className="text-xs border-collapse w-full">
               <thead>
                 <tr className="bg-gray-50">

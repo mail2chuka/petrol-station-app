@@ -103,7 +103,7 @@ export default function AuditorSummaryPage() {
 
       {!loading && visibleRows.length > 0 && (
         <div className="card-modern overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[60vh]">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">

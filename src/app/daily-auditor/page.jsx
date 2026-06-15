@@ -122,7 +122,7 @@ export default function DailyAuditorDashboard() {
             {stations.length === 0 ? (
               <p className="text-sm text-gray-500">No stations found.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[60vh]">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left border-b border-gray-200">

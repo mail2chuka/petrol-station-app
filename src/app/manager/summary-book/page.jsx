@@ -98,7 +98,7 @@ function SummaryBookContent() {
             <p className="mt-1 text-gray-400">Summary rows appear after the manager ends the day and confirms closing stock for each tank.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[60vh]">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">

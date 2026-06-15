@@ -196,7 +196,7 @@ export default function PriceChangesPage() {
       {/* Recent history */}
       {history.length > 0 && (
         <Card title="Recent Price Changes">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[60vh]">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200">

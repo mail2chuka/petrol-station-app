@@ -80,7 +80,7 @@ export default function CashierSalesPage() {
             <p className="text-sm text-gray-400 py-6 text-center">No sales records for this date.</p>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[60vh]">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-200">
