@@ -12,7 +12,7 @@ const supervisorMenuItems = [
   { label: 'Dashboard', href: '/supervisor' },
   { label: 'Meter Readings', href: '/supervisor/meter-readings' },
   { label: 'Tank Dipstick', href: '/supervisor/tank-stock' },
-  { label: 'Summary Report', href: '/supervisor/report' },
+  { label: 'Sales Report', href: '/supervisor/report' },
 ];
 
 export default function SupervisorLayout({ children }) {
