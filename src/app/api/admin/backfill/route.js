@@ -380,23 +380,26 @@ export async function POST(request) {
 
     // ── BANK DEPOSIT ────────────────────────────────────────────────────────────
     if (type === 'bankDeposit') {
-      const { amount, bankName, bankBranch, accountNumber, note } = body;
+      const { amount, bankName, bankBranch, accountNumber, note, depositDate } = body;
       if (!amount || !bankName || !accountNumber) {
         return NextResponse.json({ error: 'amount, bankName, and accountNumber are required.' }, { status: 400 });
       }
 
+      // depositDate = actual banking date (can differ from wizard operating date)
+      const depositDateStart = depositDate ? new Date(depositDate + 'T00:00:00.000Z') : dateStart;
+
       const deposit = await CashDeposit.create({
         stationId: stationObjId,
         stationName: station.name,
-        date: dateStart,
-        forDate: dateStart,
+        date: depositDateStart,  // actual date money was banked
+        forDate: dateStart,       // operating day this cash belongs to
         amount: Number(amount),
         bankName,
         bankBranch: bankBranch || '',
         accountNumber,
         initiatedByCashierId: currentUser.id,
         initiatedByCashierName: currentUser.name,
-        initiatedAt: dateStart,
+        initiatedAt: depositDateStart,
         status: 'approved',
         approvedByAdminId: currentUser.id,
         approvedByAdminName: currentUser.name,

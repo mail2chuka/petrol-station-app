@@ -147,8 +147,10 @@ export default function BackfillPage() {
 
   // Bank deposits
   const [deposits, setDeposits] = useState([
-    { amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' },
+    { depositDate: '', amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' },
   ]);
+  // Total already saved in DB for the wizard's operating date — refreshed after each save
+  const [dbDepositsTotal, setDbDepositsTotal] = useState(0);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
@@ -277,6 +279,7 @@ export default function BackfillPage() {
 
         if (ex.cashDeposits?.length) {
           setDeposits(ex.cashDeposits.map((d) => ({
+            depositDate: d.date ? new Date(d.date).toISOString().split('T')[0] : date,
             amount: d.amount != null ? String(d.amount) : '',
             bankName: d.bankName || '',
             bankBranch: d.bankBranch || '',
@@ -284,7 +287,7 @@ export default function BackfillPage() {
             note: d.adminNote || '',
           })));
         } else {
-          setDeposits([{ amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' }]);
+          setDeposits([{ depositDate: date, amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' }]);
         }
 
         setExistingData(ex);
@@ -319,6 +322,13 @@ export default function BackfillPage() {
     });
   }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Sync DB deposits total whenever existingData loads/changes
+  useEffect(() => {
+    if (existingData) {
+      setDbDepositsTotal((existingData.cashDeposits || []).reduce((s, d) => s + (d.amount || 0), 0));
+    }
+  }, [existingData]);
+
   // ── PIN verification ─────────────────────────────────────────────────────────
   async function verifyPin() {
     if (!pinInput.trim()) { setPinError('Enter the backfill PIN.'); return; }
@@ -343,6 +353,17 @@ export default function BackfillPage() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed');
     return data;
+  }
+
+  // ── Refresh deposit balance from DB ───────────────────────────────────────────
+  async function refreshDbDepositsTotal() {
+    if (!stationId || !date) return;
+    try {
+      const res = await fetch(`/api/admin/backfill?stationId=${stationId}&date=${date}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setDbDepositsTotal((data.cashDeposits || []).reduce((s, d) => s + (d.amount || 0), 0));
+    } catch {}
   }
 
   // ── Step: Save Day Shift ──────────────────────────────────────────────────────
@@ -483,11 +504,20 @@ export default function BackfillPage() {
     for (const d of deposits) {
       if (!d.amount || !d.bankName || !d.accountNumber) continue;
       try {
-        await callBackfill({ type: 'bankDeposit', ...d });
+        await callBackfill({
+          type: 'bankDeposit',
+          amount: d.amount,
+          bankName: d.bankName,
+          bankBranch: d.bankBranch,
+          accountNumber: d.accountNumber,
+          note: d.note,
+          depositDate: d.depositDate || date,
+        });
         res.push({ label: d.bankName + ' — ₦' + fmtN(d.amount) });
       } catch (e) { res.push({ label: d.bankName, error: e.message }); }
     }
     setResults(res);
+    await refreshDbDepositsTotal();
     setSaving(false);
   }
 
@@ -1040,75 +1070,126 @@ export default function BackfillPage() {
       {step === 'deposits' && (
         <div className="max-w-xl space-y-4">
           <div className="bg-slate-50 rounded-xl p-3 text-sm text-slate-500">
-            <span className="font-semibold text-slate-700">{station?.name}</span> · {date}
+            <span className="font-semibold text-slate-700">{station?.name}</span> · Operating day: {date}
           </div>
           {hasExistingDeposits && (
             <ExistingNotice label={`${existingData.cashDeposits.length} deposit(s) found — pre-filled. Saving will add new records.`} />
           )}
 
           {totalCashFromPayments > 0 && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 space-y-1">
-              <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Cash Collections (from Payments step)</p>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 space-y-1.5">
+              <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Cash Collections — Operating Day: {date}</p>
               <div className="flex flex-wrap items-center gap-4 text-sm">
                 <span className="text-blue-800">Cash: <span className="font-semibold">₦{fmtN(totalCashFromPayments)}</span></span>
                 {totalPosFromPayments > 0 && (
                   <span className="text-blue-800">POS: <span className="font-semibold">₦{fmtN(totalPosFromPayments)}</span></span>
                 )}
-                <span className="text-blue-800">Total: <span className="font-semibold">₦{fmtN(totalCashFromPayments + totalPosFromPayments)}</span></span>
               </div>
-              <p className="text-xs text-blue-600">Enter the actual bank deposit amount below.</p>
+              {dbDepositsTotal > 0 && (
+                <p className="text-xs text-slate-600">
+                  Already deposited: <span className="font-semibold text-slate-700">₦{fmtN(dbDepositsTotal)}</span>
+                  {' · '}Remaining:{' '}
+                  <span className={`font-semibold ${totalCashFromPayments - dbDepositsTotal <= 0.01 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    ₦{fmtN(Math.max(0, totalCashFromPayments - dbDepositsTotal))}
+                  </span>
+                </p>
+              )}
             </div>
           )}
 
-          <p className="text-xs text-slate-400">Record bank deposits made for this day. Leave empty if none.</p>
+          <p className="text-xs text-slate-400">
+            Each deposit can have its own banking date — the date the cash was physically taken to the bank, which may differ from the operating date.
+          </p>
 
-          {deposits.map((d, i) => (
-            <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-700">Deposit #{i + 1}</p>
-                {deposits.length > 1 && (
-                  <button onClick={() => setDeposits((p) => p.filter((_, j) => j !== i))}
-                    className="text-xs text-red-500 hover:underline">Remove</button>
+          {deposits.map((d, i) => {
+            const accumulatedBefore = deposits.slice(0, i).reduce((s, dep) => s + (parseFloat(dep.amount) || 0), 0);
+            const remaining = Math.max(0, totalCashFromPayments - dbDepositsTotal - accumulatedBefore);
+            const thisAmt = parseFloat(d.amount) || 0;
+            return (
+              <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-slate-700">Deposit #{i + 1}</p>
+                  {deposits.length > 1 && (
+                    <button onClick={() => setDeposits((p) => p.filter((_, j) => j !== i))}
+                      className="text-xs text-red-500 hover:underline">Remove</button>
+                  )}
+                </div>
+
+                <Field
+                  label="Date of Deposit"
+                  type="date"
+                  value={d.depositDate || date}
+                  onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, depositDate: v } : x))}
+                  hint="When the money was physically taken to the bank (can differ from the operating date)"
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Field
+                    label="Amount (₦)"
+                    type="number"
+                    value={d.amount}
+                    onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, amount: v } : x))}
+                    placeholder={remaining > 0 ? remaining.toFixed(2) : 'e.g. 500000'}
+                  />
+                  <Field label="Bank Name" value={d.bankName}
+                    onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, bankName: v } : x))}
+                    placeholder="e.g. First Bank" />
+                  <Field label="Account Number" value={d.accountNumber}
+                    onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, accountNumber: v } : x))}
+                    placeholder="0123456789" />
+                  <Field label="Branch (optional)" value={d.bankBranch}
+                    onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, bankBranch: v } : x))}
+                    placeholder="e.g. Lagos Island" />
+                </div>
+                <Field label="Note (optional)" value={d.note}
+                  onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, note: v } : x))}
+                  placeholder="Any additional info" />
+
+                {totalCashFromPayments > 0 && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 space-y-1.5 text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Cash collected ({date})</span>
+                      <span className="font-semibold text-slate-800">₦{fmtN(totalCashFromPayments)}</span>
+                    </div>
+                    {dbDepositsTotal > 0 && (
+                      <div className="flex justify-between text-slate-500">
+                        <span>Already deposited (in database)</span>
+                        <span>–₦{fmtN(dbDepositsTotal)}</span>
+                      </div>
+                    )}
+                    {accumulatedBefore > 0 && (
+                      <div className="flex justify-between text-slate-500">
+                        <span>Previous deposits (this session)</span>
+                        <span>–₦{fmtN(accumulatedBefore)}</span>
+                      </div>
+                    )}
+                    <div className={`flex justify-between font-semibold border-t border-slate-200 pt-1.5 ${remaining < 0.01 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      <span>Remaining to deposit</span>
+                      <span>₦{fmtN(remaining)}</span>
+                    </div>
+                    {thisAmt > 0 && (
+                      <div className={`text-center font-semibold border-t border-slate-200 pt-1.5 ${
+                        Math.abs(thisAmt - remaining) < 1
+                          ? 'text-emerald-700'
+                          : thisAmt > remaining
+                            ? 'text-amber-600'
+                            : 'text-red-600'
+                      }`}>
+                        {Math.abs(thisAmt - remaining) < 1
+                          ? '✓ Balanced — this deposit covers the remaining amount'
+                          : thisAmt > remaining
+                            ? `₦${fmtN(thisAmt - remaining)} over remaining balance`
+                            : `₦${fmtN(remaining - thisAmt)} still remaining after this deposit`}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field
-                  label={totalCashFromPayments > 0 ? 'Amount (₦) — expected ₦' + fmtN(totalCashFromPayments) : 'Amount (₦)'}
-                  type="number"
-                  value={d.amount}
-                  onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, amount: v } : x))}
-                  placeholder={totalCashFromPayments > 0 ? String(totalCashFromPayments.toFixed(2)) : 'e.g. 500000'}
-                />
-                <Field label="Bank Name" value={d.bankName}
-                  onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, bankName: v } : x))}
-                  placeholder="e.g. First Bank" />
-                <Field label="Account Number" value={d.accountNumber}
-                  onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, accountNumber: v } : x))}
-                  placeholder="0123456789" />
-                <Field label="Branch (optional)" value={d.bankBranch}
-                  onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, bankBranch: v } : x))}
-                  placeholder="e.g. Lagos Island" />
-              </div>
-              <Field label="Note (optional)" value={d.note}
-                onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, note: v } : x))}
-                placeholder="Any additional info" />
-              {d.amount && totalCashFromPayments > 0 && (() => {
-                const diff = parseFloat(d.amount) - totalCashFromPayments;
-                return (
-                  <p className={`text-xs font-medium ${Math.abs(diff) < 1 ? 'text-emerald-600' : diff > 0 ? 'text-amber-600' : 'text-red-600'}`}>
-                    {Math.abs(diff) < 1
-                      ? 'Matches cash collected ✓'
-                      : diff > 0
-                        ? '₦' + fmtN(diff) + ' over cash collected'
-                        : '₦' + fmtN(-diff) + ' short of cash collected'}
-                  </p>
-                );
-              })()}
-            </div>
-          ))}
+            );
+          })}
 
           <button
-            onClick={() => setDeposits((p) => [...p, { amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' }])}
+            onClick={() => setDeposits((p) => [...p, { depositDate: date, amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' }])}
             className="text-sm text-ecana-maroon hover:underline"
           >
             + Add Another Deposit
@@ -1128,6 +1209,7 @@ export default function BackfillPage() {
                 setStation(null);
                 setExistingData(null);
                 setResults([]);
+                setDbDepositsTotal(0);
               }}
               className="px-4 py-2 text-sm text-slate-500 border border-slate-200 rounded-xl hover:border-slate-400"
             >
