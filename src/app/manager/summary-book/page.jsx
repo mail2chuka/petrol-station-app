@@ -109,9 +109,10 @@ function SummaryBookContent() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {visibleRows.map((r, i) => {
-                  const tolerance = (r.sales ?? 0) - ((r.openingStock ?? 0) + (r.stockIn ?? 0) - (r.closingStock ?? 0));
+                  const overage = r.overage ?? 0;
+                  const shortage = r.shortage ?? 0;
                   const expTol = r.expectedTolerance ?? 0;
-                  const isFlagged = expTol > 0 && tolerance < expTol * 0.80;
+                  const isFlagged = expTol > 0 && shortage > expTol;
                   return (
                     <tr key={i} className="hover:bg-gray-50">
                       <td className="px-3 py-2.5 font-medium text-gray-900 whitespace-nowrap">{new Date(r.date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
@@ -119,10 +120,14 @@ function SummaryBookContent() {
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.openingStock)}</td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.stockIn)}</td>
                       <td className="px-3 py-2.5">
-                        <span className="block text-gray-800">{fmtNum(tolerance)}</span>
-                        {(r.sales ?? 0) > 0 && (
-                          <span className={`text-xs font-medium block ${(tolerance - expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {(tolerance - expTol) >= 0 ? '+' : ''}{fmtNum(tolerance - expTol)} ({(r.tolerancePercent ?? ((expTol / (r.sales ?? 0)) * 100)).toFixed(1)}%)
+                        <span className={`block font-medium ${overage > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                          {overage > 0 ? `+${fmtNum(overage)}` : '—'}
+                        </span>
+                        {(r.sales ?? 0) > 0 && expTol > 0 && (
+                          <span className={`text-xs font-medium block ${shortage <= expTol ? 'text-green-600' : 'text-red-600'}`}>
+                            {shortage <= expTol
+                              ? `Within ${(r.tolerancePercent ?? ((expTol / (r.sales ?? 0)) * 100)).toFixed(1)}% tolerance`
+                              : `${fmtNum(shortage - expTol)} L over tolerance`}
                           </span>
                         )}
                       </td>

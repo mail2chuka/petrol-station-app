@@ -31,11 +31,11 @@ export async function GET(request) {
     let dateFrom, dateTo;
     if (month) {
       const [y, m] = month.split('-').map(Number);
-      dateFrom = new Date(y, m - 1, 1);
-      dateTo = new Date(y, m, 0, 23, 59, 59, 999);
+      dateFrom = new Date(Date.UTC(y, m - 1, 1));
+      dateTo = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
     } else if (startDate && endDate) {
-      dateFrom = new Date(startDate + 'T00:00:00');
-      dateTo = new Date(endDate + 'T23:59:59.999');
+      dateFrom = new Date(startDate + 'T00:00:00.000Z');
+      dateTo = new Date(endDate + 'T23:59:59.999Z');
     } else {
       return NextResponse.json({ error: 'Provide month or startDate+endDate' }, { status: 400 });
     }

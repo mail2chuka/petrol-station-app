@@ -14,17 +14,14 @@ import connectDB from '@/lib/db';
 import DayShift from '@/models/DayShift';
 import SalesEntry from '@/models/SalesEntry';
 import StockMovement from '@/models/StockMovement';
-import MeterReading from '@/models/MeterReading';
 import TankStockEntry from '@/models/TankStockEntry';
 import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
 
 function buildDateRange(from, to) {
-  const start = new Date(from);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(to || from);
-  end.setHours(23, 59, 59, 999);
+  const start = new Date(from + 'T00:00:00.000Z');
+  const end = new Date((to || from) + 'T23:59:59.999Z');
   return { start, end };
 }
 
@@ -32,7 +29,7 @@ async function buildRows(stationId, from, to) {
   const { start, end } = buildDateRange(from, to);
   const stationObjectId = new mongoose.Types.ObjectId(stationId);
 
-  const [station, dayShifts, sales, stockIns, readings, tankEntries] = await Promise.all([
+  const [station, dayShifts, sales, stockIns, tankEntries] = await Promise.all([
     Station.findById(stationId).lean(),
     DayShift.aggregate([
       { $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } },
@@ -42,58 +39,98 @@ async function buildRows(stationId, from, to) {
     StockMovement.aggregate([
       { $match: { stationId: stationObjectId, movementType: 'receipt', date: { $gte: start, $lte: end } } },
     ]),
-    MeterReading.aggregate([{ $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } }]),
     TankStockEntry.aggregate([{ $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } }]),
   ]);
 
   const pumpFuelTypeMap = {};
+  const pumpTankMap = {};
   for (const d of (station?.dispensers || [])) {
     pumpFuelTypeMap[d.dispenserId] = d.fuelType;
+    if (d.tankId) pumpTankMap[d.dispenserId] = d.tankId;
   }
 
+  const tolerancePercent = station?.tolerancePercent ?? 0;
   const rows = [];
 
   for (const dayShift of dayShifts) {
     const dayKey = new Date(dayShift.date).toISOString().split('T')[0];
-    const dayTankEntries = tankEntries.filter((t) => new Date(t.date).toISOString().split('T')[0] === dayKey);
-    const dayStockIns = stockIns.filter((s) => new Date(s.date).toISOString().split('T')[0] === dayKey);
-    const daySales = sales.filter((s) => new Date(s.date).toISOString().split('T')[0] === dayKey);
-    const dayReadings = readings.filter((r) => new Date(r.date).toISOString().split('T')[0] === dayKey);
 
-    const salesByFuel = daySales.reduce((acc, item) => {
-      acc[item.fuelType] = (acc[item.fuelType] || 0) + item.liters;
-      return acc;
-    }, {});
+    const dayTankEntries = tankEntries.filter(
+      (t) => new Date(t.date).toISOString().split('T')[0] === dayKey
+    );
+    const dayStockIns = stockIns.filter(
+      (s) => new Date(s.date).toISOString().split('T')[0] === dayKey
+    );
+    const daySales = sales.filter(
+      (s) => new Date(s.date).toISOString().split('T')[0] === dayKey
+    );
 
-    for (const tank of dayTankEntries) {
-      const openingStock = tank.openingStock || 0;
-      const stockIn = dayStockIns
+    // Attribute sales to specific tanks using pump→tank mapping
+    const salesByTank = {};
+    const salesByFuelFallback = {};
+    for (const sale of daySales) {
+      const tankId = pumpTankMap[sale.dispenserId];
+      if (tankId) {
+        salesByTank[tankId] = (salesByTank[tankId] || 0) + sale.liters;
+      } else {
+        const ft = sale.fuelType || pumpFuelTypeMap[sale.dispenserId];
+        if (ft) salesByFuelFallback[ft] = (salesByFuelFallback[ft] || 0) + sale.liters;
+      }
+    }
+
+    // Deduplicate tank entries: prefer closing over opening per tank per day
+    const productAgg = {};
+    const entriesByTankPeriod = {};
+    for (const t of dayTankEntries) {
+      entriesByTankPeriod[`${t.tankId}:${t.period}`] = t;
+    }
+    const uniqueTankIds = [...new Set(dayTankEntries.map((t) => t.tankId))];
+    for (const tankId of uniqueTankIds) {
+      const closingEntry = entriesByTankPeriod[`${tankId}:closing`];
+      const openingEntry = entriesByTankPeriod[`${tankId}:opening`];
+      const entry = closingEntry || openingEntry;
+      if (!entry) continue;
+      const fuelType = entry.product;
+      if (!productAgg[fuelType]) {
+        productAgg[fuelType] = { openingStock: 0, stockIn: 0, closingStock: 0, sales: 0 };
+      }
+      productAgg[fuelType].openingStock += entry.openingStock || 0;
+      productAgg[fuelType].stockIn += dayStockIns
         .flatMap((movement) => movement.distribution || [])
-        .filter((d) => d.tankId === tank.tankId)
+        .filter((d) => d.tankId === tankId)
         .reduce((sum, d) => sum + d.litres, 0);
+      if (closingEntry) {
+        productAgg[fuelType].closingStock +=
+          closingEntry.closingStockManager ?? closingEntry.closingStockMeasured ?? 0;
+      }
+      productAgg[fuelType].sales += salesByTank[tankId] || 0;
+    }
+    for (const [ft, liters] of Object.entries(salesByFuelFallback)) {
+      if (productAgg[ft]) productAgg[ft].sales += liters;
+    }
 
-      const fuelType = tank.product;
-      // Sales liters are already net (RTT excluded by supervisor). Do not subtract RTT again.
-      const salesLitres = salesByFuel[fuelType] || 0;
+    for (const [fuelType, agg] of Object.entries(productAgg)) {
+      const salesLitres = agg.sales;
       const priceForDay = dayShift.pricesAtStart?.[fuelType] || 0;
       const totalAmount = priceForDay * salesLitres;
-      const closingStock = tank.closingStockManager ?? tank.closingStockMeasured ?? 0;
-      const expectedClosing = openingStock + stockIn - salesLitres;
-      const shortage = Math.max(0, expectedClosing - closingStock);
-      const overage = Math.max(0, closingStock - expectedClosing);
+      const expectedClosing = agg.openingStock + agg.stockIn - salesLitres;
+      const shortage = Math.max(0, expectedClosing - agg.closingStock);
+      const overage = Math.max(0, agg.closingStock - expectedClosing);
+      const expectedTolerance = salesLitres * (tolerancePercent / 100);
 
       rows.push({
         date: dayKey,
-        openingTime: dayShift.startTime ? new Date(dayShift.startTime).toLocaleTimeString('en-NG') : '-',
-        openingStock,
-        stockIn,
+        openingTime: dayShift.startTime ? new Date(dayShift.startTime).toLocaleTimeString('en-NG') : '—',
+        product: fuelType,
+        openingStock: agg.openingStock,
+        stockIn: agg.stockIn,
         overage,
         sales: salesLitres,
         priceForDay,
         totalAmount,
         shortage,
-        closingStock,
-        tankLabel: tank.tankLabel || tank.tankId,
+        closingStock: agg.closingStock,
+        expectedTolerance,
       });
     }
   }
@@ -134,7 +171,7 @@ function SummaryBookPdf({ rows }) {
         React.createElement(
           View,
           { key: idx, style: styles.tableRow },
-          React.createElement(Text, { style: styles.cellWide }, `${row.date} (${row.tankLabel})`),
+          React.createElement(Text, { style: styles.cellWide }, `${row.date} (${row.product})`),
           React.createElement(Text, { style: styles.cell }, String(row.openingStock.toFixed(2))),
           React.createElement(Text, { style: styles.cell }, String(row.stockIn.toFixed(2))),
           React.createElement(Text, { style: styles.cell }, String(row.sales.toFixed(2))),
@@ -176,16 +213,17 @@ export async function GET(request) {
 
       sheet.columns = [
         { header: 'Date', key: 'date', width: 14 },
+        { header: 'Product', key: 'product', width: 10 },
         { header: 'Opening Time', key: 'openingTime', width: 14 },
-        { header: 'Opening Stock', key: 'openingStock', width: 14 },
-        { header: 'Stock In', key: 'stockIn', width: 12 },
-        { header: 'Overage', key: 'overage', width: 12 },
-        { header: 'Sales', key: 'sales', width: 12 },
-        { header: 'Price for the Day', key: 'priceForDay', width: 14 },
-        { header: 'Total Amount', key: 'totalAmount', width: 14 },
-        { header: 'Shortage', key: 'shortage', width: 12 },
-        { header: 'Closing Stock', key: 'closingStock', width: 14 },
-        { header: 'Tank', key: 'tankLabel', width: 14 },
+        { header: 'Opening Stock (L)', key: 'openingStock', width: 16 },
+        { header: 'Stock In (L)', key: 'stockIn', width: 12 },
+        { header: 'Sales (L)', key: 'sales', width: 12 },
+        { header: 'Price/L (₦)', key: 'priceForDay', width: 14 },
+        { header: 'Total Amount (₦)', key: 'totalAmount', width: 16 },
+        { header: 'Overage (L)', key: 'overage', width: 12 },
+        { header: 'Shortage (L)', key: 'shortage', width: 12 },
+        { header: 'Exp. Tolerance (L)', key: 'expectedTolerance', width: 16 },
+        { header: 'Closing Stock (L)', key: 'closingStock', width: 16 },
       ];
 
       rows.forEach((row) => sheet.addRow(row));

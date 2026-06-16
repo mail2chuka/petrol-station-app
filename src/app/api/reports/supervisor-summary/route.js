@@ -56,9 +56,18 @@ export async function GET(request) {
       pumpFuelMap[d.dispenserId] = d.fuelType;
     }
 
-    // date+product → total closing stock (sum across tanks)
-    const tankStockMap = {};
+    // Prefer closing entry per tank; fall back to opening for in-progress shifts.
+    const bestEntryByTankDate = {};
     for (const t of tankEntries) {
+      const dateKey = new Date(t.date).toISOString().split('T')[0];
+      const key = `${dateKey}:${t.tankId}`;
+      if (!bestEntryByTankDate[key] || t.period === 'closing') {
+        bestEntryByTankDate[key] = t;
+      }
+    }
+    // date+product → total closing stock (sum across tanks, one entry per tank)
+    const tankStockMap = {};
+    for (const t of Object.values(bestEntryByTankDate)) {
       const dateKey = new Date(t.date).toISOString().split('T')[0];
       const product = t.product || '';
       if (!tankStockMap[dateKey]) tankStockMap[dateKey] = {};

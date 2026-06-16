@@ -69,7 +69,7 @@ export async function POST(request) {
       stationId: dayShift.stationId,
       fuelType: assignment.fuelType,
       approvalStatus: 'approved',
-      effectiveDate: { $lte: new Date() },
+      effectiveDate: { $lte: dayShift.date },
     })
       .sort({ effectiveDate: -1, createdAt: -1 })
       .session(session);
@@ -172,9 +172,10 @@ export async function GET(request) {
     if (stationId) query.stationId = stationId;
     if (supervisorId) query.supervisorId = supervisorId;
     if (date) {
-      const start = new Date(date); start.setHours(0, 0, 0, 0);
-      const end = new Date(date); end.setHours(23, 59, 59, 999);
-      query.date = { $gte: start, $lte: end };
+      query.date = {
+        $gte: new Date(date + 'T00:00:00.000Z'),
+        $lte: new Date(date + 'T23:59:59.999Z'),
+      };
     }
 
     // Supervisors can only see their own sales
