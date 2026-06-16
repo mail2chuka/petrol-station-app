@@ -12,10 +12,9 @@ import CashDeposit from '@/models/CashDeposit';
 import { requireAuth } from '@/lib/auth';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 
-const BACKFILL_PIN = process.env.BACKFILL_PIN;
+const BACKFILL_PIN = '@ghty^&AHATY';
 
 function verifyPin(pin) {
-  if (!BACKFILL_PIN) return false;
   return pin === BACKFILL_PIN;
 }
 
