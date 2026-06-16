@@ -18,6 +18,43 @@ function verifyPin(pin) {
   return pin === BACKFILL_PIN;
 }
 
+// GET /api/admin/backfill?stationId=&date=
+// Returns all existing records for a station+date (admin only, no PIN needed for reads)
+export async function GET(request) {
+  try {
+    const currentUser = await requireAuth();
+    if (currentUser.role !== ROLES.ADMIN) {
+      return NextResponse.json({ error: 'Admin access required.' }, { status: 403 });
+    }
+    await connectDB();
+    const { searchParams } = new URL(request.url);
+    const stationId = searchParams.get('stationId');
+    const date = searchParams.get('date');
+    if (!stationId || !date) {
+      return NextResponse.json({ error: 'stationId and date are required.' }, { status: 400 });
+    }
+    const dateStart = new Date(date + 'T00:00:00.000Z');
+    const dateEnd = new Date(date + 'T23:59:59.999Z');
+    const stationObjId = new mongoose.Types.ObjectId(stationId);
+
+    const [dayShift, meterReadings, tankStockEntries, stockMovements, salesEntries, paymentRecords, cashDeposits] =
+      await Promise.all([
+        DayShift.findOne({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
+        MeterReading.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
+        TankStockEntry.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
+        StockMovement.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, movementType: 'receipt' }).lean(),
+        SalesEntry.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
+        PaymentRecord.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
+        CashDeposit.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
+      ]);
+
+    return NextResponse.json({ dayShift, meterReadings, tankStockEntries, stockMovements, salesEntries, paymentRecords, cashDeposits });
+  } catch (error) {
+    console.error('Backfill GET error:', error);
+    return NextResponse.json({ error: error.message || 'Failed to load existing data.' }, { status: 500 });
+  }
+}
+
 // POST /api/admin/backfill
 // Body: { pin, type, stationId, date, ...typeSpecificFields }
 // Types: dayShift | pumpReading | tankReading | tankDelivery | sale | payment | bankDeposit
