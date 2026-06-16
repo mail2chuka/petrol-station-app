@@ -78,6 +78,7 @@ export async function GET(request) {
 }
 
 // POST /api/tank-stock
+// action=admin-seed  — admin seeds initial dipstick value for a new tank (admin only)
 // Supervisors can submit opening or closing entries for their station.
 // Managers and admins can submit closing entries only.
 export async function POST(request) {
@@ -85,6 +86,63 @@ export async function POST(request) {
     const currentUser = await requireAuth();
     await connectDB();
 
+    const body = await request.json();
+
+    // ── ADMIN SEED ACTION ────────────────────────────────────────────────────
+    if (body.action === 'admin-seed') {
+      if (currentUser.role !== ROLES.ADMIN) {
+        return NextResponse.json({ error: 'Only admins can seed tank readings.' }, { status: 403 });
+      }
+      const { stationId, tankId, seedValue } = body;
+      if (!stationId || !tankId || seedValue === undefined) {
+        return NextResponse.json({ error: 'stationId, tankId, and seedValue are required.' }, { status: 400 });
+      }
+      const val = Number(seedValue);
+      if (!Number.isFinite(val) || val < 0) {
+        return NextResponse.json({ error: 'seedValue must be a non-negative number.' }, { status: 400 });
+      }
+      const station = await Station.findById(stationId).lean();
+      if (!station) {
+        return NextResponse.json({ error: 'Station not found.' }, { status: 404 });
+      }
+      const tank = station.tanks?.find((t) => t._id === tankId);
+      if (!tank) {
+        return NextResponse.json({ error: 'Tank not found in this station.' }, { status: 404 });
+      }
+      // Fixed date in the past — never conflicts with real shift records
+      const seedDate = new Date('2000-01-01T00:00:00.000Z');
+      const commonFields = {
+        stationId,
+        stationName: station.name,
+        tankId,
+        tankLabel: tank.label || tankId,
+        product: tank.product,
+        date: seedDate,
+        openingStock: val,
+        closingStockMeasured: val,
+        supervisorId: currentUser.id,
+        supervisorName: currentUser.name,
+        variance: 0,
+        variancePercent: 0,
+        notes: 'Admin seed',
+      };
+      // Upsert both opening and closing so supervisors can pick up the value
+      const [openingEntry, closingEntry] = await Promise.all([
+        TankStockEntry.findOneAndUpdate(
+          { stationId, tankId, date: seedDate, period: 'opening' },
+          { $set: { ...commonFields, period: 'opening' } },
+          { new: true, upsert: true, runValidators: false }
+        ),
+        TankStockEntry.findOneAndUpdate(
+          { stationId, tankId, date: seedDate, period: 'closing' },
+          { $set: { ...commonFields, period: 'closing' } },
+          { new: true, upsert: true, runValidators: false }
+        ),
+      ]);
+      return NextResponse.json({ openingEntry, closingEntry }, { status: 201 });
+    }
+
+    // ── REGULAR SUPERVISOR / MANAGER ACTIONS ─────────────────────────────────
     const isSupervisor = currentUser.role === ROLES.SUPERVISOR;
     const isManagerOrAdmin = [ROLES.MANAGER, ROLES.ADMIN].includes(currentUser.role);
 
@@ -92,7 +150,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
-    const payload = createSchema.parse(await request.json());
+    const payload = createSchema.parse(body);
 
     if (isManagerOrAdmin && payload.period !== 'closing') {
       return NextResponse.json(

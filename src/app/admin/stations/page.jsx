@@ -24,6 +24,7 @@ export default function StationsPage() {
   const [productsError, setProductsError] = useState('');
   const [seedStation, setSeedStation] = useState(null);
   const [seedForm, setSeedForm] = useState({});
+  const [tankSeedForm, setTankSeedForm] = useState({});
   const [savingSeeds, setSavingSeeds] = useState(false);
   const [seedError, setSeedError] = useState('');
   const [seedSuccess, setSeedSuccess] = useState('');
@@ -111,49 +112,78 @@ export default function StationsPage() {
       initial[d.dispenserId] = '';
     }
     setSeedForm(initial);
+    const tankInitial = {};
+    for (const t of (station?.tanks || [])) {
+      tankInitial[t._id] = '';
+    }
+    setTankSeedForm(tankInitial);
   };
 
   const saveSeedMeters = async () => {
     if (!seedStation?._id) return;
     const dispensers = seedStation.dispensers || [];
-    const toSave = dispensers.filter(d => seedForm[d.dispenserId] !== '' && seedForm[d.dispenserId] !== undefined);
-    if (toSave.length === 0) {
-      setSeedError('Enter at least one meter reading to save.');
+    const pumpsToSave = dispensers.filter(d => seedForm[d.dispenserId] !== '' && seedForm[d.dispenserId] !== undefined);
+    const tanks = seedStation.tanks || [];
+    const tanksToSave = tanks.filter(t => tankSeedForm[t._id] !== '' && tankSeedForm[t._id] !== undefined);
+
+    if (pumpsToSave.length === 0 && tanksToSave.length === 0) {
+      setSeedError('Enter at least one meter or tank reading to save.');
       return;
     }
-    for (const d of toSave) {
+    for (const d of pumpsToSave) {
       const val = Number(seedForm[d.dispenserId]);
       if (!Number.isFinite(val) || val < 0) {
-        setSeedError(`Invalid value for ${d.name || d.dispenserId}. Must be a positive number.`);
+        setSeedError(`Invalid value for pump ${d.name || d.dispenserId}. Must be a positive number.`);
+        return;
+      }
+    }
+    for (const t of tanksToSave) {
+      const val = Number(tankSeedForm[t._id]);
+      if (!Number.isFinite(val) || val < 0) {
+        setSeedError(`Invalid value for tank ${t.label || t._id}. Must be a positive number.`);
         return;
       }
     }
     setSavingSeeds(true); setSeedError(''); setSeedSuccess('');
     try {
-      const results = await Promise.all(
-        toSave.map(d =>
-          fetch('/api/meter-readings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'admin-seed',
-              stationId: seedStation._id,
-              pumpId: d.dispenserId,
-              pumpLabel: d.name,
-              seedValue: Number(seedForm[d.dispenserId]),
-            }),
-          })
-        )
+      const pumpRequests = pumpsToSave.map(d =>
+        fetch('/api/meter-readings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'admin-seed',
+            stationId: seedStation._id,
+            pumpId: d.dispenserId,
+            pumpLabel: d.name,
+            seedValue: Number(seedForm[d.dispenserId]),
+          }),
+        })
       );
+      const tankRequests = tanksToSave.map(t =>
+        fetch('/api/tank-stock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'admin-seed',
+            stationId: seedStation._id,
+            tankId: t._id,
+            seedValue: Number(tankSeedForm[t._id]),
+          }),
+        })
+      );
+      const results = await Promise.all([...pumpRequests, ...tankRequests]);
       const failed = results.find(r => !r.ok);
       if (failed) {
         const data = await failed.json().catch(() => ({}));
-        setSeedError(data.error || 'Failed to seed one or more pumps.');
+        setSeedError(data.error || 'Failed to seed one or more entries.');
         return;
       }
-      setSeedSuccess(`Seeded ${toSave.length} pump(s) successfully. Supervisors can now open those pumps.`);
+      const parts = [];
+      if (pumpsToSave.length) parts.push(`${pumpsToSave.length} pump(s)`);
+      if (tanksToSave.length) parts.push(`${tanksToSave.length} tank(s)`);
+      setSeedSuccess(`Seeded ${parts.join(' and ')} successfully. Supervisors can now open those pumps.`);
     } catch {
-      setSeedError('An error occurred while seeding meter readings.');
+      setSeedError('An error occurred while seeding readings.');
     } finally {
       setSavingSeeds(false);
     }
@@ -1234,6 +1264,7 @@ export default function StationsPage() {
               </div>
             ) : (
               <div className="space-y-3 mb-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pumps</p>
                 {(seedStation.dispensers || []).map(d => (
                   <div key={d.dispenserId} className="flex items-center gap-3">
                     <div className="flex-1">
@@ -1254,6 +1285,29 @@ export default function StationsPage() {
               </div>
             )}
 
+            {(seedStation.tanks || []).length > 0 && (
+              <div className="space-y-3 mb-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tanks (Dipstick in Litres)</p>
+                {(seedStation.tanks || []).filter(t => t.isActive !== false).map(t => (
+                  <div key={t._id} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-800">{t.label || t._id}</p>
+                      <p className="text-xs text-gray-400">{t.product} · capacity: {t.capacity?.toLocaleString()}L</p>
+                    </div>
+                    <div className="w-36">
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="e.g. 8000"
+                        value={tankSeedForm[t._id] ?? ''}
+                        onChange={(e) => setTankSeedForm(prev => ({ ...prev, [t._id]: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {seedError && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 mb-3">
                 {seedError}
@@ -1265,7 +1319,7 @@ export default function StationsPage() {
               </div>
             )}
 
-            {(seedStation.dispensers || []).length > 0 && (
+            {((seedStation.dispensers || []).length > 0 || (seedStation.tanks || []).length > 0) && (
               <Button variant="primary" fullWidth size="lg" disabled={savingSeeds} onClick={saveSeedMeters}>
                 {savingSeeds ? 'Saving...' : 'Save Initial Readings'}
               </Button>

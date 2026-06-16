@@ -298,6 +298,10 @@ export default function AdminDashboard() {
               <p className="text-sm font-bold text-gray-900">Audit Logs</p>
               <p className="text-xs text-gray-600 mt-1">Track sensitive actions.</p>
             </a>
+            <a href="/admin/backfill" className="rounded-xl border-2 border-rose-200 bg-rose-50 p-4 hover:bg-rose-100 hover:border-rose-300 transition-all shadow-sm hover:shadow-md">
+              <p className="text-sm font-bold text-rose-900">Historical Entry</p>
+              <p className="text-xs text-gray-600 mt-1">Backfill past dates — PIN protected.</p>
+            </a>
           </div>
         </Card>
 

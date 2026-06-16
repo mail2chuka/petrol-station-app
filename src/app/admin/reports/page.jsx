@@ -735,6 +735,21 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                           </ClickRow>
                         ))}
                       </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-gray-200 bg-gray-50">
+                          <td colSpan={4} className="px-3 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wide">Totals</td>
+                          <td className="px-3 py-2.5 text-sm font-bold text-gray-900">
+                            {fmtN(report.paymentRecords.reduce((s, p) => s + (Number(p.cashReceived) || 0), 0))}
+                          </td>
+                          <td className="px-3 py-2.5 text-sm font-bold text-gray-900">
+                            {fmtN(report.paymentRecords.reduce((s, p) => s + (Number(p.posReceived) || 0), 0))}
+                          </td>
+                          <td className="px-3 py-2.5 text-sm font-bold text-ecana-maroon">
+                            {fmtN(report.paymentRecords.reduce((s, p) => s + (Number(p.totalReceived) || 0), 0))}
+                          </td>
+                          <td />
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 </>
