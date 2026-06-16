@@ -120,7 +120,7 @@ export default function SupervisorDashboard() {
       <Card title="Quick Actions">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <a
-            href="/supervisor/sales"
+            href="/supervisor/meter-readings"
             className={`group rounded-xl border p-4 transition-all duration-200 ${
               activeDayShift
                 ? 'border-ecana-blue/20 bg-ecana-blue/5 hover:bg-ecana-blue/10'
@@ -161,41 +161,6 @@ export default function SupervisorDashboard() {
         </div>
       </Card>
 
-      {todaySales.length > 0 && (
-        <Card title={`Today's Sales (${todaySales.length})`}>
-          <div className="space-y-2">
-            {todaySales.map((sale, index) => (
-              <div key={index} className="p-4 bg-slate-50 rounded-xl flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-ecana-maroon/10 flex items-center justify-center">
-                    <span className="text-sm font-bold text-ecana-maroon">{sale.fuelType}</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900">{formatLiters(sale.liters)}</p>
-                    <p className="text-xs text-slate-500">
-                      {new Date(sale.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 sm:gap-6">
-                  <div className="text-center">
-                    <p className="text-xs text-slate-400 uppercase">Cash</p>
-                    <p className="text-sm font-medium text-slate-700">{formatCurrency(sale.cashAmount)}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs text-slate-400 uppercase">POS</p>
-                    <p className="text-sm font-medium text-slate-700">{formatCurrency(sale.posAmount)}</p>
-                  </div>
-                  <div className="text-center pl-4 border-l border-slate-200">
-                    <p className="text-xs text-slate-400 uppercase">Total</p>
-                    <p className="text-sm font-bold text-ecana-maroon">{formatCurrency(sale.totalAmount)}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
     </div>
   );
 }

@@ -15,6 +15,15 @@ function formatLiters(liters) {
   return Number(liters).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Same palette as meter-readings page
+const TANK_COLORS = [
+  { border: 'border-l-blue-400',   bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-400'   },
+  { border: 'border-l-green-400',  bg: 'bg-green-50',  text: 'text-green-700',  dot: 'bg-green-400'  },
+  { border: 'border-l-amber-400',  bg: 'bg-amber-50',  text: 'text-amber-700',  dot: 'bg-amber-400'  },
+  { border: 'border-l-purple-400', bg: 'bg-purple-50', text: 'text-purple-700', dot: 'bg-purple-400' },
+  { border: 'border-l-rose-400',   bg: 'bg-rose-50',   text: 'text-rose-700',   dot: 'bg-rose-400'   },
+];
+
 export default function MySalesPage() {
   const { data: session } = useSession();
   const stationId = session?.user?.stationId;
@@ -82,6 +91,19 @@ export default function MySalesPage() {
     attendantByDispenser[a.dispenserId] = a.attendantName || '—';
   });
 
+  // Build tankId → TANK_COLORS index (same logic as meter-readings)
+  const tankColorIndex = {};
+  let _ci = 0;
+  Object.values(dispenserTankMap).forEach(({ tankId }) => {
+    if (tankId && !(tankId in tankColorIndex)) {
+      tankColorIndex[tankId] = _ci++ % TANK_COLORS.length;
+    }
+  });
+  function getTankColor(tankId) {
+    const idx = tankColorIndex[tankId];
+    return idx !== undefined ? TANK_COLORS[idx] : null;
+  }
+
   // Build per-tank summary: opening + closing dipstick from today's entries
   const tankSummary = stationTanks
     .filter((t) => t.isActive !== false)
@@ -92,7 +114,8 @@ export default function MySalesPage() {
       const openingVal = opening?.closingStockMeasured ?? null;
       const closingVal = closing?.closingStockMeasured ?? null;
       const used = openingVal != null && closingVal != null ? openingVal - closingVal : null;
-      return { tank, openingVal, closingVal, used };
+      const tc = getTankColor(tank._id);
+      return { tank, openingVal, closingVal, used, tc };
     });
 
   // Fuel types for filter
@@ -114,7 +137,16 @@ export default function MySalesPage() {
     { header: 'Dispenser', field: 'dispenserName' },
     {
       header: 'Tank',
-      render: (row) => dispenserTankMap[row.dispenserId]?.tankLabel || '—',
+      render: (row) => {
+        const info = dispenserTankMap[row.dispenserId];
+        const tc = info ? getTankColor(info.tankId) : null;
+        return (
+          <span className="flex items-center gap-1.5">
+            {tc && <span className={`w-2 h-2 rounded-full shrink-0 ${tc.dot}`} />}
+            <span className={tc ? tc.text : 'text-slate-400'}>{info?.tankLabel || '—'}</span>
+          </span>
+        );
+      },
     },
     { header: 'Fuel', field: 'fuelType' },
     {
@@ -144,39 +176,42 @@ export default function MySalesPage() {
       {tankSummary.length > 0 && (
         <div className="mb-6">
           <Card title="Tank Dipstick — Today">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-2 pr-4 font-semibold text-slate-500">Tank</th>
-                    <th className="text-left py-2 pr-4 font-semibold text-slate-500">Product</th>
-                    <th className="text-right py-2 pr-4 font-semibold text-slate-500">Opening (L)</th>
-                    <th className="text-right py-2 pr-4 font-semibold text-slate-500">Closing (L)</th>
-                    <th className="text-right py-2 font-semibold text-slate-500">Used (L)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tankSummary.map(({ tank, openingVal, closingVal, used }) => (
-                    <tr key={tank._id} className="border-b border-slate-50 last:border-0">
-                      <td className="py-2.5 pr-4 font-medium text-slate-800">{tank.label}</td>
-                      <td className="py-2.5 pr-4">
-                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
-                          {tank.product}
-                        </span>
-                      </td>
-                      <td className="py-2.5 pr-4 text-right text-slate-700">
-                        {openingVal != null ? formatLiters(openingVal) : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right text-slate-700">
-                        {closingVal != null ? formatLiters(closingVal) : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className={`py-2.5 text-right font-semibold ${used != null ? 'text-ecana-maroon' : 'text-slate-300'}`}>
-                        {used != null ? formatLiters(used) : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* Legend */}
+            <div className="flex flex-wrap gap-3 items-center mb-3">
+              {tankSummary.map(({ tank, tc }) => (
+                <div key={tank._id} className="flex items-center gap-1.5">
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${tc?.dot || 'bg-slate-300'}`} />
+                  <span className={`text-xs font-medium ${tc?.text || 'text-slate-500'}`}>{tank.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="divide-y divide-slate-100 rounded-xl overflow-hidden border border-slate-100">
+              {tankSummary.map(({ tank, openingVal, closingVal, used, tc }) => (
+                <div key={tank._id} className={`flex items-center gap-4 px-4 py-3 border-l-4 ${tc?.border || 'border-l-slate-200'} ${tc?.bg || ''}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold ${tc?.text || 'text-slate-700'}`}>{tank.label}</p>
+                    <p className="text-xs text-slate-400">{tank.product}</p>
+                  </div>
+                  <div className="text-center px-3">
+                    <p className="text-xs text-slate-400 mb-0.5">Opening</p>
+                    <p className="text-sm font-bold text-slate-800">
+                      {openingVal != null ? formatLiters(openingVal) : <span className="text-slate-300">—</span>}
+                    </p>
+                  </div>
+                  <div className="text-center px-3">
+                    <p className="text-xs text-slate-400 mb-0.5">Closing</p>
+                    <p className="text-sm font-bold text-slate-800">
+                      {closingVal != null ? formatLiters(closingVal) : <span className="text-amber-500 text-xs font-medium">Pending</span>}
+                    </p>
+                  </div>
+                  <div className="text-center px-3">
+                    <p className="text-xs text-slate-400 mb-0.5">Used</p>
+                    <p className={`text-sm font-bold ${used != null ? 'text-ecana-maroon' : 'text-slate-300'}`}>
+                      {used != null ? formatLiters(used) : '—'}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           </Card>
         </div>

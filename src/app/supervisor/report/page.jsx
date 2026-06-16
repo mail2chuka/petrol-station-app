@@ -17,6 +17,15 @@ function fmtNum(n) {
   return Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Same palette as meter-readings page
+const TANK_COLORS = [
+  { border: 'border-l-blue-400',   bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-400'   },
+  { border: 'border-l-green-400',  bg: 'bg-green-50',  text: 'text-green-700',  dot: 'bg-green-400'  },
+  { border: 'border-l-amber-400',  bg: 'bg-amber-50',  text: 'text-amber-700',  dot: 'bg-amber-400'  },
+  { border: 'border-l-purple-400', bg: 'bg-purple-50', text: 'text-purple-700', dot: 'bg-purple-400' },
+  { border: 'border-l-rose-400',   bg: 'bg-rose-50',   text: 'text-rose-700',   dot: 'bg-rose-400'   },
+];
+
 export default function SupervisorReportPage() {
   const { data: session } = useSession();
   const [from, setFrom] = useState(firstDayOfMonth());
@@ -73,30 +82,27 @@ export default function SupervisorReportPage() {
   }, {});
   const dates = Object.keys(byDate).sort();
 
-  // Assign a soft pastel background per unique tankId
-  const TANK_COLORS = [
-    'bg-blue-50',
-    'bg-emerald-50',
-    'bg-amber-50',
-    'bg-rose-50',
-    'bg-violet-50',
-    'bg-cyan-50',
-    'bg-orange-50',
-    'bg-teal-50',
-  ];
-  const tankColorMap = {};
-  let colorIdx = 0;
+  // Build tankId → TANK_COLORS index (same logic as meter-readings)
+  const tankColorIndex = {};
+  let _ci = 0;
   Object.values(pumpTankMap).forEach(({ tankId }) => {
-    if (tankId && !(tankId in tankColorMap)) {
-      tankColorMap[tankId] = TANK_COLORS[colorIdx % TANK_COLORS.length];
-      colorIdx++;
+    if (tankId && !(tankId in tankColorIndex)) {
+      tankColorIndex[tankId] = _ci++ % TANK_COLORS.length;
     }
   });
 
-  function rowBg(pumpId) {
+  function tankColor(pumpId) {
     const tankId = pumpTankMap[pumpId]?.tankId;
-    return tankId ? tankColorMap[tankId] || '' : '';
+    const idx = tankId !== undefined ? tankColorIndex[tankId] : undefined;
+    return idx !== undefined ? TANK_COLORS[idx] : null;
   }
+
+  // Legend: unique tanks that have a color assigned
+  const legendEntries = Object.entries(tankColorIndex).map(([tankId, idx]) => {
+    // find a label from pumpTankMap
+    const label = Object.values(pumpTankMap).find((v) => v.tankId === tankId)?.tankLabel || tankId;
+    return { tankId, label, color: TANK_COLORS[idx] };
+  });
 
   return (
     <div className="space-y-6">
@@ -132,6 +138,19 @@ export default function SupervisorReportPage() {
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>
       )}
 
+      {/* Color legend */}
+      {legendEntries.length > 0 && (
+        <div className="flex flex-wrap gap-3 items-center">
+          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Tank</span>
+          {legendEntries.map(({ tankId, label, color }) => (
+            <div key={tankId} className="flex items-center gap-1.5">
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${color.dot}`} />
+              <span className={`text-xs font-medium ${color.text}`}>{label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {loading ? <Loading /> : rows.length === 0 && !error ? (
         <div className="text-center py-16 text-gray-400 text-sm">No readings found for this date range.</div>
       ) : (
@@ -157,7 +176,7 @@ export default function SupervisorReportPage() {
                   const dateRows = byDate[date];
                   return dateRows.map((r, ri) => (
                     <tr key={`${date}-${r.pumpId}`}
-                      className={`border-b border-gray-100 ${ri === 0 && di > 0 ? 'border-t-2 border-t-gray-200' : ''} ${rowBg(r.pumpId)} hover:brightness-95 transition-all`}>
+                      className={`border-b border-gray-100 border-l-4 ${ri === 0 && di > 0 ? 'border-t-2 border-t-gray-200' : ''} ${tankColor(r.pumpId)?.bg || ''} ${tankColor(r.pumpId)?.border || 'border-l-transparent'} hover:brightness-95 transition-all`}>
                       {/* Date cell only on first pump of that date */}
                       {ri === 0 ? (
                         <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap align-top"
@@ -166,7 +185,11 @@ export default function SupervisorReportPage() {
                         </td>
                       ) : null}
                       <td className="px-4 py-2.5 font-medium text-gray-800">{r.pumpLabel}</td>
-                      <td className="px-4 py-2.5 text-gray-600 text-xs font-medium">{pumpTankMap[r.pumpId]?.tankLabel || '—'}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${tankColor(r.pumpId)?.bg || 'bg-slate-50'} ${tankColor(r.pumpId)?.text || 'text-gray-600'}`}>
+                          {pumpTankMap[r.pumpId]?.tankLabel || '—'}
+                        </span>
+                      </td>
                       <td className="px-4 py-2.5 text-gray-600">{r.fuelType || '—'}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{fmtNum(r.opening)}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{r.closing != null ? fmtNum(r.closing) : <span className="text-amber-500 text-xs font-medium">Pending</span>}</td>

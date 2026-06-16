@@ -10,7 +10,7 @@ import Loading from '@/components/Loading';
 
 const supervisorMenuItems = [
   { label: 'Dashboard', href: '/supervisor' },
-  { label: 'Meter Readings', href: '/supervisor/meter-readings' },
+  { label: 'Record Sales', href: '/supervisor/meter-readings' },
   { label: 'Tank Dipstick', href: '/supervisor/tank-stock' },
   { label: 'Sales Report', href: '/supervisor/report' },
 ];
