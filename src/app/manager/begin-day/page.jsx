@@ -4,7 +4,6 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
-import Input from '@/components/Input';
 import Button from '@/components/Button';
 import Loading from '@/components/Loading';
 import { FUEL_TYPE_LABELS } from '@/lib/constants';
@@ -15,7 +14,7 @@ function BeginDayPageContent() {
   const searchParams = useSearchParams();
   const adminStationId = searchParams.get('stationId');
   const activeStationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
-  const isAdmin = session?.user?.role === 'admin';
+
 
   const [station, setStation] = useState(null);
   const [dispensers, setDispensers] = useState([]);
@@ -23,7 +22,6 @@ function BeginDayPageContent() {
   const [selected, setSelected] = useState(new Set());
   // dispenserId → attendantId mapping
   const [pumpAttendants, setPumpAttendants] = useState({});
-  const [pricesAtStart, setPricesAtStart] = useState({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -46,15 +44,6 @@ function BeginDayPageContent() {
 
       const currentStation = (stationsData.stations || []).find(s => s._id === activeStationId);
       setStation(currentStation);
-
-      // Prices: admin can edit, manager just sees current prices (read-only)
-      const products = currentStation?.availableProducts || ['PMS', 'AGO'];
-      const initialPrices = {};
-      for (const p of products) {
-        const existing = currentStation?.currentPrices?.[p];
-        initialPrices[p] = existing != null ? String(existing) : '';
-      }
-      setPricesAtStart(initialPrices);
 
       const active = (dispensersData.dispensers || []).filter(d => d.isActive);
       setDispensers(active);
@@ -92,19 +81,10 @@ function BeginDayPageContent() {
   const allPumpsAssigned = selected.size > 0 && [...selected].every(id => !!pumpAttendants[id]);
 
   const buildPayload = () => {
-    const products = station?.availableProducts || ['PMS', 'AGO'];
-    const pricesObj = {};
-    for (const p of products) {
-      // Manager uses current station prices; admin can override
-      pricesObj[p] = isAdmin
-        ? parseFloat(pricesAtStart[p])
-        : (station?.currentPrices?.[p] ?? 0);
-    }
     const selectedDispensers = dispensers.filter(d => selected.has(d.dispenserId));
     return {
       stationId: activeStationId,
       date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date()),
-      pricesAtStart: pricesObj,
       dispensers: selectedDispensers.map(d => ({ dispenserId: d.dispenserId, fuelType: d.fuelType })),
     };
   };
@@ -112,17 +92,6 @@ function BeginDayPageContent() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
-    const products = station?.availableProducts || ['PMS', 'AGO'];
-
-    // Validate prices (admin only edits them, but both need valid values)
-    for (const p of products) {
-      const val = isAdmin ? parseFloat(pricesAtStart[p]) : (station?.currentPrices?.[p] ?? 0);
-      if (!val || isNaN(val) || val <= 0) {
-        setError(`No valid price set for ${FUEL_TYPE_LABELS[p] || p}. Ask admin to set prices before beginning the day.`);
-        return;
-      }
-    }
 
     if (selected.size === 0) {
       setError('Please select at least one pump to activate.');
@@ -267,49 +236,24 @@ function BeginDayPageContent() {
       )}
 
       <form onSubmit={handleSubmit}>
-        {/* Prices section */}
-        <Card title="Day Prices">
-          {isAdmin ? (
-            <>
-              <p className="text-sm text-gray-500 mb-4">
-                Set the selling price per litre for each product available at this station.
-              </p>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {availableProducts.map(product => (
-                  <Input
-                    key={product}
-                    label={`${FUEL_TYPE_LABELS[product] || product} Price (₦/L)`}
-                    type="text"
-                    inputMode="decimal"
-                    name={`price-${product}`}
-                    value={pricesAtStart[product] || ''}
-                    onChange={e => setPricesAtStart(p => ({ ...p, [product]: e.target.value }))}
-                    placeholder="Enter price"
-                    required
-                  />
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-start gap-2 mb-4 bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-xl text-sm">
-                Prices are set by the administrator. Contact admin to update prices before beginning the day.
-              </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {availableProducts.map(product => {
-                  const price = station?.currentPrices?.[product];
-                  return (
-                    <div key={product} className="bg-gray-50 rounded-xl px-4 py-3">
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{FUEL_TYPE_LABELS[product] || product}</p>
-                      <p className={`text-2xl font-bold ${price ? 'text-gray-900' : 'text-amber-600'}`}>
-                        {price ? `₦${Number(price).toLocaleString('en-NG', { minimumFractionDigits: 2 })}/L` : 'No price set'}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
+        {/* Prices section — read-only snapshot set by admin */}
+        <Card title="Today's Prices">
+          <p className="text-sm text-gray-500 mb-4">
+            Prices are set by admin and will be locked in when the day begins.
+          </p>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {availableProducts.map(product => {
+              const price = station?.currentPrices?.[product];
+              return (
+                <div key={product} className="bg-gray-50 rounded-xl px-4 py-3">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{FUEL_TYPE_LABELS[product] || product}</p>
+                  <p className={`text-2xl font-bold ${price ? 'text-gray-900' : 'text-amber-600'}`}>
+                    {price ? `₦${Number(price).toLocaleString('en-NG', { minimumFractionDigits: 2 })}/L` : 'No price set — contact admin'}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
         </Card>
 
         {/* Pumps + attendant assignment */}

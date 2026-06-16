@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import DayShift from '@/models/DayShift';
 import Station from '@/models/Station';
-import PriceHistory from '@/models/PriceHistory';
 import PumpOpening from '@/models/PumpOpening';
 import TankStockEntry from '@/models/TankStockEntry';
 import { requireAuth } from '@/lib/auth';
@@ -50,18 +49,18 @@ export async function POST(request) {
 
     await autoCloseExpiredInProgressShifts({ stationId: validatedData.stationId, session });
 
-    // Build submitted prices from dynamic availableProducts
     const availableProducts = station.availableProducts?.length
       ? station.availableProducts
       : ['PMS', 'AGO'];
 
+    // Snapshot the current admin-set prices; error if any are missing
     const submittedPrices = {};
     for (const product of availableProducts) {
-      const val = Number(validatedData.pricesAtStart[product]);
+      const val = Number(station.currentPrices?.get?.(product) ?? station.currentPrices?.[product] ?? 0);
       if (!val || val <= 0) {
         await session.abortTransaction();
         return NextResponse.json(
-          { error: `Invalid price for ${product}` },
+          { error: `No price set for ${product}. Ask admin to set prices before beginning the day.` },
           { status: 400 }
         );
       }
@@ -115,50 +114,6 @@ export async function POST(request) {
         initialReading: 0,
         totalLiters: 0,
       });
-    }
-
-    const openingPriceChanges = [];
-    for (const fuelType of availableProducts) {
-      const previousPrice = Number(station.currentPrices?.get?.(fuelType) ?? station.currentPrices?.[fuelType] ?? 0);
-      const newPrice = submittedPrices[fuelType];
-
-      if (previousPrice !== newPrice) {
-        const changeAmount = newPrice - previousPrice;
-        const changePercentage = previousPrice > 0
-          ? ((changeAmount / previousPrice) * 100)
-          : 100;
-
-        openingPriceChanges.push({
-          stationId: station._id,
-          stationName: station.name,
-          fuelType,
-          previousPrice,
-          newPrice,
-          changeAmount,
-          changePercentage,
-          effectiveDate: new Date(),
-          changedBy: currentUser.id,
-          changedByName: currentUser.name,
-          reason: 'Opening day price set during begin day',
-          approvalStatus: 'approved',
-          approvedBy: currentUser.id,
-          approvedByName: currentUser.name,
-          approvedAt: new Date(),
-        });
-      }
-    }
-
-    // Update station prices for all available products
-    if (!station.currentPrices || typeof station.currentPrices.set !== 'function') {
-      station.currentPrices = new Map();
-    }
-    for (const [ft, price] of Object.entries(submittedPrices)) {
-      station.currentPrices.set(ft, price);
-    }
-    await station.save({ session });
-
-    if (openingPriceChanges.length > 0) {
-      await PriceHistory.create(openingPriceChanges, { session, ordered: true });
     }
 
     // Use strict UTC midnight so date never shifts due to server timezone
@@ -216,15 +171,10 @@ export async function POST(request) {
         date: { $lt: dayDateUTC },
       }).sort({ date: -1 }).session(session);
 
-      // Prefer manager-confirmed value, fall back to measured, then station.currentStock
+      // Use previous day's per-tank closing; default 0 on first day (never use product total)
       let openingValue = 0;
       if (prevClosing) {
         openingValue = prevClosing.closingStockManager ?? prevClosing.closingStockMeasured ?? 0;
-      } else {
-        const cs = station.currentStock;
-        openingValue = cs instanceof Map
-          ? (cs.get(tank.product) ?? 0)
-          : (cs?.[tank.product] ?? 0);
       }
 
       // Upsert — don't overwrite if the manager already entered one today
@@ -269,7 +219,6 @@ export async function POST(request) {
         date: validatedData.date,
         dispenserCount: dispenserAssignments.length,
         pricesAtStart: submittedPrices,
-        openingPriceChanges,
       },
     });
 

@@ -3,12 +3,10 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import Station from '@/models/Station';
 import PriceHistory from '@/models/PriceHistory';
-import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { priceAdjustmentSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
-import { ROLES, DAY_STATUS } from '@/lib/constants';
-import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
+import { ROLES } from '@/lib/constants';
 
 // GET /api/stations/[id]/prices - List price change history / requests
 export async function GET(request, { params }) {
@@ -97,8 +95,6 @@ export async function POST(request, { params }) {
       );
     }
 
-    await autoCloseExpiredInProgressShifts({ stationId: station._id, session });
-
     const fuelType = validatedData.fuelType;
     const previousPrice = station.currentPrices[fuelType];
     const newPrice = validatedData.price;
@@ -111,20 +107,6 @@ export async function POST(request, { params }) {
       await session.abortTransaction();
       return NextResponse.json(
         { error: 'New price must be different from current price' },
-        { status: 400 }
-      );
-    }
-
-    // A shift must be started before any price change request/update can be processed.
-    const activeDay = await DayShift.findOne({
-      stationId: station._id,
-      status: DAY_STATUS.IN_PROGRESS,
-    }).session(session);
-
-    if (!activeDay) {
-      await session.abortTransaction();
-      return NextResponse.json(
-        { error: 'A day shift must be started before price changes can be submitted or applied' },
         { status: 400 }
       );
     }

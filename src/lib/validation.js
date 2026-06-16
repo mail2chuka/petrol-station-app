@@ -56,11 +56,10 @@ export const stockReceiptSchema = z.object({
     .optional(),
 });
 
-// Begin Day Schema — prices are dynamic per station's availableProducts
+// Begin Day Schema — prices are auto-snapshotted from station.currentPrices (set by admin)
 export const beginDaySchema = z.object({
   stationId: z.string(),
   date: z.string(),
-  pricesAtStart: z.record(z.string(), z.number().positive('Price must be positive')),
   dispensers: z.array(z.object({
     dispenserId: z.string(),
     fuelType: z.enum(Object.values(FUEL_TYPES)),
