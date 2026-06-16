@@ -129,7 +129,7 @@ export default function AuditorSummaryPage() {
                         <span className="block text-gray-800">{tolerance === 0 ? '—' : fmtNum(tolerance)}</span>
                         {(r.sales ?? 0) > 0 && expTol > 0 && (
                           <span className={`text-xs font-medium block ${(tolerance - expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {(tolerance - expTol) >= 0 ? '+' : ''}{fmtNum(tolerance - expTol)} ({r.tolerancePercent ?? ((expTol / (r.sales ?? 1)) * 100).toFixed(0)}%)
+                            {(tolerance - expTol) >= 0 ? '+' : ''}{fmtNum(tolerance - expTol)} ({(r.tolerancePercent ?? ((expTol / (r.sales ?? 1)) * 100)).toFixed(1)}%)
                           </span>
                         )}
                       </td>
