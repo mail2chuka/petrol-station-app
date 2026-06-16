@@ -6,6 +6,10 @@ import Card, { StatCard } from '@/components/Card';
 import Table from '@/components/Table';
 import Loading from '@/components/Loading';
 
+function todayIso() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+}
+
 function formatCurrency(amount) {
   if (amount === null || amount === undefined || isNaN(amount)) return '0.00';
   return Number(amount).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -18,20 +22,31 @@ function formatLiters(liters) {
 
 export default function MySalesPage() {
   const { data: session } = useSession();
+  const stationId = session?.user?.stationId;
   const [sales, setSales] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchSales();
+    if (session?.user?.id) fetchData();
   }, [session]);
 
-  const fetchSales = async () => {
+  const fetchData = async () => {
     if (!session?.user?.id) return;
-
     try {
-      const res = await fetch(`/api/sales?supervisorId=${session.user.id}`);
-      const data = await res.json();
-      setSales(data.salesEntries || []);
+      const today = todayIso();
+      const promises = [fetch(`/api/sales?supervisorId=${session.user.id}`)];
+      if (stationId) {
+        promises.push(fetch(`/api/attendant-assignments?stationId=${stationId}&date=${today}`));
+      }
+      const results = await Promise.all(promises);
+      const salesData = await results[0].json();
+      setSales(salesData.salesEntries || []);
+
+      if (results[1]) {
+        const assignData = await results[1].json();
+        setAssignments(assignData.assignments || []);
+      }
     } catch {
       // silent — table will just be empty
     } finally {
@@ -69,6 +84,27 @@ export default function MySalesPage() {
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-6">My Sales</h1>
+
+      {assignments.length > 0 && (
+        <div className="mb-6">
+          <Card title="Today's Pump Attendants">
+            <div className="space-y-2">
+              {assignments.map((a) => (
+                <div key={a._id} className="flex items-center justify-between px-3 py-2.5 bg-slate-50 rounded-xl">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{a.dispenserName}</p>
+                    <p className="text-xs text-slate-500">{a.fuelType}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-emerald-700">{a.attendantName}</p>
+                    <p className="text-xs text-slate-400">{a.attendantStaffNumber}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <StatCard title="Total Liters" value={formatLiters(totalLiters)} color="blue" />
