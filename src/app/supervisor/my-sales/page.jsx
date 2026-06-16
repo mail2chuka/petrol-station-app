@@ -87,27 +87,6 @@ export default function MySalesPage() {
     <div>
       <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-6">My Sales</h1>
 
-      {assignments.length > 0 && (
-        <div className="mb-6">
-          <Card title="Today's Pump Attendants">
-            <div className="space-y-2">
-              {assignments.map((a) => (
-                <div key={a._id} className="flex items-center justify-between px-3 py-2.5 bg-slate-50 rounded-xl">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{a.dispenserName}</p>
-                    <p className="text-xs text-slate-500">{a.fuelType}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-emerald-700">{a.attendantName}</p>
-                    <p className="text-xs text-slate-400">{a.attendantStaffNumber}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-      )}
-
       <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6">
         <StatCard title="Total Liters" value={formatLiters(totalLiters)} color="blue" />
       </div>
