@@ -10,11 +10,6 @@ function todayIso() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
 }
 
-function formatCurrency(amount) {
-  if (amount === null || amount === undefined || isNaN(amount)) return '0.00';
-  return Number(amount).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function formatLiters(liters) {
   if (liters === null || liters === undefined || isNaN(liters)) return '0.00';
   return Number(liters).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,6 +21,7 @@ export default function MySalesPage() {
   const [sales, setSales] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [productFilter, setProductFilter] = useState('ALL');
 
   useEffect(() => {
     if (session?.user?.id) fetchData();
@@ -54,6 +50,23 @@ export default function MySalesPage() {
     }
   };
 
+  if (loading) return <Loading />;
+
+  // Build a dispenserId -> attendantName lookup from assignments
+  const attendantByDispenser = {};
+  assignments.forEach((a) => {
+    attendantByDispenser[a.dispenserId] = a.attendantName || '—';
+  });
+
+  // Derive unique fuel types from sales for the filter
+  const fuelTypes = ['ALL', ...Array.from(new Set(sales.map((s) => s.fuelType).filter(Boolean)))];
+
+  const filteredSales = productFilter === 'ALL'
+    ? sales
+    : sales.filter((s) => s.fuelType === productFilter);
+
+  const totalLiters = filteredSales.reduce((sum, s) => sum + (Number(s.liters) || 0), 0);
+
   const columns = [
     {
       header: 'Date/Time',
@@ -63,23 +76,12 @@ export default function MySalesPage() {
     },
     { header: 'Dispenser', field: 'dispenserName' },
     { header: 'Fuel', field: 'fuelType' },
-    { header: 'Liters (L)', render: (row) => formatLiters(row.liters) },
-    { header: 'Cash (₦)', render: (row) => formatCurrency(row.cashAmount) },
-    { header: 'POS (₦)', render: (row) => formatCurrency(row.posAmount) },
     {
-      header: 'Total (₦)',
-      render: (row) => (
-        <span className="font-semibold text-ecana-maroon">{formatCurrency(row.totalAmount)}</span>
-      ),
+      header: 'Attendant',
+      render: (row) => attendantByDispenser[row.dispenserId] || '—',
     },
+    { header: 'Liters (L)', render: (row) => formatLiters(row.liters) },
   ];
-
-  if (loading) return <Loading />;
-
-  const totalLiters = sales.reduce((sum, s) => sum + (Number(s.liters) || 0), 0);
-  const totalCash = sales.reduce((sum, s) => sum + (Number(s.cashAmount) || 0), 0);
-  const totalPos = sales.reduce((sum, s) => sum + (Number(s.posAmount) || 0), 0);
-  const totalAmount = sales.reduce((sum, s) => sum + (Number(s.totalAmount) || 0), 0);
 
   return (
     <div>
@@ -106,15 +108,28 @@ export default function MySalesPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6">
         <StatCard title="Total Liters" value={formatLiters(totalLiters)} color="blue" />
-        <StatCard title="Total Cash" value={formatCurrency(totalCash)} color="emerald" />
-        <StatCard title="Total POS" value={formatCurrency(totalPos)} color="blue" />
-        <StatCard title="Total Amount" value={formatCurrency(totalAmount)} color="maroon" />
       </div>
 
-      <Card title={`Sales History (${sales.length} records)`}>
-        <Table columns={columns} data={sales} emptyMessage="No sales recorded yet" />
+      <Card title={`Sales History (${filteredSales.length} records)`}>
+        {/* Product filter */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {fuelTypes.map((ft) => (
+            <button
+              key={ft}
+              onClick={() => setProductFilter(ft)}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                productFilter === ft
+                  ? 'bg-ecana-maroon text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {ft === 'ALL' ? 'All Products' : ft}
+            </button>
+          ))}
+        </div>
+        <Table columns={columns} data={filteredSales} emptyMessage="No sales recorded yet" />
       </Card>
     </div>
   );
