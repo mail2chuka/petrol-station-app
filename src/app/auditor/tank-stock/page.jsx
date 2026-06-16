@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import Card from '@/components/Card';
 import Select from '@/components/Select';
 import DateCalendar from '@/components/DateCalendar';
@@ -13,6 +14,9 @@ function fmt(n) {
 }
 
 export default function AuditorTankStockPage() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === 'admin';
+
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState('');
   const [selectedDate, setSelectedDate] = useState(todayStr());
@@ -21,6 +25,9 @@ export default function AuditorTankStockPage() {
   const [fetched, setFetched] = useState(false);
   const [markedDates, setMarkedDates] = useState({});
   const [loadingMonth, setLoadingMonth] = useState(false);
+
+  // Edit state: { [tankId-period]: { value, saving, error } }
+  const [editing, setEditing] = useState({});
 
   useEffect(() => {
     fetch('/api/stations')
@@ -61,6 +68,7 @@ export default function AuditorTankStockPage() {
     if (!sid || !date) return;
     setLoading(true);
     setFetched(false);
+    setEditing({});
     try {
       const res = await fetch(`/api/tank-stock?stationId=${sid}&date=${date}`);
       const data = await res.json();
@@ -82,6 +90,44 @@ export default function AuditorTankStockPage() {
   const handleDateChange = (date) => {
     setSelectedDate(date);
     fetchEntries(date);
+  };
+
+  // Start editing a closing entry
+  const startEdit = (tankId, currentValue) => {
+    setEditing(prev => ({
+      ...prev,
+      [tankId]: { value: currentValue != null ? String(currentValue) : '', saving: false, error: '' },
+    }));
+  };
+
+  const cancelEdit = (tankId) => {
+    setEditing(prev => { const next = { ...prev }; delete next[tankId]; return next; });
+  };
+
+  const saveEdit = async (tankId, stationId, date) => {
+    const state = editing[tankId];
+    const val = parseFloat(state.value);
+    if (isNaN(val) || val < 0) {
+      setEditing(prev => ({ ...prev, [tankId]: { ...prev[tankId], error: 'Enter a valid value (0 or more)' } }));
+      return;
+    }
+    setEditing(prev => ({ ...prev, [tankId]: { ...prev[tankId], saving: true, error: '' } }));
+    try {
+      const res = await fetch('/api/tank-stock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stationId, tankId, date, period: 'closing', stockValue: val }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEditing(prev => ({ ...prev, [tankId]: { ...prev[tankId], saving: false, error: data.error || 'Failed to save' } }));
+        return;
+      }
+      cancelEdit(tankId);
+      await fetchEntries(selectedDate, stationId);
+    } catch {
+      setEditing(prev => ({ ...prev, [tankId]: { ...prev[tankId], saving: false, error: 'Network error' } }));
+    }
   };
 
   const stationName = stations.find(s => s._id === selectedStation)?.name || '';
@@ -174,6 +220,11 @@ export default function AuditorTankStockPage() {
 
             {Object.keys(byTank).length > 0 && !loading && (
               <Card title={`Tank Stock — ${selectedDate}`}>
+                {isAdmin && (
+                  <p className="text-xs text-ecana-maroon mb-3 font-medium">
+                    Admin: click Edit on any closing row to correct a reading.
+                  </p>
+                )}
                 <div className="overflow-auto max-h-[60vh]">
                   <table className="w-full text-sm">
                     <thead>
@@ -185,6 +236,7 @@ export default function AuditorTankStockPage() {
                         <th className="pb-2 pr-4">Closing Confirmed (L)</th>
                         <th className="pb-2 pr-4">Variance</th>
                         <th className="pb-2">Supervisor</th>
+                        {isAdmin && <th className="pb-2 pl-4"></th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -193,6 +245,9 @@ export default function AuditorTankStockPage() {
                         const cl = tank.closing;
                         const variance = cl?.variance ?? null;
                         const variancePct = cl?.variancePercent ?? null;
+                        const editState = editing[tankId];
+                        const isEditingThis = !!editState;
+
                         return (
                           <tr key={tankId} className="border-b border-slate-100 last:border-0">
                             <td className="py-2.5 pr-4 font-medium">{tank.label}</td>
@@ -202,12 +257,63 @@ export default function AuditorTankStockPage() {
                               </span>
                             </td>
                             <td className="py-2.5 pr-4">{op ? fmt(op.openingStock) : '—'}</td>
-                            <td className="py-2.5 pr-4">{cl ? fmt(cl.closingStockMeasured) : '—'}</td>
-                            <td className="py-2.5 pr-4">{cl?.closingStockManager != null ? fmt(cl.closingStockManager) : <span className="text-slate-400 text-xs">Pending</span>}</td>
+
+                            {/* Closing measured — editable by admin */}
+                            <td className="py-2.5 pr-4">
+                              {isEditingThis ? (
+                                <div className="flex flex-col gap-1 min-w-[140px]">
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={editState.value}
+                                    onChange={e => setEditing(prev => ({ ...prev, [tankId]: { ...prev[tankId], value: e.target.value, error: '' } }))}
+                                    autoFocus
+                                    className="w-full px-2 py-1 text-sm border-2 border-ecana-maroon rounded-lg focus:outline-none"
+                                    placeholder="Litres"
+                                  />
+                                  {editState.error && <p className="text-xs text-red-600">{editState.error}</p>}
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => saveEdit(tankId, selectedStation, selectedDate)}
+                                      disabled={editState.saving}
+                                      className="px-2 py-1 text-xs font-semibold bg-ecana-maroon text-white rounded-lg disabled:opacity-50"
+                                    >
+                                      {editState.saving ? '…' : 'Save'}
+                                    </button>
+                                    <button
+                                      onClick={() => cancelEdit(tankId)}
+                                      disabled={editState.saving}
+                                      className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-lg"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                cl ? fmt(cl.closingStockMeasured) : '—'
+                              )}
+                            </td>
+
+                            <td className="py-2.5 pr-4">
+                              {cl?.closingStockManager != null ? fmt(cl.closingStockManager) : <span className="text-slate-400 text-xs">Pending</span>}
+                            </td>
                             <td className={`py-2.5 pr-4 font-medium ${variance == null ? 'text-slate-400' : variance < 0 ? 'text-red-600' : variance > 0 ? 'text-green-600' : 'text-slate-500'}`}>
                               {variance == null ? '—' : `${variance > 0 ? '+' : ''}${fmt(variance)}L (${variancePct?.toFixed(1)}%)`}
                             </td>
                             <td className="py-2.5 text-slate-500 text-xs">{cl?.supervisorName || op?.supervisorName || '—'}</td>
+
+                            {isAdmin && (
+                              <td className="py-2.5 pl-4">
+                                {!isEditingThis && (
+                                  <button
+                                    onClick={() => startEdit(tankId, cl?.closingStockMeasured ?? null)}
+                                    className="text-xs font-semibold text-ecana-maroon hover:underline whitespace-nowrap"
+                                  >
+                                    {cl ? 'Edit' : 'Enter'}
+                                  </button>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
