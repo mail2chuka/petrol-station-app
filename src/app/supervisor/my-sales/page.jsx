@@ -25,20 +25,21 @@ export default function MySalesPage() {
   const [stationTanks, setStationTanks] = useState([]);         // station tank definitions
   const [loading, setLoading] = useState(true);
   const [productFilter, setProductFilter] = useState('ALL');
+  const [dateFilter, setDateFilter] = useState(todayIso());
 
   useEffect(() => {
     if (session?.user?.id) fetchData();
-  }, [session]);
+  }, [session, dateFilter]);
 
   const fetchData = async () => {
     if (!session?.user?.id) return;
+    setLoading(true);
     try {
-      const today = todayIso();
-      const promises = [fetch(`/api/sales?supervisorId=${session.user.id}`)];
+      const promises = [fetch(`/api/sales?supervisorId=${session.user.id}&date=${dateFilter}`)];
       if (stationId) {
-        promises.push(fetch(`/api/attendant-assignments?stationId=${stationId}&date=${today}`));
+        promises.push(fetch(`/api/attendant-assignments?stationId=${stationId}&date=${dateFilter}`));
         promises.push(fetch(`/api/stations/${stationId}`));
-        promises.push(fetch(`/api/tank-stock?stationId=${stationId}&date=${today}`));
+        promises.push(fetch(`/api/tank-stock?stationId=${stationId}&date=${dateFilter}`));
       }
       const results = await Promise.all(promises);
       const salesData = await results[0].json();
@@ -126,6 +127,18 @@ export default function MySalesPage() {
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-6">My Sales</h1>
+
+      {/* Date filter */}
+      <div className="flex items-center gap-3 mb-6">
+        <label className="text-sm font-medium text-slate-600">Date</label>
+        <input
+          type="date"
+          value={dateFilter}
+          max={todayIso()}
+          onChange={(e) => { setProductFilter('ALL'); setDateFilter(e.target.value); }}
+          className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-ecana-maroon"
+        />
+      </div>
 
       {/* Tank Summary */}
       {tankSummary.length > 0 && (

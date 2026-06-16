@@ -24,9 +24,30 @@ export default function SupervisorReportPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [pumpTankMap, setPumpTankMap] = useState({}); // pumpId -> { tankId, tankLabel }
 
   useEffect(() => {
-    if (session) fetchReport();
+    if (session) {
+      fetchReport();
+      // Fetch station data for pump→tank mapping
+      if (session.user?.stationId) {
+        fetch(`/api/stations/${session.user.stationId}`)
+          .then((r) => r.json())
+          .then((data) => {
+            const dispensers = data.station?.dispensers || [];
+            const tanks = data.station?.tanks || [];
+            const map = {};
+            dispensers.forEach((d) => {
+              if (d.tankId) {
+                const tank = tanks.find((t) => t._id === d.tankId);
+                map[d.dispenserId] = { tankId: d.tankId, tankLabel: tank?.label || d.tankId };
+              }
+            });
+            setPumpTankMap(map);
+          })
+          .catch(() => {});
+      }
+    }
   }, [session]);
 
   async function fetchReport() {
@@ -51,6 +72,31 @@ export default function SupervisorReportPage() {
     return acc;
   }, {});
   const dates = Object.keys(byDate).sort();
+
+  // Assign a soft pastel background per unique tankId
+  const TANK_COLORS = [
+    'bg-blue-50',
+    'bg-emerald-50',
+    'bg-amber-50',
+    'bg-rose-50',
+    'bg-violet-50',
+    'bg-cyan-50',
+    'bg-orange-50',
+    'bg-teal-50',
+  ];
+  const tankColorMap = {};
+  let colorIdx = 0;
+  Object.values(pumpTankMap).forEach(({ tankId }) => {
+    if (tankId && !(tankId in tankColorMap)) {
+      tankColorMap[tankId] = TANK_COLORS[colorIdx % TANK_COLORS.length];
+      colorIdx++;
+    }
+  });
+
+  function rowBg(pumpId) {
+    const tankId = pumpTankMap[pumpId]?.tankId;
+    return tankId ? tankColorMap[tankId] || '' : '';
+  }
 
   return (
     <div className="space-y-6">
@@ -96,6 +142,7 @@ export default function SupervisorReportPage() {
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Pump</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Tank</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Fuel</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Opening</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Closing</th>
@@ -110,7 +157,7 @@ export default function SupervisorReportPage() {
                   const dateRows = byDate[date];
                   return dateRows.map((r, ri) => (
                     <tr key={`${date}-${r.pumpId}`}
-                      className={`border-b border-gray-100 ${ri === 0 && di > 0 ? 'border-t-2 border-t-gray-200' : ''} hover:bg-gray-50`}>
+                      className={`border-b border-gray-100 ${ri === 0 && di > 0 ? 'border-t-2 border-t-gray-200' : ''} ${rowBg(r.pumpId)} hover:brightness-95 transition-all`}>
                       {/* Date cell only on first pump of that date */}
                       {ri === 0 ? (
                         <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap align-top"
@@ -119,6 +166,7 @@ export default function SupervisorReportPage() {
                         </td>
                       ) : null}
                       <td className="px-4 py-2.5 font-medium text-gray-800">{r.pumpLabel}</td>
+                      <td className="px-4 py-2.5 text-gray-600 text-xs font-medium">{pumpTankMap[r.pumpId]?.tankLabel || '—'}</td>
                       <td className="px-4 py-2.5 text-gray-600">{r.fuelType || '—'}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{fmtNum(r.opening)}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{r.closing != null ? fmtNum(r.closing) : <span className="text-amber-500 text-xs font-medium">Pending</span>}</td>
