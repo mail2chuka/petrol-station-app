@@ -842,6 +842,22 @@ function SummaryListView({ stationId, onSelectDay }) {
   const totalStockIn    = computedRows.reduce((s, r) => s + (r.stockIn ?? 0), 0);
   const totalExpTol     = computedRows.reduce((s, r) => s + r.expTol, 0);
 
+  // Per-product breakdown for the Totals row (only used when >1 product is present)
+  const totalProducts = [...new Set(computedRows.map(r => r.product).filter(Boolean))];
+  const multiProduct = totalProducts.length > 1;
+  const byProduct = {};
+  totalProducts.forEach(p => {
+    const pr = computedRows.filter(r => r.product === p);
+    byProduct[p] = {
+      sales:       pr.reduce((s, r) => s + r.sales, 0),
+      salesAmount: pr.reduce((s, r) => s + r.salesAmount, 0),
+      overage:     pr.reduce((s, r) => s + r.overage, 0),
+      shortage:    pr.reduce((s, r) => s + r.shortage, 0),
+      stockIn:     pr.reduce((s, r) => s + (r.stockIn ?? 0), 0),
+      expTol:      pr.reduce((s, r) => s + r.expTol, 0),
+    };
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -930,19 +946,74 @@ function SummaryListView({ stationId, onSelectDay }) {
                 <tr className="bg-gray-100 border-t-2 border-t-gray-300">
                   <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide">Totals</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{totalStockIn > 0 ? fmtNum(totalStockIn) : '—'}</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">
-                    {totalOverage > 0 ? fmtNum(totalOverage) : '—'}
-                    {totalOverage > 0 && totalSales > 0 && (
-                      <span className={`block text-xs font-medium ${(totalOverage - totalExpTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                        {(totalOverage - totalExpTol) >= 0 ? '+' : ''}{fmtNum(totalOverage - totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(1)}%)
-                      </span>
+                    {multiProduct ? (
+                      totalProducts.map(p => (
+                        <span key={p} className="block">
+                          {byProduct[p].stockIn > 0 ? fmtNum(byProduct[p].stockIn) : '—'}
+                          <span className="text-xs font-normal text-gray-500"> ({p})</span>
+                        </span>
+                      ))
+                    ) : (totalStockIn > 0 ? fmtNum(totalStockIn) : '—')}
+                  </td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800">
+                    {multiProduct ? (
+                      totalProducts.map(p => {
+                        const b = byProduct[p];
+                        return (
+                          <span key={p} className="block mb-1 last:mb-0">
+                            {b.overage > 0 ? fmtNum(b.overage) : '—'}
+                            <span className="text-xs font-normal text-gray-500"> ({p})</span>
+                            {b.overage > 0 && b.sales > 0 && (
+                              <span className={`block text-xs font-medium ${(b.overage - b.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                                {(b.overage - b.expTol) >= 0 ? '+' : ''}{fmtNum(b.overage - b.expTol)} ({((b.expTol / b.sales) * 100).toFixed(1)}%)
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })
+                    ) : (
+                      <>
+                        {totalOverage > 0 ? fmtNum(totalOverage) : '—'}
+                        {totalOverage > 0 && totalSales > 0 && (
+                          <span className={`block text-xs font-medium ${(totalOverage - totalExpTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {(totalOverage - totalExpTol) >= 0 ? '+' : ''}{fmtNum(totalOverage - totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(1)}%)
+                          </span>
+                        )}
+                      </>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalSales)}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800">
+                    {multiProduct ? (
+                      totalProducts.map(p => (
+                        <span key={p} className="block">
+                          {fmtNum(byProduct[p].sales)}
+                          <span className="text-xs font-normal text-gray-500"> ({p})</span>
+                        </span>
+                      ))
+                    ) : fmtNum(totalSales)}
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtN(totalSalesAmt)}</td>
-                  <td className={`px-4 py-3 text-sm font-bold ${totalShortage > 0 ? 'text-pink-600' : 'text-gray-400'}`}>{totalShortage > 0 ? fmtNum(totalShortage) : '—'}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800">
+                    {multiProduct ? (
+                      totalProducts.map(p => (
+                        <span key={p} className="block">
+                          {fmtN(byProduct[p].salesAmount)}
+                          <span className="text-xs font-normal text-gray-500"> ({p})</span>
+                        </span>
+                      ))
+                    ) : fmtN(totalSalesAmt)}
+                  </td>
+                  <td className={`px-4 py-3 text-sm font-bold ${totalShortage > 0 ? 'text-pink-600' : 'text-gray-400'}`}>
+                    {multiProduct ? (
+                      totalProducts.map(p => (
+                        <span key={p} className="block">
+                          {byProduct[p].shortage > 0 ? fmtNum(byProduct[p].shortage) : '—'}
+                          <span className="text-xs font-normal text-gray-500"> ({p})</span>
+                        </span>
+                      ))
+                    ) : (totalShortage > 0 ? fmtNum(totalShortage) : '—')}
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                 </tr>
               </tfoot>
