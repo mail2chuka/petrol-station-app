@@ -239,6 +239,32 @@ export async function POST(request) {
       return NextResponse.json({ entry }, { status: 200 });
     }
 
+    // ── UPDATE EXISTING DELIVERY ────────────────────────────────────────────────
+    if (type === 'updateDelivery') {
+      const { movementId, fuelType, totalReceived, distribution, supplier, costPerLiter } = body;
+      if (!movementId || !fuelType || !totalReceived) {
+        return NextResponse.json({ error: 'movementId, fuelType, and totalReceived are required.' }, { status: 400 });
+      }
+      const totalCost = costPerLiter ? Number(costPerLiter) * Number(totalReceived) : null;
+      const movement = await StockMovement.findOneAndUpdate(
+        { _id: movementId, stationId: stationObjId },
+        {
+          $set: {
+            fuelType,
+            quantity: Number(totalReceived),
+            totalReceived: Number(totalReceived),
+            distribution: distribution || [],
+            supplier: supplier || '',
+            costPerLiter: costPerLiter ? Number(costPerLiter) : null,
+            totalCost,
+          },
+        },
+        { new: true }
+      );
+      if (!movement) return NextResponse.json({ error: 'Delivery record not found.' }, { status: 404 });
+      return NextResponse.json({ movement }, { status: 200 });
+    }
+
     // ── TANK DELIVERY (RECEIPT) ─────────────────────────────────────────────────
     if (type === 'tankDelivery') {
       const { fuelType, totalReceived, distribution, supplier, costPerLiter } = body;

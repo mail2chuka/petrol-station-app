@@ -1,6 +1,7 @@
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
+import NoScrollNumbers from '@/components/NoScrollNumbers';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -28,7 +29,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={inter.variable}>
       <body className={`${inter.className} antialiased`}>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <NoScrollNumbers />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

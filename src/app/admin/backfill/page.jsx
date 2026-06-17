@@ -508,23 +508,35 @@ export default function BackfillPage() {
     setSaving(true); setResults([]);
     const res = [];
     for (const d of deliveries) {
-      if (d._id) continue; // already in DB — skip
       if (!d.totalReceived) continue;
       if (!d.tankId) {
         res.push({ label: d.fuelType + ' delivery', error: 'A receiving tank must be selected.' });
         continue;
       }
+      const lbl = (station?.tanks || []).find((t) => String(t._id) === d.tankId)?.label || d.tankId;
       try {
-        await callBackfill({
-          type: 'tankDelivery',
-          fuelType: d.fuelType,
-          totalReceived: d.totalReceived,
-          distribution: [{ tankId: d.tankId, litres: Number(d.totalReceived) }],
-          supplier: d.supplier,
-          costPerLiter: d.costPerLiter || undefined,
-        });
-        const lbl = (station?.tanks || []).find((t) => String(t._id) === d.tankId)?.label || d.tankId;
-        res.push({ label: d.fuelType + ' delivery → ' + lbl });
+        if (d._id) {
+          await callBackfill({
+            type: 'updateDelivery',
+            movementId: d._id,
+            fuelType: d.fuelType,
+            totalReceived: d.totalReceived,
+            distribution: [{ tankId: d.tankId, litres: Number(d.totalReceived) }],
+            supplier: d.supplier,
+            costPerLiter: d.costPerLiter || undefined,
+          });
+          res.push({ label: d.fuelType + ' delivery → ' + lbl + ' (updated)' });
+        } else {
+          await callBackfill({
+            type: 'tankDelivery',
+            fuelType: d.fuelType,
+            totalReceived: d.totalReceived,
+            distribution: [{ tankId: d.tankId, litres: Number(d.totalReceived) }],
+            supplier: d.supplier,
+            costPerLiter: d.costPerLiter || undefined,
+          });
+          res.push({ label: d.fuelType + ' delivery → ' + lbl });
+        }
       } catch (e) { res.push({ label: d.fuelType + ' delivery', error: e.message }); }
     }
     setResults(res);
@@ -980,9 +992,8 @@ export default function BackfillPage() {
                     <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Fuel Type</label>
                     <select
                       value={d.fuelType}
-                      disabled={!!d._id}
                       onChange={(e) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, fuelType: e.target.value, tankId: '' } : x))}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon disabled:bg-slate-50 disabled:text-slate-400"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon"
                     >
                       {['PMS', 'AGO', 'DPK', 'LPG'].map((ft) => <option key={ft}>{ft}</option>)}
                     </select>
@@ -993,27 +1004,23 @@ export default function BackfillPage() {
                     </label>
                     <select
                       value={d.tankId}
-                      disabled={!!d._id}
                       onChange={(e) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, tankId: e.target.value } : x))}
-                      className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon disabled:bg-slate-50 disabled:text-slate-400 ${!d.tankId && !d._id ? 'border-amber-300' : 'border-slate-300'}`}
+                      className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon ${!d.tankId ? 'border-amber-300' : 'border-slate-300'}`}
                     >
                       <option value="">— Select tank (required) —</option>
                       {matchingTanks.map((t) => (
                         <option key={t._id} value={t._id}>{t.label} ({t.capacity?.toLocaleString()}L)</option>
                       ))}
                     </select>
-                    {!d.tankId && !d._id && <p className="text-xs text-amber-600 mt-1">Tank selection is required to save this delivery.</p>}
+                    {!d.tankId && <p className="text-xs text-amber-600 mt-1">Tank selection is required to save this delivery.</p>}
                   </div>
                   <Field label="Total Received (L)" type="number" value={d.totalReceived}
-                    readOnly={!!d._id}
                     onChange={(v) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, totalReceived: v } : x))}
                     placeholder="e.g. 33000" />
                   <Field label="Cost per Litre (₦)" type="number" value={d.costPerLiter}
-                    readOnly={!!d._id}
                     onChange={(v) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, costPerLiter: v } : x))}
                     placeholder="Optional" />
                   <Field label="Supplier" value={d.supplier}
-                    readOnly={!!d._id}
                     onChange={(v) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, supplier: v } : x))}
                     placeholder="Optional" />
                 </div>
