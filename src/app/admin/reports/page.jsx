@@ -921,9 +921,16 @@ function SummaryListView({ stationId, onSelectDay }) {
                       <TD>{fmtNum(r.sales)}</TD>
                       <TD>{fmtNum(r.priceForDay)}</TD>
                       <TD>{fmtNum(r.salesAmount)}</TD>
-                      <TD className={r.shortage > 0 ? 'text-pink-600 font-medium' : r.overage > 0 ? 'text-green-600 font-medium' : 'text-gray-400'}>
+                      <td className={`px-4 py-2.5 text-sm font-medium ${r.shortage > 0 ? 'text-pink-600' : r.overage > 0 ? 'text-green-600' : 'text-gray-400'}`}>
                         {r.shortage > 0 ? fmtNum(r.shortage) : r.overage > 0 ? fmtNum(r.overage) : '—'}
-                      </TD>
+                        {r.shortage > 0 && r.sales > 0 && r.expTol > 0 && (
+                          <span className={`block text-xs font-medium ${r.shortage <= r.expTol ? 'text-green-600' : 'text-red-600'}`}>
+                            {r.shortage <= r.expTol
+                              ? `Within ${(r.tolerancePercent ?? ((r.expTol / r.sales) * 100)).toFixed(1)}% tol.`
+                              : `${fmtNum(r.shortage - r.expTol)} L over tol.`}
+                          </span>
+                        )}
+                      </td>
                       <TD>{fmtNum(r.closingStock)}</TD>
                     </ClickRow>
                   );
