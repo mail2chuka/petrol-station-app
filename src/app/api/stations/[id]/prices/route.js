@@ -96,7 +96,10 @@ export async function POST(request, { params }) {
     }
 
     const fuelType = validatedData.fuelType;
-    const previousPrice = station.currentPrices[fuelType];
+    // currentPrices is a Mongoose Map — must use .get()/.set(), not bracket access
+    const previousPrice = station.currentPrices instanceof Map
+      ? (station.currentPrices.get(fuelType) ?? 0)
+      : (station.currentPrices?.[fuelType] ?? 0);
     const newPrice = validatedData.price;
     const changeAmount = newPrice - previousPrice;
     const changePercentage = previousPrice > 0
@@ -111,8 +114,13 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Update station price
-    station.currentPrices[fuelType] = newPrice;
+    // Update station price (Map-aware set)
+    if (station.currentPrices instanceof Map) {
+      station.currentPrices.set(fuelType, newPrice);
+    } else {
+      station.currentPrices[fuelType] = newPrice;
+    }
+    station.markModified('currentPrices');
     await station.save({ session });
 
     // Create approved price history record for direct admin adjustments
