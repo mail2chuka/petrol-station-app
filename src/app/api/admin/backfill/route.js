@@ -72,6 +72,10 @@ export async function POST(request) {
     if (!verifyPin(pin)) {
       return NextResponse.json({ error: 'Invalid backfill PIN.' }, { status: 401 });
     }
+    // PIN ping — used by the UI just to verify the PIN is correct
+    if (type === '__ping__') {
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
     if (!type || !stationId || !date) {
       return NextResponse.json({ error: 'type, stationId, and date are required.' }, { status: 400 });
     }
