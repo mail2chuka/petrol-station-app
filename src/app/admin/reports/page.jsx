@@ -831,12 +831,8 @@ function SummaryListView({ stationId, onSelectDay }) {
     const shortage = r.shortage ?? 0;
     const expTol = r.expectedTolerance ?? 0;
     const sales = r.sales ?? 0;
-    // Signed variance: + = overage (extra fuel), − = shortage (missing fuel)
-    const variance = overage - shortage;
-    // A day is within tolerance when the absolute variance does not exceed the expected band
-    const withinTol = expTol > 0 ? Math.abs(variance) <= expTol : variance === 0;
     const salesAmount = (r.priceForDay ?? 0) * sales;
-    return { ...r, overage, shortage, expTol, variance, withinTol, salesAmount, sales };
+    return { ...r, overage, shortage, expTol, salesAmount, sales };
   });
 
   const totalSales      = computedRows.reduce((s, r) => s + r.sales, 0);
@@ -845,8 +841,6 @@ function SummaryListView({ stationId, onSelectDay }) {
   const totalShortage   = computedRows.reduce((s, r) => s + r.shortage, 0);
   const totalStockIn    = computedRows.reduce((s, r) => s + (r.stockIn ?? 0), 0);
   const totalExpTol     = computedRows.reduce((s, r) => s + r.expTol, 0);
-  const totalVariance   = totalOverage - totalShortage;
-  const totalWithinTol  = totalExpTol > 0 ? Math.abs(totalVariance) <= totalExpTol : totalVariance === 0;
 
   return (
     <div className="space-y-4">
@@ -914,16 +908,12 @@ function SummaryListView({ stationId, onSelectDay }) {
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
                       <td className="px-4 py-2.5 text-sm font-bold text-gray-800">
-                        {r.sales > 0 && r.expTol > 0 ? (
-                          <>
-                            <span className="block">{fmtNum(r.expTol)} ({(r.tolerancePercent ?? ((r.expTol / r.sales) * 100)).toFixed(1)}%)</span>
-                            <span className={`block text-xs font-medium ${r.withinTol ? 'text-green-600' : 'text-red-600'}`}>
-                              {r.withinTol
-                                ? '✓ within tolerance'
-                                : `${fmtNum(Math.abs(r.variance) - r.expTol)} L over`}
-                            </span>
-                          </>
-                        ) : '—'}
+                        {r.overage > 0 ? fmtNum(r.overage) : '—'}
+                        {r.overage > 0 && r.sales > 0 && (
+                          <span className={`block text-xs font-medium ${(r.overage - r.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {(r.overage - r.expTol) >= 0 ? '+' : ''}{fmtNum(r.overage - r.expTol)} ({(r.tolerancePercent ?? ((r.expTol / r.sales) * 100)).toFixed(1)}%)
+                          </span>
+                        )}
                       </td>
                       <TD>{fmtNum(r.sales)}</TD>
                       <TD>{fmtNum(r.priceForDay)}</TD>
@@ -942,14 +932,12 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{totalStockIn > 0 ? fmtNum(totalStockIn) : '—'}</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">
-                    {totalSales > 0 && totalExpTol > 0 ? (
-                      <>
-                        <span className="block">{fmtNum(totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(1)}%)</span>
-                        <span className={`block text-xs font-medium ${totalWithinTol ? 'text-green-600' : 'text-red-600'}`}>
-                          {totalWithinTol ? '✓ within tolerance' : `${fmtNum(Math.abs(totalVariance) - totalExpTol)} L over`}
-                        </span>
-                      </>
-                    ) : '—'}
+                    {totalOverage > 0 ? fmtNum(totalOverage) : '—'}
+                    {totalOverage > 0 && totalSales > 0 && (
+                      <span className={`block text-xs font-medium ${(totalOverage - totalExpTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                        {(totalOverage - totalExpTol) >= 0 ? '+' : ''}{fmtNum(totalOverage - totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(1)}%)
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalSales)}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
