@@ -924,10 +924,10 @@ function SummaryListView({ stationId, onSelectDay }) {
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
                       <td className="px-4 py-2.5 text-sm font-bold text-gray-800">
-                        {r.overage > 0 ? fmtNum(r.overage) : '—'}
-                        {r.overage > 0 && r.sales > 0 && (
-                          <span className={`block text-xs font-medium ${(r.overage - r.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {(r.overage - r.expTol) >= 0 ? '+' : ''}{fmtNum(r.overage - r.expTol)} ({(r.tolerancePercent ?? ((r.expTol / r.sales) * 100)).toFixed(1)}%)
+                        {r.sales > 0 ? fmtNum(r.overage - r.shortage) : '—'}
+                        {r.sales > 0 && (
+                          <span className={`block text-xs font-medium ${((r.overage - r.shortage) - r.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {((r.overage - r.shortage) - r.expTol) >= 0 ? '+' : ''}{fmtNum((r.overage - r.shortage) - r.expTol)} ({(r.tolerancePercent ?? ((r.expTol / r.sales) * 100)).toFixed(1)}%)
                           </span>
                         )}
                       </td>
@@ -960,13 +960,14 @@ function SummaryListView({ stationId, onSelectDay }) {
                     {multiProduct ? (
                       totalProducts.map(p => {
                         const b = byProduct[p];
+                        const variance = b.overage - b.shortage;
                         return (
                           <span key={p} className="block mb-1 last:mb-0">
-                            {b.overage > 0 ? fmtNum(b.overage) : '—'}
+                            {b.sales > 0 ? fmtNum(variance) : '—'}
                             <span className="text-xs font-normal text-gray-500"> ({p})</span>
-                            {b.overage > 0 && b.sales > 0 && (
-                              <span className={`block text-xs font-medium ${(b.overage - b.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                                {(b.overage - b.expTol) >= 0 ? '+' : ''}{fmtNum(b.overage - b.expTol)} ({((b.expTol / b.sales) * 100).toFixed(1)}%)
+                            {b.sales > 0 && (
+                              <span className={`block text-xs font-medium ${(variance - b.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                                {(variance - b.expTol) >= 0 ? '+' : ''}{fmtNum(variance - b.expTol)} ({((b.expTol / b.sales) * 100).toFixed(1)}%)
                               </span>
                             )}
                           </span>
@@ -974,10 +975,10 @@ function SummaryListView({ stationId, onSelectDay }) {
                       })
                     ) : (
                       <>
-                        {totalOverage > 0 ? fmtNum(totalOverage) : '—'}
-                        {totalOverage > 0 && totalSales > 0 && (
-                          <span className={`block text-xs font-medium ${(totalOverage - totalExpTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {(totalOverage - totalExpTol) >= 0 ? '+' : ''}{fmtNum(totalOverage - totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(1)}%)
+                        {totalSales > 0 ? fmtNum(totalOverage - totalShortage) : '—'}
+                        {totalSales > 0 && (
+                          <span className={`block text-xs font-medium ${((totalOverage - totalShortage) - totalExpTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {((totalOverage - totalShortage) - totalExpTol) >= 0 ? '+' : ''}{fmtNum((totalOverage - totalShortage) - totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(1)}%)
                           </span>
                         )}
                       </>
