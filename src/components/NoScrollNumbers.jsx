@@ -6,8 +6,17 @@ export default function NoScrollNumbers() {
     function blurOnWheel(e) {
       if (e.target.type === 'number') e.target.blur();
     }
+    function blockArrows(e) {
+      if (e.target.type === 'number' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+      }
+    }
     document.addEventListener('wheel', blurOnWheel, { passive: true });
-    return () => document.removeEventListener('wheel', blurOnWheel);
+    document.addEventListener('keydown', blockArrows);
+    return () => {
+      document.removeEventListener('wheel', blurOnWheel);
+      document.removeEventListener('keydown', blockArrows);
+    };
   }, []);
   return null;
 }
