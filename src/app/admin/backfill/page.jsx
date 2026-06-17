@@ -9,6 +9,11 @@ import Loading from '@/components/Loading';
 function todayStr() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
 }
+function yesterdayStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(d);
+}
 function fmtN(n) {
   if (n == null || n === '') return '—';
   return Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -45,26 +50,34 @@ function Field({ label, value, onChange, type = 'text', placeholder = '', readOn
 }
 
 // ── Step indicator ─────────────────────────────────────────────────────────────
-function StepBar({ current }) {
+function StepBar({ current, completedSteps = [], onNavigate }) {
   return (
     <div className="flex gap-1 mb-8 overflow-x-auto pb-1">
-      {STEPS.map((s, i) => (
-        <div key={s.id} className="flex items-center gap-1 shrink-0">
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-            s.id === current ? 'bg-ecana-maroon text-white' :
-            STEPS.findIndex(x => x.id === current) > i ? 'bg-emerald-100 text-emerald-700' :
-            'bg-slate-100 text-slate-400'
-          }`}>
-            {STEPS.findIndex(x => x.id === current) > i && (
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-              </svg>
-            )}
-            {s.label}
+      {STEPS.map((s, i) => {
+        const isCompleted = completedSteps.includes(s.id);
+        const isCurrent = s.id === current;
+        const isClickable = isCompleted && !isCurrent && !!onNavigate;
+        return (
+          <div key={s.id} className="flex items-center gap-1 shrink-0">
+            <div
+              onClick={isClickable ? () => onNavigate(s.id) : undefined}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                isCurrent ? 'bg-ecana-maroon text-white' :
+                isCompleted ? 'bg-emerald-100 text-emerald-700 cursor-pointer hover:bg-emerald-200' :
+                'bg-slate-100 text-slate-400'
+              }`}
+            >
+              {isCompleted && !isCurrent && (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+              {s.label}
+            </div>
+            {i < STEPS.length - 1 && <div className="w-3 h-px bg-slate-200 shrink-0" />}
           </div>
-          {i < STEPS.length - 1 && <div className="w-3 h-px bg-slate-200 shrink-0" />}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -113,9 +126,11 @@ export default function BackfillPage() {
   const [step, setStep] = useState('setup');
   const [saving, setSaving] = useState(false);
   const [results, setResults] = useState([]);
+  const [completedSteps, setCompletedSteps] = useState([]);
+  const [isDone, setIsDone] = useState(false);
 
   // Setup
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState(yesterdayStr());
   const [stations, setStations] = useState([]);
   const [stationId, setStationId] = useState('');
   const [station, setStation] = useState(null);
@@ -135,8 +150,9 @@ export default function BackfillPage() {
   const [tankReadings, setTankReadings] = useState({});
 
   // Deliveries – each item has fuelType, tankId, totalReceived, supplier, costPerLiter
+  // _id: null = not yet saved; _id: '<mongoId>' = already in DB (skip on re-save)
   const [deliveries, setDeliveries] = useState([
-    { fuelType: 'PMS', tankId: '', totalReceived: '', supplier: '', costPerLiter: '' },
+    { _id: null, fuelType: 'PMS', tankId: '', totalReceived: '', supplier: '', costPerLiter: '' },
   ]);
 
   // Sales
@@ -146,8 +162,9 @@ export default function BackfillPage() {
   const [payments, setPayments] = useState({});
 
   // Bank deposits
+  // _id: null = not yet saved; _id: '<mongoId>' = already in DB (skip on re-save)
   const [deposits, setDeposits] = useState([
-    { depositDate: '', amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' },
+    { _id: null, depositDate: '', amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' },
   ]);
   // Total already saved in DB for the wizard's operating date — refreshed after each save
   const [dbDepositsTotal, setDbDepositsTotal] = useState(0);
@@ -245,6 +262,7 @@ export default function BackfillPage() {
         if (ex.stockMovements?.length) {
           setDeliveries(
             ex.stockMovements.map((m) => ({
+              _id: m._id ? String(m._id) : null,
               fuelType: m.fuelType || 'PMS',
               tankId: m.distribution?.[0]?.tankId || '',
               totalReceived: m.totalReceived != null ? String(m.totalReceived) : '',
@@ -253,7 +271,7 @@ export default function BackfillPage() {
             }))
           );
         } else {
-          setDeliveries([{ fuelType: 'PMS', tankId: '', totalReceived: '', supplier: '', costPerLiter: '' }]);
+          setDeliveries([{ _id: null, fuelType: 'PMS', tankId: '', totalReceived: '', supplier: '', costPerLiter: '' }]);
         }
 
         if (ex.salesEntries?.length) {
@@ -279,6 +297,7 @@ export default function BackfillPage() {
 
         if (ex.cashDeposits?.length) {
           setDeposits(ex.cashDeposits.map((d) => ({
+            _id: d._id ? String(d._id) : null,
             depositDate: d.date ? new Date(d.date).toISOString().split('T')[0] : date,
             amount: d.amount != null ? String(d.amount) : '',
             bankName: d.bankName || '',
@@ -287,7 +306,7 @@ export default function BackfillPage() {
             note: d.adminNote || '',
           })));
         } else {
-          setDeposits([{ depositDate: date, amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' }]);
+          setDeposits([{ _id: null, depositDate: date, amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' }]);
         }
 
         setExistingData(ex);
@@ -340,6 +359,8 @@ export default function BackfillPage() {
     });
     setPinChecking(false);
     if (res.status === 401) { setPinError('Incorrect PIN. Try again.'); return; }
+    if (res.status >= 500) { setPinError('Server error. Please try again.'); return; }
+    // Any other non-401 response (400, 404, etc.) means the PIN was accepted
     setPinUnlocked(true);
   }
 
@@ -355,15 +376,60 @@ export default function BackfillPage() {
     return data;
   }
 
-  // ── Refresh deposit balance from DB ───────────────────────────────────────────
+  // ── Refresh helpers ───────────────────────────────────────────────────────────
+  async function fetchBackfillData() {
+    if (!stationId || !date) return null;
+    const res = await fetch(`/api/admin/backfill?stationId=${stationId}&date=${date}`);
+    if (!res.ok) return null;
+    return res.json();
+  }
+
   async function refreshDbDepositsTotal() {
-    if (!stationId || !date) return;
+    const data = await fetchBackfillData();
+    if (data) setDbDepositsTotal((data.cashDeposits || []).reduce((s, d) => s + (d.amount || 0), 0));
+  }
+
+  async function refreshDeposits() {
+    const data = await fetchBackfillData();
+    if (!data) return;
+    if (data.cashDeposits?.length) {
+      setDeposits(data.cashDeposits.map((d) => ({
+        _id: d._id ? String(d._id) : null,
+        depositDate: d.date ? new Date(d.date).toISOString().split('T')[0] : date,
+        amount: d.amount != null ? String(d.amount) : '',
+        bankName: d.bankName || '',
+        bankBranch: d.bankBranch || '',
+        accountNumber: d.accountNumber || '',
+        note: d.adminNote || '',
+      })));
+    }
+    setDbDepositsTotal((data.cashDeposits || []).reduce((s, d) => s + (d.amount || 0), 0));
+  }
+
+  async function refreshDeliveries() {
+    const data = await fetchBackfillData();
+    if (!data) return;
+    if (data.stockMovements?.length) {
+      setDeliveries(data.stockMovements.map((m) => ({
+        _id: m._id ? String(m._id) : null,
+        fuelType: m.fuelType || 'PMS',
+        tankId: m.distribution?.[0]?.tankId || '',
+        totalReceived: m.totalReceived != null ? String(m.totalReceived) : '',
+        supplier: m.supplier || '',
+        costPerLiter: m.costPerLiter != null ? String(m.costPerLiter) : '',
+      })));
+    }
+  }
+
+  async function deleteDeposit(depositId) {
+    if (!window.confirm('Delete this deposit record? This cannot be undone.')) return;
     try {
-      const res = await fetch(`/api/admin/backfill?stationId=${stationId}&date=${date}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setDbDepositsTotal((data.cashDeposits || []).reduce((s, d) => s + (d.amount || 0), 0));
-    } catch {}
+      await callBackfill({ type: 'deleteDeposit', depositId });
+      await refreshDeposits();
+      setResults([{ label: 'Deposit deleted.' }]);
+    } catch (e) {
+      setResults([{ label: 'Delete failed', error: e.message }]);
+    }
   }
 
   // ── Step: Save Day Shift ──────────────────────────────────────────────────────
@@ -372,6 +438,7 @@ export default function BackfillPage() {
     try {
       await callBackfill({ type: 'dayShift', dispenserIds: selectedDispensers, prices: shiftPrices });
       setResults([{ label: 'Day Shift' }]);
+      setCompletedSteps((p) => [...new Set([...p, 'dayShift'])]);
       setStep('pumpReadings');
     } catch (e) {
       setResults([{ label: 'Day Shift', error: e.message }]);
@@ -401,7 +468,10 @@ export default function BackfillPage() {
       }
     }
     setResults(res);
-    if (!res.some((r) => r.error)) setStep('tankReadings');
+    if (!res.some((r) => r.error)) {
+      setCompletedSteps((p) => [...new Set([...p, 'pumpReadings'])]);
+      setStep('tankReadings');
+    }
     setSaving(false);
   }
 
@@ -426,7 +496,10 @@ export default function BackfillPage() {
       }
     }
     setResults(res);
-    if (!res.some((r) => r.error)) setStep('deliveries');
+    if (!res.some((r) => r.error)) {
+      setCompletedSteps((p) => [...new Set([...p, 'tankReadings'])]);
+      setStep('deliveries');
+    }
     setSaving(false);
   }
 
@@ -435,24 +508,31 @@ export default function BackfillPage() {
     setSaving(true); setResults([]);
     const res = [];
     for (const d of deliveries) {
+      if (d._id) continue; // already in DB — skip
       if (!d.totalReceived) continue;
+      if (!d.tankId) {
+        res.push({ label: d.fuelType + ' delivery', error: 'A receiving tank must be selected.' });
+        continue;
+      }
       try {
-        const distribution = d.tankId
-          ? [{ tankId: d.tankId, litres: Number(d.totalReceived) }]
-          : [];
         await callBackfill({
           type: 'tankDelivery',
           fuelType: d.fuelType,
           totalReceived: d.totalReceived,
-          distribution,
+          distribution: [{ tankId: d.tankId, litres: Number(d.totalReceived) }],
           supplier: d.supplier,
           costPerLiter: d.costPerLiter || undefined,
         });
-        res.push({ label: d.fuelType + ' delivery' + (d.tankId ? ' → ' + d.tankId : '') });
+        const lbl = (station?.tanks || []).find((t) => String(t._id) === d.tankId)?.label || d.tankId;
+        res.push({ label: d.fuelType + ' delivery → ' + lbl });
       } catch (e) { res.push({ label: d.fuelType + ' delivery', error: e.message }); }
     }
     setResults(res);
-    setStep('sales');
+    if (!res.some((r) => r.error)) {
+      setCompletedSteps((p) => [...new Set([...p, 'deliveries'])]);
+      await refreshDeliveries();
+      setStep('sales');
+    }
     setSaving(false);
   }
 
@@ -470,7 +550,10 @@ export default function BackfillPage() {
       } catch (e) { res.push({ label: d.name, error: e.message }); }
     }
     setResults(res);
-    if (!res.some((r) => r.error)) setStep('payments');
+    if (!res.some((r) => r.error)) {
+      setCompletedSteps((p) => [...new Set([...p, 'sales'])]);
+      setStep('payments');
+    }
     setSaving(false);
   }
 
@@ -493,7 +576,10 @@ export default function BackfillPage() {
       } catch (e) { res.push({ label: d.name, error: e.message }); }
     }
     setResults(res);
-    if (!res.some((r) => r.error)) setStep('deposits');
+    if (!res.some((r) => r.error)) {
+      setCompletedSteps((p) => [...new Set([...p, 'payments'])]);
+      setStep('deposits');
+    }
     setSaving(false);
   }
 
@@ -502,6 +588,7 @@ export default function BackfillPage() {
     setSaving(true); setResults([]);
     const res = [];
     for (const d of deposits) {
+      if (d._id) continue; // already in DB — skip to prevent duplicates
       if (!d.amount || !d.bankName || !d.accountNumber) continue;
       try {
         await callBackfill({
@@ -517,7 +604,11 @@ export default function BackfillPage() {
       } catch (e) { res.push({ label: d.bankName, error: e.message }); }
     }
     setResults(res);
-    await refreshDbDepositsTotal();
+    // Reload deposits from DB so saved entries get their _id (prevents re-save duplicates)
+    await refreshDeposits();
+    if (!res.some((r) => r.error) && res.length > 0) {
+      setCompletedSteps((p) => [...new Set([...p, 'deposits'])]);
+    }
     setSaving(false);
   }
 
@@ -586,6 +677,10 @@ export default function BackfillPage() {
     }
   });
 
+  // tankId → human-readable label (used in save functions and render)
+  const tankLabelById = {};
+  (station?.tanks || []).forEach((t) => { tankLabelById[String(t._id)] = t.label; });
+
   // Total cash and POS from the payments step (used in deposits step as reference)
   const totalCashFromPayments = (station?.dispensers || [])
     .filter((d) => selectedDispensers.includes(d.dispenserId))
@@ -621,7 +716,7 @@ export default function BackfillPage() {
         </button>
       </div>
 
-      <StepBar current={step} />
+      <StepBar current={step} completedSteps={completedSteps} onNavigate={setStep} />
 
       {/* ── STEP: Setup ── */}
       {step === 'setup' && (
@@ -753,7 +848,7 @@ export default function BackfillPage() {
                 <p className="text-sm font-semibold text-slate-800 mb-3">
                   {d.name}{' '}
                   <span className="text-xs text-slate-400 font-normal">
-                    ({d.fuelType}{d.tankId ? ' · ' + d.tankId : ''})
+                    ({d.fuelType}{d.tankId ? ' · ' + (tankLabelById[d.tankId] || d.tankId) : ''})
                   </span>
                 </p>
                 <div className="grid grid-cols-3 gap-3">
@@ -770,7 +865,7 @@ export default function BackfillPage() {
                 {netSold != null && (
                   <p className="text-xs text-emerald-600 mt-2 font-medium">
                     Net sold: {netSold.toFixed(2)} L
-                    {d.tankId && <span className="text-slate-400 font-normal"> → added to {d.tankId}</span>}
+                    {d.tankId && <span className="text-slate-400 font-normal"> → {tankLabelById[d.tankId] || d.tankId}</span>}
                   </p>
                 )}
               </div>
@@ -869,10 +964,13 @@ export default function BackfillPage() {
               (t) => t.isActive !== false && t.product === d.fuelType
             );
             return (
-              <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-3">
+              <div key={i} className={`border rounded-xl p-4 space-y-3 ${d._id ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200'}`}>
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-slate-700">Delivery #{i + 1}</p>
-                  {deliveries.length > 1 && (
+                  <p className="text-sm font-semibold text-slate-700">
+                    Delivery #{i + 1}
+                    {d._id && <span className="ml-2 text-xs font-normal text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full">Saved</span>}
+                  </p>
+                  {!d._id && deliveries.length > 1 && (
                     <button onClick={() => setDeliveries((p) => p.filter((_, j) => j !== i))}
                       className="text-xs text-red-500 hover:underline">Remove</button>
                   )}
@@ -882,32 +980,40 @@ export default function BackfillPage() {
                     <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Fuel Type</label>
                     <select
                       value={d.fuelType}
+                      disabled={!!d._id}
                       onChange={(e) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, fuelType: e.target.value, tankId: '' } : x))}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon disabled:bg-slate-50 disabled:text-slate-400"
                     >
                       {['PMS', 'AGO', 'DPK', 'LPG'].map((ft) => <option key={ft}>{ft}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Receiving Tank</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">
+                      Receiving Tank <span className="text-red-500">*</span>
+                    </label>
                     <select
                       value={d.tankId}
+                      disabled={!!d._id}
                       onChange={(e) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, tankId: e.target.value } : x))}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon"
+                      className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon disabled:bg-slate-50 disabled:text-slate-400 ${!d.tankId && !d._id ? 'border-amber-300' : 'border-slate-300'}`}
                     >
-                      <option value="">— Select tank —</option>
+                      <option value="">— Select tank (required) —</option>
                       {matchingTanks.map((t) => (
                         <option key={t._id} value={t._id}>{t.label} ({t.capacity?.toLocaleString()}L)</option>
                       ))}
                     </select>
+                    {!d.tankId && !d._id && <p className="text-xs text-amber-600 mt-1">Tank selection is required to save this delivery.</p>}
                   </div>
                   <Field label="Total Received (L)" type="number" value={d.totalReceived}
+                    readOnly={!!d._id}
                     onChange={(v) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, totalReceived: v } : x))}
                     placeholder="e.g. 33000" />
                   <Field label="Cost per Litre (₦)" type="number" value={d.costPerLiter}
+                    readOnly={!!d._id}
                     onChange={(v) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, costPerLiter: v } : x))}
                     placeholder="Optional" />
                   <Field label="Supplier" value={d.supplier}
+                    readOnly={!!d._id}
                     onChange={(v) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, supplier: v } : x))}
                     placeholder="Optional" />
                 </div>
@@ -921,7 +1027,7 @@ export default function BackfillPage() {
           })}
 
           <button
-            onClick={() => setDeliveries((p) => [...p, { fuelType: 'PMS', tankId: '', totalReceived: '', supplier: '', costPerLiter: '' }])}
+            onClick={() => setDeliveries((p) => [...p, { _id: null, fuelType: 'PMS', tankId: '', totalReceived: '', supplier: '', costPerLiter: '' }])}
             className="text-sm text-ecana-maroon hover:underline"
           >
             + Add Another Delivery
@@ -1066,8 +1172,57 @@ export default function BackfillPage() {
         </div>
       )}
 
+      {/* ── DONE SCREEN ── */}
+      {isDone && (
+        <div className="max-w-md space-y-5">
+          <div className="text-center space-y-3">
+            <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-7 h-7 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Backfill Complete</h2>
+              <p className="text-sm text-slate-500 mt-1">{station?.name} · {date}</p>
+            </div>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-1.5 text-sm">
+            {completedSteps.includes('dayShift') && <p className="text-emerald-700">✓ Day Shift</p>}
+            {completedSteps.includes('pumpReadings') && <p className="text-emerald-700">✓ Pump Readings</p>}
+            {completedSteps.includes('tankReadings') && <p className="text-emerald-700">✓ Tank Dipstick</p>}
+            {completedSteps.includes('deliveries') && <p className="text-emerald-700">✓ Tank Deliveries</p>}
+            {completedSteps.includes('sales') && <p className="text-emerald-700">✓ Sales</p>}
+            {completedSteps.includes('payments') && <p className="text-emerald-700">✓ Payments</p>}
+            {completedSteps.includes('deposits') && <p className="text-emerald-700">✓ Bank Deposits</p>}
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setIsDone(false);
+                setCompletedSteps([]);
+                setStep('setup');
+                setDate(yesterdayStr());
+                setStationId('');
+                setStation(null);
+                setExistingData(null);
+                setResults([]);
+                setDbDepositsTotal(0);
+                setDeposits([{ _id: null, depositDate: '', amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' }]);
+                setDeliveries([{ _id: null, fuelType: 'PMS', tankId: '', totalReceived: '', supplier: '', costPerLiter: '' }]);
+              }}
+              className="flex-1 py-2.5 bg-ecana-maroon text-white text-sm font-semibold rounded-xl hover:opacity-90"
+            >
+              Enter Another Day
+            </button>
+            <button onClick={() => router.push('/admin')} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-500 hover:border-slate-400">
+              Back to Admin
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── STEP: Bank Deposits ── */}
-      {step === 'deposits' && (
+      {!isDone && step === 'deposits' && (
         <div className="max-w-xl space-y-4">
           <div className="bg-slate-50 rounded-xl p-3 text-sm text-slate-500">
             <span className="font-semibold text-slate-700">{station?.name}</span> · Operating day: {date}
@@ -1102,14 +1257,21 @@ export default function BackfillPage() {
           </p>
 
           {deposits.map((d, i) => {
-            const accumulatedBefore = deposits.slice(0, i).reduce((s, dep) => s + (parseFloat(dep.amount) || 0), 0);
+            // Only count unsaved previous deposits toward the session accumulated total
+            const accumulatedBefore = deposits.slice(0, i).reduce((s, dep) => dep._id ? s : s + (parseFloat(dep.amount) || 0), 0);
             const remaining = Math.max(0, totalCashFromPayments - dbDepositsTotal - accumulatedBefore);
             const thisAmt = parseFloat(d.amount) || 0;
             return (
-              <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-3">
+              <div key={i} className={`border rounded-xl p-4 space-y-3 ${d._id ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200'}`}>
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-slate-700">Deposit #{i + 1}</p>
-                  {deposits.length > 1 && (
+                  <p className="text-sm font-semibold text-slate-700">
+                    Deposit #{i + 1}
+                    {d._id && <span className="ml-2 text-xs font-normal text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full">Saved</span>}
+                  </p>
+                  {d._id ? (
+                    <button onClick={() => deleteDeposit(d._id)}
+                      className="text-xs text-red-500 hover:underline">Delete</button>
+                  ) : (
                     <button onClick={() => setDeposits((p) => p.filter((_, j) => j !== i))}
                       className="text-xs text-red-500 hover:underline">Remove</button>
                   )}
@@ -1119,6 +1281,7 @@ export default function BackfillPage() {
                   label="Date of Deposit"
                   type="date"
                   value={d.depositDate || date}
+                  readOnly={!!d._id}
                   onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, depositDate: v } : x))}
                   hint="When the money was physically taken to the bank (can differ from the operating date)"
                 />
@@ -1128,20 +1291,25 @@ export default function BackfillPage() {
                     label="Amount (₦)"
                     type="number"
                     value={d.amount}
+                    readOnly={!!d._id}
                     onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, amount: v } : x))}
                     placeholder={remaining > 0 ? remaining.toFixed(2) : 'e.g. 500000'}
                   />
                   <Field label="Bank Name" value={d.bankName}
+                    readOnly={!!d._id}
                     onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, bankName: v } : x))}
                     placeholder="e.g. First Bank" />
                   <Field label="Account Number" value={d.accountNumber}
+                    readOnly={!!d._id}
                     onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, accountNumber: v } : x))}
                     placeholder="0123456789" />
                   <Field label="Branch (optional)" value={d.bankBranch}
+                    readOnly={!!d._id}
                     onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, bankBranch: v } : x))}
                     placeholder="e.g. Lagos Island" />
                 </div>
                 <Field label="Note (optional)" value={d.note}
+                  readOnly={!!d._id}
                   onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, note: v } : x))}
                   placeholder="Any additional info" />
 
@@ -1189,7 +1357,7 @@ export default function BackfillPage() {
           })}
 
           <button
-            onClick={() => setDeposits((p) => [...p, { depositDate: date, amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' }])}
+            onClick={() => setDeposits((p) => [...p, { _id: null, depositDate: date, amount: '', bankName: '', bankBranch: '', accountNumber: '', note: '' }])}
             className="text-sm text-ecana-maroon hover:underline"
           >
             + Add Another Deposit
@@ -1202,18 +1370,10 @@ export default function BackfillPage() {
               {saving ? 'Saving…' : 'Save Deposits'}
             </button>
             <button
-              onClick={() => {
-                setStep('setup');
-                setDate(todayStr());
-                setStationId('');
-                setStation(null);
-                setExistingData(null);
-                setResults([]);
-                setDbDepositsTotal(0);
-              }}
-              className="px-4 py-2 text-sm text-slate-500 border border-slate-200 rounded-xl hover:border-slate-400"
+              onClick={() => { setCompletedSteps((p) => [...new Set([...p, 'deposits'])]); setIsDone(true); }}
+              className="px-4 py-2 text-sm text-slate-500 hover:text-ecana-maroon"
             >
-              Start New Entry
+              Finish ✓
             </button>
           </div>
         </div>

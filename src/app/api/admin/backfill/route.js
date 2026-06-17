@@ -45,7 +45,7 @@ export async function GET(request) {
         StockMovement.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, movementType: 'receipt' }).lean(),
         SalesEntry.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
         PaymentRecord.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
-        CashDeposit.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
+        CashDeposit.find({ stationId: stationObjId, forDate: { $gte: dateStart, $lte: dateEnd } }).lean(),
       ]);
 
     return NextResponse.json({ dayShift, meterReadings, tankStockEntries, stockMovements, salesEntries, paymentRecords, cashDeposits });
@@ -242,14 +242,9 @@ export async function POST(request) {
         return NextResponse.json({ error: 'fuelType and totalReceived are required.' }, { status: 400 });
       }
 
-      // Get current station stock as previousStock
-      const prevStock = station.currentStock instanceof Map
-        ? (station.currentStock.get(fuelType) || 0)
-        : (station.currentStock?.[fuelType] || 0);
-
-      const newStock = prevStock + Number(totalReceived);
       const totalCost = costPerLiter ? Number(costPerLiter) * Number(totalReceived) : null;
 
+      // Historical backfill: do NOT touch Station.currentStock — it reflects live data
       const movement = await StockMovement.create({
         stationId: stationObjId,
         stationName: station.name,
@@ -262,16 +257,11 @@ export async function POST(request) {
         supplier: supplier || '',
         costPerLiter: costPerLiter ? Number(costPerLiter) : null,
         totalCost,
-        previousStock: prevStock,
-        newStock,
+        previousStock: 0,
+        newStock: 0,
         recordedBy: currentUser.id,
         recordedByName: currentUser.name,
         notes: 'Backfill',
-      });
-
-      // Update station current stock
-      await Station.findByIdAndUpdate(stationId, {
-        $set: { [`currentStock.${fuelType}`]: newStock },
       });
 
       return NextResponse.json({ movement }, { status: 200 });
@@ -407,6 +397,23 @@ export async function POST(request) {
         adminNote: note || 'Backfill',
       });
       return NextResponse.json({ deposit }, { status: 200 });
+    }
+
+    // ── DELETE DEPOSIT ──────────────────────────────────────────────────────────
+    if (type === 'deleteDeposit') {
+      const { depositId } = body;
+      if (!depositId) {
+        return NextResponse.json({ error: 'depositId is required.' }, { status: 400 });
+      }
+      const deposit = await CashDeposit.findById(depositId);
+      if (!deposit) {
+        return NextResponse.json({ error: 'Deposit not found.' }, { status: 404 });
+      }
+      if (deposit.stationId.toString() !== stationObjId.toString()) {
+        return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+      }
+      await CashDeposit.findByIdAndDelete(depositId);
+      return NextResponse.json({ deleted: true }, { status: 200 });
     }
 
     return NextResponse.json({ error: `Unknown type: ${type}` }, { status: 400 });
