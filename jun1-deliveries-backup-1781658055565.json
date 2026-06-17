@@ -1,0 +1,170 @@
+[
+  {
+    "_id": "6a31b3b91d9d665bd0f4f294",
+    "stationId": "6a306aa5ebcd1418d8ec556f",
+    "stationName": "Ecana Energy Guzape",
+    "date": "2026-06-01T00:00:00.000Z",
+    "fuelType": "PMS",
+    "movementType": "receipt",
+    "quantity": 10000,
+    "totalReceived": 10000,
+    "distribution": [
+      {
+        "tankId": "EE2-TANK-2",
+        "litres": 10000,
+        "_id": "6a31b3b91d9d665bd0f4f295"
+      }
+    ],
+    "costPerLiter": null,
+    "totalCost": null,
+    "supplier": "",
+    "previousStock": 29400,
+    "newStock": 39400,
+    "recordedBy": "697a738da4cfc2b4ef72b2c2",
+    "recordedByName": "Ecana Energy (Backfill)",
+    "notes": "Admin backfill",
+    "createdAt": "2026-06-16T20:36:09.352Z",
+    "updatedAt": "2026-06-16T20:36:09.352Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a31b3ba1d9d665bd0f4f2a6",
+    "stationId": "6a306aa5ebcd1418d8ec556f",
+    "stationName": "Ecana Energy Guzape",
+    "date": "2026-06-01T00:00:00.000Z",
+    "fuelType": "AGO",
+    "movementType": "receipt",
+    "quantity": 1200,
+    "totalReceived": 1200,
+    "distribution": [
+      {
+        "tankId": "EE2-TANK-1",
+        "litres": 1200,
+        "_id": "6a31b3ba1d9d665bd0f4f2a7"
+      }
+    ],
+    "costPerLiter": null,
+    "totalCost": null,
+    "supplier": "",
+    "previousStock": 9100,
+    "newStock": 10300,
+    "recordedBy": "697a738da4cfc2b4ef72b2c2",
+    "recordedByName": "Ecana Energy (Backfill)",
+    "notes": "Admin backfill",
+    "createdAt": "2026-06-16T20:36:10.626Z",
+    "updatedAt": "2026-06-16T20:36:10.626Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a31b3bb1d9d665bd0f4f2b8",
+    "stationId": "6a306aa5ebcd1418d8ec556f",
+    "stationName": "Ecana Energy Guzape",
+    "date": "2026-06-01T00:00:00.000Z",
+    "fuelType": "PMS",
+    "movementType": "receipt",
+    "quantity": 1200,
+    "totalReceived": 1200,
+    "distribution": [
+      {
+        "tankId": "EE2-TANK-3",
+        "litres": 1200,
+        "_id": "6a31b3bb1d9d665bd0f4f2b9"
+      }
+    ],
+    "costPerLiter": null,
+    "totalCost": null,
+    "supplier": "",
+    "previousStock": 39400,
+    "newStock": 40600,
+    "recordedBy": "697a738da4cfc2b4ef72b2c2",
+    "recordedByName": "Ecana Energy (Backfill)",
+    "notes": "Admin backfill",
+    "createdAt": "2026-06-16T20:36:11.883Z",
+    "updatedAt": "2026-06-16T20:36:11.883Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a31c362aeac816ae60d1f15",
+    "stationId": "6a306aa5ebcd1418d8ec556f",
+    "stationName": "Ecana Energy Guzape",
+    "date": "2026-06-01T00:00:00.000Z",
+    "fuelType": "PMS",
+    "movementType": "receipt",
+    "quantity": 10000,
+    "totalReceived": 10000,
+    "distribution": [
+      {
+        "tankId": "EE2-TANK-2",
+        "litres": 10000,
+        "_id": "6a31c362aeac816ae60d1f16"
+      }
+    ],
+    "costPerLiter": null,
+    "totalCost": null,
+    "supplier": "",
+    "previousStock": 40600,
+    "newStock": 50600,
+    "recordedBy": "697a738da4cfc2b4ef72b2c2",
+    "recordedByName": "Ecana Energy",
+    "notes": "Backfill",
+    "createdAt": "2026-06-16T21:42:58.675Z",
+    "updatedAt": "2026-06-16T21:42:58.675Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a31c365aeac816ae60d1f50",
+    "stationId": "6a306aa5ebcd1418d8ec556f",
+    "stationName": "Ecana Energy Guzape",
+    "date": "2026-06-01T00:00:00.000Z",
+    "fuelType": "AGO",
+    "movementType": "receipt",
+    "quantity": 1200,
+    "totalReceived": 1200,
+    "distribution": [
+      {
+        "tankId": "EE2-TANK-1",
+        "litres": 1200,
+        "_id": "6a31c365aeac816ae60d1f51"
+      }
+    ],
+    "costPerLiter": null,
+    "totalCost": null,
+    "supplier": "",
+    "previousStock": 10300,
+    "newStock": 11500,
+    "recordedBy": "697a738da4cfc2b4ef72b2c2",
+    "recordedByName": "Ecana Energy",
+    "notes": "Backfill",
+    "createdAt": "2026-06-16T21:43:01.261Z",
+    "updatedAt": "2026-06-16T21:43:01.261Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a31c366aeac816ae60d1f68",
+    "stationId": "6a306aa5ebcd1418d8ec556f",
+    "stationName": "Ecana Energy Guzape",
+    "date": "2026-06-01T00:00:00.000Z",
+    "fuelType": "PMS",
+    "movementType": "receipt",
+    "quantity": 1200,
+    "totalReceived": 1200,
+    "distribution": [
+      {
+        "tankId": "EE2-TANK-3",
+        "litres": 1200,
+        "_id": "6a31c366aeac816ae60d1f69"
+      }
+    ],
+    "costPerLiter": null,
+    "totalCost": null,
+    "supplier": "",
+    "previousStock": 50600,
+    "newStock": 51800,
+    "recordedBy": "697a738da4cfc2b4ef72b2c2",
+    "recordedByName": "Ecana Energy",
+    "notes": "Backfill",
+    "createdAt": "2026-06-16T21:43:02.488Z",
+    "updatedAt": "2026-06-16T21:43:02.488Z",
+    "__v": 0
+  }
+]
