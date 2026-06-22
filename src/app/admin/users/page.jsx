@@ -40,6 +40,7 @@ export default function UsersPage() {
     role: '',
     stationId: '',
   });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -66,17 +67,71 @@ export default function UsersPage() {
     }
   };
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
+  // Mirror the server-side Zod rules (src/lib/validation.js) so the admin
+  // sees mistakes before submitting and avoids the generic "Validation error".
+  const validateField = (name, value, data = formData) => {
+    const v = String(value ?? '').trim();
+    switch (name) {
+      case 'name':
+        if (v.length < 2) return 'Name must be at least 2 characters';
+        return '';
+      case 'email':
+        if (!v) return 'Email is required';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'Enter a valid email address';
+        return '';
+      case 'loginId':
+        // Optional — only validate when something was typed.
+        if (!v) return '';
+        if (v.length < 3) return 'Login ID must be at least 3 characters';
+        if (!/^[a-zA-Z0-9._-]+$/.test(v)) return 'Only letters, numbers, dot, underscore, and hyphen — no spaces';
+        return '';
+      case 'password':
+        if (v.length < 6) return 'Password must be at least 6 characters';
+        return '';
+      case 'role':
+        if (!v) return 'Select a role';
+        return '';
+      case 'stationId':
+        // Station is required for every role except admin.
+        if (data.role && data.role !== 'admin' && !v) return 'Select a station';
+        return '';
+      default:
+        return '';
+    }
+  };
+
+  const validateForm = (data = formData) => {
+    const errors = {};
+    ['name', 'email', 'loginId', 'password', 'role', 'stationId'].forEach((field) => {
+      const msg = validateField(field, data[field], data);
+      if (msg) errors[field] = msg;
     });
+    return errors;
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    const nextData = { ...formData, [name]: value };
+    setFormData(nextData);
+    // Re-validate the touched field live; clear any station error when role changes.
+    setFieldErrors((prev) => ({
+      ...prev,
+      [name]: validateField(name, value, nextData),
+      ...(name === 'role' ? { stationId: validateField('stationId', nextData.stationId, nextData) } : {}),
+    }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    const errors = validateForm();
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setError('Please fix the highlighted fields before submitting.');
+      return;
+    }
 
     try {
       const res = await fetch('/api/users', {
@@ -90,6 +145,7 @@ export default function UsersPage() {
       if (res.ok) {
         setSuccess('User created successfully!');
         setFormData({ name: '', email: '', loginId: '', password: '', role: '', stationId: '' });
+        setFieldErrors({});
         setShowForm(false);
         fetchData();
       } else {
@@ -472,7 +528,7 @@ export default function UsersPage() {
 
       {showForm && (
         <Card title="Create New User" className="mb-6">
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} noValidate>
             <Input
               label="Full Name"
               name="name"
@@ -480,6 +536,7 @@ export default function UsersPage() {
               onChange={handleChange}
               placeholder="e.g., John Doe"
               required
+              error={fieldErrors.name}
             />
             <Input
               label="Email"
@@ -489,6 +546,7 @@ export default function UsersPage() {
               onChange={handleChange}
               placeholder="e.g., john@example.com"
               required
+              error={fieldErrors.email}
             />
             <Input
               label="Login ID (optional)"
@@ -496,6 +554,8 @@ export default function UsersPage() {
               value={formData.loginId}
               onChange={handleChange}
               placeholder="e.g., john.ops"
+              error={fieldErrors.loginId}
+              helpText="At least 3 characters. Letters, numbers, dot, underscore, hyphen — no spaces. Leave blank to auto-generate."
             />
             <Input
               label="Password"
@@ -505,6 +565,8 @@ export default function UsersPage() {
               onChange={handleChange}
               placeholder="Minimum 6 characters"
               required
+              error={fieldErrors.password}
+              helpText="At least 6 characters."
             />
             <Select
               label="Role"
@@ -513,6 +575,7 @@ export default function UsersPage() {
               onChange={handleChange}
               options={roleOptions}
               required
+              error={fieldErrors.role}
             />
             {formData.role && !['admin'].includes(formData.role) && (
               <Select
@@ -522,6 +585,7 @@ export default function UsersPage() {
                 onChange={handleChange}
                 options={stationOptions}
                 required
+                error={fieldErrors.stationId}
               />
             )}
             <Button type="submit" variant="primary" fullWidth size="lg">
