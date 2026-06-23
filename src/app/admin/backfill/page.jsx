@@ -23,8 +23,8 @@ const STEPS = [
   { id: 'setup',        label: 'Date & Station'  },
   { id: 'dayShift',     label: 'Day Shift'       },
   { id: 'pumpReadings', label: 'Pump Readings'   },
-  { id: 'tankReadings', label: 'Tank Dipstick'   },
   { id: 'deliveries',   label: 'Tank Deliveries' },
+  { id: 'tankReadings', label: 'Tank Dipstick'   },
   { id: 'sales',        label: 'Sales'           },
   { id: 'payments',     label: 'Payments'        },
   { id: 'deposits',     label: 'Bank Deposits'   },
@@ -86,11 +86,15 @@ function StepBar({ current, completedSteps = [], onNavigate }) {
 function SavedBanner({ results }) {
   if (!results.length) return null;
   const errors = results.filter((r) => r.error);
-  const successes = results.filter((r) => !r.error);
+  const skipped = results.filter((r) => !r.error && r.skipped);
+  const successes = results.filter((r) => !r.error && !r.skipped);
   return (
     <div className="space-y-1 mt-3">
       {successes.map((r, i) => (
         <div key={i} className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">{r.label}: Saved ✓</div>
+      ))}
+      {skipped.map((r, i) => (
+        <div key={i} className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">{r.label}: {r.skipped}</div>
       ))}
       {errors.map((r, i) => (
         <div key={i} className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">{r.label}: {r.error}</div>
@@ -141,6 +145,7 @@ export default function BackfillPage() {
 
   // Day shift
   const [shiftPrices, setShiftPrices] = useState({});
+  const [shiftTolerance, setShiftTolerance] = useState('');
   const [selectedDispensers, setSelectedDispensers] = useState([]);
 
   // Pump readings
@@ -219,17 +224,20 @@ export default function BackfillPage() {
         const ex = exRes.ok ? await exRes.json() : {};
 
         // Apply existing data over empty state (pre-populates all fields)
+        const stationTolerance = st?.tolerancePercent != null ? String(st.tolerancePercent) : '';
         if (ex.dayShift) {
           const ds = ex.dayShift;
           const ep = {};
           for (const [k, v] of Object.entries(ds.pricesAtStart || {})) ep[k] = String(v);
           setShiftPrices(Object.keys(ep).length ? ep : initPrices);
+          setShiftTolerance(ds.tolerancePercent != null ? String(ds.tolerancePercent) : stationTolerance);
           setSelectedDispensers(
             (ds.dispenserAssignments || []).map((a) => a.dispenserId)
               .filter((id) => dispensers.some((d) => d.dispenserId === id))
           );
         } else {
           setShiftPrices(initPrices);
+          setShiftTolerance(stationTolerance);
           setSelectedDispensers(dispensers.filter((d) => d.isActive !== false).map((d) => d.dispenserId));
         }
 
@@ -436,7 +444,12 @@ export default function BackfillPage() {
   async function saveShift() {
     setSaving(true); setResults([]);
     try {
-      await callBackfill({ type: 'dayShift', dispenserIds: selectedDispensers, prices: shiftPrices });
+      await callBackfill({
+        type: 'dayShift',
+        dispenserIds: selectedDispensers,
+        prices: shiftPrices,
+        tolerancePercent: shiftTolerance !== '' ? Number(shiftTolerance) : undefined,
+      });
       setResults([{ label: 'Day Shift' }]);
       setCompletedSteps((p) => [...new Set([...p, 'dayShift'])]);
       setStep('pumpReadings');
@@ -470,7 +483,7 @@ export default function BackfillPage() {
     setResults(res);
     if (!res.some((r) => r.error)) {
       setCompletedSteps((p) => [...new Set([...p, 'pumpReadings'])]);
-      setStep('tankReadings');
+      setStep('deliveries');
     }
     setSaving(false);
   }
@@ -498,7 +511,7 @@ export default function BackfillPage() {
     setResults(res);
     if (!res.some((r) => r.error)) {
       setCompletedSteps((p) => [...new Set([...p, 'tankReadings'])]);
-      setStep('deliveries');
+      setStep('sales');
     }
     setSaving(false);
   }
@@ -507,6 +520,14 @@ export default function BackfillPage() {
   async function saveDeliveries() {
     setSaving(true); setResults([]);
     const res = [];
+
+    // Duplicate detection signature: same fuel + tank + quantity.
+    const sig = (d) => `${d.fuelType}|${d.tankId}|${Number(d.totalReceived)}`;
+    const existingSigs = new Set(
+      deliveries.filter((d) => d._id && d.tankId && d.totalReceived).map(sig)
+    );
+    const seenNewSigs = new Set();
+
     for (const d of deliveries) {
       if (!d.totalReceived) continue;
       if (!d.tankId) {
@@ -514,6 +535,23 @@ export default function BackfillPage() {
         continue;
       }
       const lbl = (station?.tanks || []).find((t) => String(t._id) === d.tankId)?.label || d.tankId;
+
+      // Guard brand-new rows against duplicating an existing record or another
+      // identical new row in the same submit.
+      if (!d._id) {
+        const s = sig(d);
+        if (existingSigs.has(s) || seenNewSigs.has(s)) {
+          const ok = window.confirm(
+            `A delivery of ${fmtN(d.totalReceived)} L ${d.fuelType} into ${lbl} already exists for this date. Add it again anyway?`
+          );
+          if (!ok) {
+            res.push({ label: `${d.fuelType} delivery → ${lbl}`, skipped: 'Skipped (possible duplicate)' });
+            continue;
+          }
+        }
+        seenNewSigs.add(s);
+      }
+
       try {
         if (d._id) {
           await callBackfill({
@@ -527,7 +565,7 @@ export default function BackfillPage() {
           });
           res.push({ label: d.fuelType + ' delivery → ' + lbl + ' (updated)' });
         } else {
-          await callBackfill({
+          const data = await callBackfill({
             type: 'tankDelivery',
             fuelType: d.fuelType,
             totalReceived: d.totalReceived,
@@ -535,7 +573,11 @@ export default function BackfillPage() {
             supplier: d.supplier,
             costPerLiter: d.costPerLiter || undefined,
           });
-          res.push({ label: d.fuelType + ' delivery → ' + lbl });
+          if (data?.duplicate) {
+            res.push({ label: `${d.fuelType} delivery → ${lbl}`, skipped: 'Already recorded — skipped' });
+          } else {
+            res.push({ label: d.fuelType + ' delivery → ' + lbl });
+          }
         }
       } catch (e) { res.push({ label: d.fuelType + ' delivery', error: e.message }); }
     }
@@ -543,7 +585,7 @@ export default function BackfillPage() {
     if (!res.some((r) => r.error)) {
       setCompletedSteps((p) => [...new Set([...p, 'deliveries'])]);
       await refreshDeliveries();
-      setStep('sales');
+      setStep('tankReadings');
     }
     setSaving(false);
   }
@@ -689,6 +731,15 @@ export default function BackfillPage() {
     }
   });
 
+  // Per-tank deliveries (Deliveries step is filled in before Tank Dipstick),
+  // so the dipstick reconciliation can fold stock-in into the variance.
+  const deliveredByTank = {};
+  for (const d of deliveries) {
+    if (d.tankId && d.totalReceived) {
+      deliveredByTank[d.tankId] = (deliveredByTank[d.tankId] || 0) + (parseFloat(d.totalReceived) || 0);
+    }
+  }
+
   // tankId → human-readable label (used in save functions and render)
   const tankLabelById = {};
   (station?.tanks || []).forEach((t) => { tankLabelById[String(t._id)] = t.label; });
@@ -829,6 +880,20 @@ export default function BackfillPage() {
             </div>
           </div>
 
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Tolerance for This Day</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field
+                label="Tolerance (% of sales)"
+                type="number"
+                value={shiftTolerance}
+                onChange={setShiftTolerance}
+                placeholder="e.g. 2.5"
+                hint="Allowed shortage = sales × this %. Defaults to the station's value."
+              />
+            </div>
+          </div>
+
           <SavedBanner results={results} />
           <div className="flex gap-2">
             <button onClick={() => setStep('setup')} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-500 hover:border-slate-400">← Back</button>
@@ -890,7 +955,7 @@ export default function BackfillPage() {
             <button onClick={savePumpReadings} disabled={saving} className="px-6 py-2.5 bg-ecana-maroon text-white text-sm font-semibold rounded-xl hover:opacity-90 disabled:opacity-40">
               {saving ? 'Saving…' : 'Save Readings →'}
             </button>
-            <button onClick={() => setStep('tankReadings')} className="px-4 py-2 text-sm text-slate-500 hover:text-ecana-maroon">Skip →</button>
+            <button onClick={() => setStep('deliveries')} className="px-4 py-2 text-sm text-slate-500 hover:text-ecana-maroon">Skip →</button>
           </div>
         </div>
       )}
@@ -910,11 +975,18 @@ export default function BackfillPage() {
               (d) => d.tankId === t._id && selectedDispensers.includes(d.dispenserId)
             );
             const soldFromPumps = tankNetSold[t._id];
+            const delivered = deliveredByTank[t._id] || 0;
             const tr = tankReadings[t._id] || {};
             const opening = parseFloat(tr.opening) || 0;
             const closing = parseFloat(tr.closing) || 0;
-            const dipDiff = tr.opening !== '' && tr.closing !== '' ? opening - closing : null;
-            const variance = dipDiff != null && soldFromPumps != null ? dipDiff - soldFromPumps : null;
+            const hasBoth = tr.opening !== '' && tr.closing !== '';
+            // Reconciled variance = closing − (opening + stock-in − sales).
+            // − = shortage, + = overage. Includes deliveries entered earlier.
+            const expectedClosing = hasBoth ? opening + delivered - (soldFromPumps || 0) : null;
+            const variance = expectedClosing != null ? closing - expectedClosing : null;
+            const tolPct = parseFloat(shiftTolerance) || 0;
+            const tolBand = (soldFromPumps || 0) * (tolPct / 100);
+            const overTol = variance != null && variance < 0 && Math.abs(variance) > tolBand;
             return (
               <div key={t._id} className="border border-slate-200 rounded-xl p-4">
                 <p className="text-sm font-semibold text-slate-800 mb-1">
@@ -941,8 +1013,10 @@ export default function BackfillPage() {
                     placeholder="e.g. 9500" />
                 </div>
                 {variance != null && (
-                  <p className={`text-xs mt-2 font-medium ${Math.abs(variance) < 50 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                    Dip diff: {dipDiff.toFixed(2)} L · Pump sold: {soldFromPumps.toFixed(2)} L · Variance: {variance > 0 ? '+' : ''}{variance.toFixed(2)} L
+                  <p className={`text-xs mt-2 font-medium ${overTol ? 'text-red-600' : variance < 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    Expected closing: {expectedClosing.toFixed(2)} L (open {opening.toFixed(2)} + in {delivered.toFixed(2)} − sold {(soldFromPumps || 0).toFixed(2)})
+                    {' · '}Variance: {variance > 0 ? '+' : ''}{variance.toFixed(2)} L
+                    {overTol ? ` ⚠ over tolerance (±${tolBand.toFixed(2)} L)` : ''}
                   </p>
                 )}
               </div>
@@ -951,11 +1025,11 @@ export default function BackfillPage() {
 
           <SavedBanner results={results} />
           <div className="flex gap-2">
-            <button onClick={() => setStep('pumpReadings')} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-500 hover:border-slate-400">← Back</button>
+            <button onClick={() => setStep('deliveries')} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-500 hover:border-slate-400">← Back</button>
             <button onClick={saveTankReadings} disabled={saving} className="px-6 py-2.5 bg-ecana-maroon text-white text-sm font-semibold rounded-xl hover:opacity-90 disabled:opacity-40">
               {saving ? 'Saving…' : 'Save Tank Readings →'}
             </button>
-            <button onClick={() => setStep('deliveries')} className="px-4 py-2 text-sm text-slate-500 hover:text-ecana-maroon">Skip →</button>
+            <button onClick={() => setStep('sales')} className="px-4 py-2 text-sm text-slate-500 hover:text-ecana-maroon">Skip →</button>
           </div>
         </div>
       )}
@@ -1042,11 +1116,11 @@ export default function BackfillPage() {
 
           <SavedBanner results={results} />
           <div className="flex gap-2">
-            <button onClick={() => setStep('tankReadings')} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-500 hover:border-slate-400">← Back</button>
+            <button onClick={() => setStep('pumpReadings')} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-500 hover:border-slate-400">← Back</button>
             <button onClick={saveDeliveries} disabled={saving} className="px-6 py-2.5 bg-ecana-maroon text-white text-sm font-semibold rounded-xl hover:opacity-90 disabled:opacity-40">
               {saving ? 'Saving…' : 'Save & Continue →'}
             </button>
-            <button onClick={() => setStep('sales')} className="px-4 py-2 text-sm text-slate-500 hover:text-ecana-maroon">Skip →</button>
+            <button onClick={() => setStep('tankReadings')} className="px-4 py-2 text-sm text-slate-500 hover:text-ecana-maroon">Skip →</button>
           </div>
         </div>
       )}
@@ -1104,7 +1178,7 @@ export default function BackfillPage() {
 
           <SavedBanner results={results} />
           <div className="flex gap-2">
-            <button onClick={() => setStep('deliveries')} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-500 hover:border-slate-400">← Back</button>
+            <button onClick={() => setStep('tankReadings')} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-500 hover:border-slate-400">← Back</button>
             <button onClick={saveSales} disabled={saving} className="px-6 py-2.5 bg-ecana-maroon text-white text-sm font-semibold rounded-xl hover:opacity-90 disabled:opacity-40">
               {saving ? 'Saving…' : 'Save Sales →'}
             </button>

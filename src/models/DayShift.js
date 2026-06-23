@@ -97,6 +97,12 @@ const dayShiftSchema = new mongoose.Schema(
       of: Number,
       default: () => ({}),
     },
+    // Tolerance snapshot for the day (% of sales). Captured alongside prices so
+    // historic days keep their own tolerance. Null = fall back to station value.
+    tolerancePercent: {
+      type: Number,
+      default: null,
+    },
     // Totals per fuel type
     totalSales: {
       type: Map,

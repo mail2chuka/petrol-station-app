@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { z } from 'zod';
 import connectDB from '@/lib/db';
 import TankStockEntry from '@/models/TankStockEntry';
 import Station from '@/models/Station';
+import StockMovement from '@/models/StockMovement';
+import SalesEntry from '@/models/SalesEntry';
+import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { reconcile, expectedTolerance, isOverTolerance, resolveTolerancePercent } from '@/lib/reconciliation';
 
 const createSchema = z.object({
   stationId: z.string().min(1),
@@ -69,7 +74,73 @@ export async function GET(request) {
       query.date = { $gte: startDate, $lte: endDate };
     }
 
-    const entries = await TankStockEntry.find(query).sort({ date: -1, tankLabel: 1 });
+    const entries = await TankStockEntry.find(query).sort({ date: -1, tankLabel: 1 }).lean();
+
+    // For a single-day view, attach the reconciled variance (closing − (opening +
+    // stock-in − sales)) so the UI stops showing the raw closing−opening delta,
+    // which ignores deliveries and sales.
+    if (date && !month) {
+      const startDate = new Date(date + 'T00:00:00.000Z');
+      const endDate = new Date(date + 'T23:59:59.999Z');
+      const stationObjId = new mongoose.Types.ObjectId(stationId);
+
+      const [station, daySales, dayStockIns, dayShift] = await Promise.all([
+        Station.findById(stationId).lean(),
+        SalesEntry.find({ stationId: stationObjId, date: { $gte: startDate, $lte: endDate } }).lean(),
+        StockMovement.find({ stationId: stationObjId, movementType: 'receipt', date: { $gte: startDate, $lte: endDate } }).lean(),
+        DayShift.findOne({ stationId: stationObjId, date: { $gte: startDate, $lte: endDate } }).lean(),
+      ]);
+
+      // pump → tank map for attributing sales to a specific tank
+      const pumpTankMap = {};
+      for (const d of (station?.dispensers || [])) {
+        if (d.tankId) pumpTankMap[d.dispenserId] = d.tankId;
+      }
+      const salesByTank = {};
+      for (const s of daySales) {
+        const tankId = pumpTankMap[s.dispenserId];
+        if (tankId) salesByTank[tankId] = (salesByTank[tankId] || 0) + (s.liters || 0);
+      }
+      const stockInByTank = {};
+      for (const m of dayStockIns) {
+        for (const d of (m.distribution || [])) {
+          if (d.tankId) stockInByTank[d.tankId] = (stockInByTank[d.tankId] || 0) + (d.litres || 0);
+        }
+      }
+
+      const tolerancePercent = resolveTolerancePercent(dayShift, station);
+
+      // Group opening/closing per tank, compute once, attach to each entry.
+      const byTank = {};
+      for (const e of entries) {
+        if (!byTank[e.tankId]) byTank[e.tankId] = {};
+        byTank[e.tankId][e.period] = e;
+      }
+      for (const e of entries) {
+        const group = byTank[e.tankId] || {};
+        const closingEntry = group.closing;
+        const opening = group.opening?.openingStock ?? closingEntry?.openingStock ?? 0;
+        const stockIn = stockInByTank[e.tankId] || 0;
+        const sales = salesByTank[e.tankId] || 0;
+        e.stockIn = stockIn;
+        e.salesLitres = sales;
+        e.tolerancePercent = tolerancePercent;
+        if (closingEntry) {
+          const closing = closingEntry.closingStockManager ?? closingEntry.closingStockMeasured ?? 0;
+          const { expectedClosing, variance, shortage } = reconcile({ opening, stockIn, sales, closing });
+          e.expectedClosing = expectedClosing;
+          e.reconciledVariance = variance;
+          e.toleranceBand = expectedTolerance(sales, tolerancePercent);
+          e.overTolerance = isOverTolerance(shortage, sales, tolerancePercent);
+        } else {
+          e.expectedClosing = null;
+          e.reconciledVariance = null;
+          e.toleranceBand = expectedTolerance(sales, tolerancePercent);
+          e.overTolerance = false;
+        }
+      }
+    }
+
     return NextResponse.json({ entries });
   } catch (error) {
     console.error('Error fetching tank stock:', error);

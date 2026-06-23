@@ -18,6 +18,7 @@ import TankStockEntry from '@/models/TankStockEntry';
 import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { reconcile, expectedTolerance, resolveTolerancePercent } from '@/lib/reconciliation';
 
 function buildDateRange(from, to) {
   const start = new Date(from + 'T00:00:00.000Z');
@@ -49,7 +50,6 @@ async function buildRows(stationId, from, to) {
     if (d.tankId) pumpTankMap[d.dispenserId] = d.tankId;
   }
 
-  const tolerancePercent = station?.tolerancePercent ?? 0;
   const rows = [];
 
   for (const dayShift of dayShifts) {
@@ -109,14 +109,20 @@ async function buildRows(stationId, from, to) {
       if (productAgg[ft]) productAgg[ft].sales += liters;
     }
 
+    // Per-day tolerance snapshot (set at price time), else station's current value.
+    const tolerancePercent = resolveTolerancePercent(dayShift, station);
+
     for (const [fuelType, agg] of Object.entries(productAgg)) {
       const salesLitres = agg.sales;
       const priceForDay = dayShift.pricesAtStart?.[fuelType] || 0;
       const totalAmount = priceForDay * salesLitres;
-      const expectedClosing = agg.openingStock + agg.stockIn - salesLitres;
-      const shortage = Math.max(0, expectedClosing - agg.closingStock);
-      const overage = Math.max(0, agg.closingStock - expectedClosing);
-      const expectedTolerance = salesLitres * (tolerancePercent / 100);
+      const { shortage, overage } = reconcile({
+        opening: agg.openingStock,
+        stockIn: agg.stockIn,
+        sales: salesLitres,
+        closing: agg.closingStock,
+      });
+      const expTolerance = expectedTolerance(salesLitres, tolerancePercent);
 
       rows.push({
         date: dayKey,
@@ -130,7 +136,7 @@ async function buildRows(stationId, from, to) {
         totalAmount,
         shortage,
         closingStock: agg.closingStock,
-        expectedTolerance,
+        expectedTolerance: expTolerance,
       });
     }
   }

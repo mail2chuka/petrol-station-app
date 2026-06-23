@@ -91,7 +91,11 @@ export async function POST(request) {
 
     // ── DAY SHIFT ──────────────────────────────────────────────────────────────
     if (type === 'dayShift') {
-      const { dispenserIds, prices } = body;
+      const { dispenserIds, prices, tolerancePercent } = body;
+      const toleranceVal =
+        tolerancePercent !== undefined && tolerancePercent !== null && tolerancePercent !== ''
+          ? Number(tolerancePercent)
+          : null;
       const dispensers = station.dispensers || [];
       const selectedDispensers = dispenserIds
         ? dispensers.filter((d) => dispenserIds.includes(d.dispenserId))
@@ -137,6 +141,9 @@ export async function POST(request) {
             endTime: dateEnd,
             dispenserAssignments,
             pricesAtStart,
+            ...(toleranceVal !== null && Number.isFinite(toleranceVal)
+              ? { tolerancePercent: toleranceVal }
+              : {}),
           },
         },
         { new: true, upsert: true, runValidators: false }
@@ -273,6 +280,23 @@ export async function POST(request) {
       }
 
       const totalCost = costPerLiter ? Number(costPerLiter) * Number(totalReceived) : null;
+      const receivedVal = Number(totalReceived);
+      const tankId = Array.isArray(distribution) && distribution[0] ? distribution[0].tankId : null;
+
+      // Idempotency guard: an identical receipt (same day, fuel, tank, quantity)
+      // is almost certainly a duplicate re-submit. Return it instead of creating
+      // a second record. Genuinely distinct loads will differ in quantity/tank.
+      const duplicate = await StockMovement.findOne({
+        stationId: stationObjId,
+        movementType: 'receipt',
+        date: { $gte: dateStart, $lte: dateEnd },
+        fuelType,
+        quantity: receivedVal,
+        ...(tankId ? { 'distribution.tankId': tankId } : {}),
+      });
+      if (duplicate) {
+        return NextResponse.json({ movement: duplicate, duplicate: true }, { status: 200 });
+      }
 
       // Historical backfill: do NOT touch Station.currentStock — it reflects live data
       const movement = await StockMovement.create({

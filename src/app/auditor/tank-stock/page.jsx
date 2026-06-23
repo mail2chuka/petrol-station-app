@@ -232,6 +232,8 @@ export default function AuditorTankStockPage() {
                         <th className="pb-2 pr-4">Tank</th>
                         <th className="pb-2 pr-4">Product</th>
                         <th className="pb-2 pr-4">Opening (L)</th>
+                        <th className="pb-2 pr-4">Stock In (L)</th>
+                        <th className="pb-2 pr-4">Sales (L)</th>
                         <th className="pb-2 pr-4">Closing Measured (L)</th>
                         <th className="pb-2 pr-4">Closing Confirmed (L)</th>
                         <th className="pb-2 pr-4">Variance</th>
@@ -243,8 +245,13 @@ export default function AuditorTankStockPage() {
                       {Object.entries(byTank).map(([tankId, tank]) => {
                         const op = tank.opening;
                         const cl = tank.closing;
-                        const variance = cl?.variance ?? null;
-                        const variancePct = cl?.variancePercent ?? null;
+                        // Reconciled variance = closing − (opening + stock-in − sales).
+                        // Falls back to the raw stored delta only if the API didn't
+                        // supply the reconciled figure (e.g. older cached responses).
+                        const reconciled = cl?.reconciledVariance ?? cl?.variance ?? null;
+                        const stockIn = (cl ?? op)?.stockIn ?? 0;
+                        const salesL = (cl ?? op)?.salesLitres ?? 0;
+                        const overTol = cl?.overTolerance ?? false;
                         const editState = editing[tankId];
                         const isEditingThis = !!editState;
 
@@ -257,6 +264,8 @@ export default function AuditorTankStockPage() {
                               </span>
                             </td>
                             <td className="py-2.5 pr-4">{op ? fmt(op.openingStock) : '—'}</td>
+                            <td className="py-2.5 pr-4">{stockIn ? fmt(stockIn) : '—'}</td>
+                            <td className="py-2.5 pr-4">{salesL ? fmt(salesL) : '—'}</td>
 
                             {/* Closing measured — editable by admin */}
                             <td className="py-2.5 pr-4">
@@ -297,8 +306,10 @@ export default function AuditorTankStockPage() {
                             <td className="py-2.5 pr-4">
                               {cl?.closingStockManager != null ? fmt(cl.closingStockManager) : <span className="text-slate-400 text-xs">Pending</span>}
                             </td>
-                            <td className={`py-2.5 pr-4 font-medium ${variance == null ? 'text-slate-400' : variance < 0 ? 'text-red-600' : variance > 0 ? 'text-green-600' : 'text-slate-500'}`}>
-                              {variance == null ? '—' : `${variance > 0 ? '+' : ''}${fmt(variance)}L (${variancePct?.toFixed(1)}%)`}
+                            <td className={`py-2.5 pr-4 font-medium ${reconciled == null ? 'text-slate-400' : overTol ? 'text-red-600' : reconciled < 0 ? 'text-amber-600' : reconciled > 0 ? 'text-green-600' : 'text-slate-500'}`}>
+                              {reconciled == null
+                                ? '—'
+                                : `${reconciled > 0 ? '+' : ''}${fmt(reconciled)}L${overTol ? ' ⚠' : ''}`}
                             </td>
                             <td className="py-2.5 text-slate-500 text-xs">{cl?.supervisorName || op?.supervisorName || '—'}</td>
 
