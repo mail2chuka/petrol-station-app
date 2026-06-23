@@ -10,6 +10,12 @@ function fmtN(n) {
 function fmtNum(n) {
   return Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+// Magnitude shown as an absolute value with an explicit leading sign; direction
+// (gain/loss) is also conveyed by colour at the call site.
+function signedAbs(n) {
+  const v = Number(n) || 0;
+  return `${v >= 0 ? '+' : '−'}${fmtNum(Math.abs(v))}`;
+}
 function fmtDate(d) {
   return new Date(d).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
 }
@@ -632,6 +638,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                         <tr>
                           <TH>Tank</TH>
                           <TH>Opening Dipstick (L)</TH>
+                          <TH>Stock In (L)</TH>
                           <TH>Closing Dipstick (L)</TH>
                           <TH>Volume Sold (L)</TH>
                           <TH>Entered By</TH>
@@ -641,14 +648,17 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                         {tankRows.map(([tankId, tank]) => {
                           const openingVal = tank.opening?.closingStockMeasured;
                           const closingVal = tank.closing?.closingStockMeasured;
+                          const stockIn = report.stockInByTank?.[tankId] || 0;
+                          // Volume sold = opening + stock-in − closing (fuel that left the tank)
                           const volumeSold = openingVal != null && closingVal != null
-                            ? (openingVal - closingVal) : null;
+                            ? (openingVal + stockIn - closingVal) : null;
                           const rowColor = tankColorMap[tankId] || '';
                           const enteredBy = tank.closing?.supervisorName || tank.opening?.supervisorName || '—';
                           return (
                             <tr key={tankId} className={`border-b border-gray-100 ${rowColor}`}>
                               <TD className="font-medium">{tank.label || tankId}</TD>
                               <TD>{openingVal != null ? fmtNum(openingVal) : <span className="text-amber-500 text-xs">Pending</span>}</TD>
+                              <TD>{stockIn > 0 ? fmtNum(stockIn) : '—'}</TD>
                               <TD>{closingVal != null ? fmtNum(closingVal) : <span className="text-amber-500 text-xs">Pending</span>}</TD>
                               <TD className="font-medium">{volumeSold != null ? fmtNum(volumeSold) : '—'}</TD>
                               <TD className="text-gray-500">{enteredBy}</TD>
@@ -658,12 +668,13 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                       </tbody>
                       <tfoot>
                         <tr className="bg-gray-50 border-t-2 border-t-gray-200">
-                          <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-gray-700">Total</td>
+                          <td colSpan={4} className="px-4 py-2.5 text-sm font-bold text-gray-700">Total</td>
                           <td className="px-4 py-2.5 text-sm font-bold text-gray-900">
-                            {fmtNum(tankRows.reduce((sum, [, tank]) => {
+                            {fmtNum(tankRows.reduce((sum, [tankId, tank]) => {
                               const o = tank.opening?.closingStockMeasured;
                               const c = tank.closing?.closingStockMeasured;
-                              return sum + (o != null && c != null ? o - c : 0);
+                              const si = report.stockInByTank?.[tankId] || 0;
+                              return sum + (o != null && c != null ? o + si - c : 0);
                             }, 0))}
                           </td>
                           <td />
@@ -923,11 +934,11 @@ function SummaryListView({ stationId, onSelectDay }) {
                       </TD>
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
-                      <td className="px-4 py-2.5 text-sm font-bold text-gray-800">
-                        {r.sales > 0 ? fmtNum(r.overage - r.shortage) : '—'}
+                      <td className={`px-4 py-2.5 text-sm font-bold ${r.sales <= 0 ? 'text-gray-800' : (r.overage - r.shortage) >= 0 ? 'text-green-700' : 'text-pink-600'}`}>
+                        {r.sales > 0 ? signedAbs(r.overage - r.shortage) : '—'}
                         {r.sales > 0 && (
                           <span className={`block text-xs font-medium ${((r.overage - r.shortage) - r.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {((r.overage - r.shortage) - r.expTol) >= 0 ? '+' : ''}{fmtNum((r.overage - r.shortage) - r.expTol)} ({(r.tolerancePercent ?? ((r.expTol / r.sales) * 100)).toFixed(1)}%)
+                            {signedAbs((r.overage - r.shortage) - r.expTol)} ({(r.tolerancePercent ?? ((r.expTol / r.sales) * 100)).toFixed(1)}%)
                           </span>
                         )}
                       </td>
@@ -963,11 +974,13 @@ function SummaryListView({ stationId, onSelectDay }) {
                         const variance = b.overage - b.shortage;
                         return (
                           <span key={p} className="block mb-1 last:mb-0">
-                            {b.sales > 0 ? fmtNum(variance) : '—'}
+                            <span className={b.sales > 0 ? (variance >= 0 ? 'text-green-700' : 'text-pink-600') : ''}>
+                              {b.sales > 0 ? signedAbs(variance) : '—'}
+                            </span>
                             <span className="text-xs font-normal text-gray-500"> ({p})</span>
                             {b.sales > 0 && (
                               <span className={`block text-xs font-medium ${(variance - b.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                                {(variance - b.expTol) >= 0 ? '+' : ''}{fmtNum(variance - b.expTol)} ({((b.expTol / b.sales) * 100).toFixed(1)}%)
+                                {signedAbs(variance - b.expTol)} ({((b.expTol / b.sales) * 100).toFixed(1)}%)
                               </span>
                             )}
                           </span>
@@ -975,10 +988,12 @@ function SummaryListView({ stationId, onSelectDay }) {
                       })
                     ) : (
                       <>
-                        {totalSales > 0 ? fmtNum(totalOverage - totalShortage) : '—'}
+                        <span className={totalSales > 0 ? ((totalOverage - totalShortage) >= 0 ? 'text-green-700' : 'text-pink-600') : ''}>
+                          {totalSales > 0 ? signedAbs(totalOverage - totalShortage) : '—'}
+                        </span>
                         {totalSales > 0 && (
                           <span className={`block text-xs font-medium ${((totalOverage - totalShortage) - totalExpTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {((totalOverage - totalShortage) - totalExpTol) >= 0 ? '+' : ''}{fmtNum((totalOverage - totalShortage) - totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(1)}%)
+                            {signedAbs((totalOverage - totalShortage) - totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(1)}%)
                           </span>
                         )}
                       </>
