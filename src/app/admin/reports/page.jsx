@@ -934,7 +934,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                       </TD>
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
-                      <td className={`px-4 py-2.5 text-sm font-bold ${r.sales <= 0 ? 'text-gray-800' : (r.overage - r.shortage) >= 0 ? 'text-green-700' : 'text-pink-600'}`}>
+                      <td className="px-4 py-2.5 text-sm text-gray-700">
                         {r.sales > 0 ? signedAbs(r.overage - r.shortage) : '—'}
                         {r.sales > 0 && (
                           <span className={`block text-xs font-medium ${((r.overage - r.shortage) - r.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
@@ -974,7 +974,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                         const variance = b.overage - b.shortage;
                         return (
                           <span key={p} className="block mb-1 last:mb-0">
-                            <span className={b.sales > 0 ? (variance >= 0 ? 'text-green-700' : 'text-pink-600') : ''}>
+                            <span className="text-gray-700">
                               {b.sales > 0 ? signedAbs(variance) : '—'}
                             </span>
                             <span className="text-xs font-normal text-gray-500"> ({p})</span>
@@ -988,7 +988,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                       })
                     ) : (
                       <>
-                        <span className={totalSales > 0 ? ((totalOverage - totalShortage) >= 0 ? 'text-green-700' : 'text-pink-600') : ''}>
+                        <span className="text-gray-700">
                           {totalSales > 0 ? signedAbs(totalOverage - totalShortage) : '—'}
                         </span>
                         {totalSales > 0 && (
