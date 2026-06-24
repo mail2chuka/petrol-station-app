@@ -160,6 +160,50 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No day shift found for this date. Create the day shift first.' }, { status: 409 });
     }
 
+    // ── PRUNE ORPHANS ───────────────────────────────────────────────────────────
+    // Removes records for pumps / tanks that are no longer in the active selection.
+    // Called at the end of each wizard step so only the committed set survives.
+    //   keepDispenserIds → prunes MeterReading, SalesEntry, PaymentRecord
+    //   keepTankIds      → prunes TankStockEntry
+    if (type === 'pruneOrphans') {
+      const { keepDispenserIds, keepTankIds } = body;
+      const pruned = {};
+
+      if (Array.isArray(keepDispenserIds)) {
+        const [mr, se, pr] = await Promise.all([
+          MeterReading.deleteMany({
+            stationId: stationObjId,
+            date: { $gte: dateStart, $lte: dateEnd },
+            pumpId: { $nin: keepDispenserIds },
+          }),
+          SalesEntry.deleteMany({
+            stationId: stationObjId,
+            dayShiftId: shift._id,
+            dispenserId: { $nin: keepDispenserIds },
+          }),
+          PaymentRecord.deleteMany({
+            stationId: stationObjId,
+            dayShiftId: shift._id,
+            dispenserId: { $nin: keepDispenserIds },
+          }),
+        ]);
+        pruned.meterReadings = mr.deletedCount;
+        pruned.salesEntries  = se.deletedCount;
+        pruned.paymentRecords = pr.deletedCount;
+      }
+
+      if (Array.isArray(keepTankIds)) {
+        const tse = await TankStockEntry.deleteMany({
+          stationId: stationObjId,
+          date: { $gte: dateStart, $lte: dateEnd },
+          tankId: { $nin: keepTankIds },
+        });
+        pruned.tankStockEntries = tse.deletedCount;
+      }
+
+      return NextResponse.json({ pruned }, { status: 200 });
+    }
+
     // ── PUMP READING ────────────────────────────────────────────────────────────
     if (type === 'pumpReading') {
       const { pumpId, pumpLabel, opening, closing, rtt } = body;
@@ -342,32 +386,30 @@ export async function POST(request) {
 
       const expectedAmount = litersVal * pricePerLiter;
 
-      const saleEntry = await SalesEntry.findOneAndUpdate(
-        { stationId: stationObjId, dayShiftId: shift._id, dispenserId },
-        {
-          $set: {
-            dayShiftId: shift._id,
-            stationId: stationObjId,
-            stationName: station.name,
-            date: dateStart,
-            supervisorId: currentUser.id,
-            supervisorName: currentUser.name,
-            dispenserId,
-            dispenserName: dispenser.name,
-            fuelType,
-            liters: litersVal,
-            pricePerLiter,
-            expectedAmount,
-            cashAmount: 0,
-            posAmount: 0,
-            totalAmount: 0,
-            discrepancy: 0,
-            enteredBy: currentUser.id,
-            enteredByName: currentUser.name,
-          },
-        },
-        { new: true, upsert: true, runValidators: false }
-      );
+      // Delete all existing records for this pump+shift — findOneAndUpdate only
+      // patches the first match, leaving duplicates from earlier live entries intact.
+      await SalesEntry.deleteMany({ stationId: stationObjId, dayShiftId: shift._id, dispenserId });
+
+      const saleEntry = await SalesEntry.create({
+        dayShiftId: shift._id,
+        stationId: stationObjId,
+        stationName: station.name,
+        date: dateStart,
+        supervisorId: currentUser.id,
+        supervisorName: currentUser.name,
+        dispenserId,
+        dispenserName: dispenser.name,
+        fuelType,
+        liters: litersVal,
+        pricePerLiter,
+        expectedAmount,
+        cashAmount: 0,
+        posAmount: 0,
+        totalAmount: 0,
+        discrepancy: 0,
+        enteredBy: currentUser.id,
+        enteredByName: currentUser.name,
+      });
       return NextResponse.json({ saleEntry }, { status: 200 });
     }
 
@@ -386,37 +428,33 @@ export async function POST(request) {
       const posVal = Number(posReceived);
       const total = cashVal + posVal;
 
-      const payment = await PaymentRecord.findOneAndUpdate(
-        { stationId: stationObjId, dayShiftId: shift._id, dispenserId },
-        {
-          $set: {
-            dayShiftId: shift._id,
-            stationId: stationObjId,
-            stationName: station.name,
-            date: dateStart,
-            dispenserId,
-            dispenserName: dispenser.name,
-            fuelType: dispenser.fuelType,
-            supervisorId: currentUser.id,
-            supervisorName: currentUser.name,
-            cashReceived: cashVal,
-            posEntries: posVal > 0 ? [{ bank: 'POS', amount: posVal }] : [],
-            posReceived: posVal,
-            totalReceived: total,
-            recordedBy: currentUser.id,
-            recordedByName: currentUser.name,
-            notes: notes || 'Backfill',
-            managerReviewStatus: 'approved',
-          },
-        },
-        { new: true, upsert: true, runValidators: false }
-      );
+      // Delete all existing records for this pump+shift before writing fresh.
+      await PaymentRecord.deleteMany({ stationId: stationObjId, dayShiftId: shift._id, dispenserId });
 
-      // Also update the sales entry amounts
-      await SalesEntry.findOneAndUpdate(
+      const payment = await PaymentRecord.create({
+        dayShiftId: shift._id,
+        stationId: stationObjId,
+        stationName: station.name,
+        date: dateStart,
+        dispenserId,
+        dispenserName: dispenser.name,
+        fuelType: dispenser.fuelType,
+        supervisorId: currentUser.id,
+        supervisorName: currentUser.name,
+        cashReceived: cashVal,
+        posEntries: posVal > 0 ? [{ bank: 'POS', amount: posVal }] : [],
+        posReceived: posVal,
+        totalReceived: total,
+        recordedBy: currentUser.id,
+        recordedByName: currentUser.name,
+        notes: notes || 'Backfill',
+        managerReviewStatus: 'approved',
+      });
+
+      // Stamp the cash/pos amounts onto the corresponding sales entry.
+      await SalesEntry.updateOne(
         { stationId: stationObjId, dayShiftId: shift._id, dispenserId },
-        { $set: { cashAmount: cashVal, posAmount: posVal, totalAmount: total } },
-        { runValidators: false }
+        { $set: { cashAmount: cashVal, posAmount: posVal, totalAmount: total } }
       );
 
       return NextResponse.json({ payment }, { status: 200 });

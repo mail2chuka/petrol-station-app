@@ -482,6 +482,12 @@ export default function BackfillPage() {
     }
     setResults(res);
     if (!res.some((r) => r.error)) {
+      // Remove records for any pumps that are no longer in the active selection.
+      // This cascades to MeterReadings, SalesEntry and PaymentRecord so no
+      // orphaned data from previously-selected pumps survives in reports.
+      try {
+        await callBackfill({ type: 'pruneOrphans', keepDispenserIds: selectedDispensers });
+      } catch { /* non-fatal */ }
       setCompletedSteps((p) => [...new Set([...p, 'pumpReadings'])]);
       setStep('deliveries');
     }
@@ -510,6 +516,11 @@ export default function BackfillPage() {
     }
     setResults(res);
     if (!res.some((r) => r.error)) {
+      // Remove TankStockEntries for any tanks outside the active list.
+      const activeTankIds = tanks.map((t) => String(t._id));
+      try {
+        await callBackfill({ type: 'pruneOrphans', keepTankIds: activeTankIds });
+      } catch { /* non-fatal */ }
       setCompletedSteps((p) => [...new Set([...p, 'tankReadings'])]);
       setStep('sales');
     }
@@ -605,6 +616,11 @@ export default function BackfillPage() {
     }
     setResults(res);
     if (!res.some((r) => r.error)) {
+      // Delete SalesEntry (and any lingering PaymentRecord) for pumps outside the
+      // current selection — handles deactivated pumps or changed pump assignments.
+      try {
+        await callBackfill({ type: 'pruneOrphans', keepDispenserIds: selectedDispensers });
+      } catch { /* non-fatal */ }
       setCompletedSteps((p) => [...new Set([...p, 'sales'])]);
       setStep('payments');
     }
@@ -631,6 +647,10 @@ export default function BackfillPage() {
     }
     setResults(res);
     if (!res.some((r) => r.error)) {
+      // Delete PaymentRecord for pumps outside the current selection.
+      try {
+        await callBackfill({ type: 'pruneOrphans', keepDispenserIds: selectedDispensers });
+      } catch { /* non-fatal */ }
       setCompletedSteps((p) => [...new Set([...p, 'payments'])]);
       setStep('deposits');
     }
