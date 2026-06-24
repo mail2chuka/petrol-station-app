@@ -232,7 +232,7 @@ export default function ReportPeriodList({ stationId, onSelectDay }) {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700 text-right">
-                        {Number(day.totalLiters).toFixed(1)}
+                        {Number(day.totalLiters).toLocaleString('en-NG', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700 text-right">
                         {Number(day.totalExpected).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -258,7 +258,7 @@ export default function ReportPeriodList({ stationId, onSelectDay }) {
                   <td className="px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wide" colSpan={2}>
                     Period Total ({days.length} day{days.length !== 1 ? 's' : ''})
                   </td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{Number(totals.liters).toFixed(1)}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{Number(totals.liters).toLocaleString('en-NG', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{Number(totals.expected).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{Number(totals.cash).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{Number(totals.pos).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>

@@ -961,7 +961,7 @@ export default function BackfillPage() {
                 </div>
                 {netSold != null && (
                   <p className="text-xs text-emerald-600 mt-2 font-medium">
-                    Net sold: {netSold.toFixed(2)} L
+                    Net sold: {fmtN(netSold)} L
                     {d.tankId && <span className="text-slate-400 font-normal"> → {tankLabelById[d.tankId] || d.tankId}</span>}
                   </p>
                 )}
@@ -1021,7 +1021,7 @@ export default function BackfillPage() {
                     <svg className="w-3.5 h-3.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="text-xs text-blue-700 font-medium">Litres sold from pumps: {soldFromPumps.toFixed(2)} L</span>
+                    <span className="text-xs text-blue-700 font-medium">Litres sold from pumps: {fmtN(soldFromPumps)} L</span>
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-3">
@@ -1034,9 +1034,9 @@ export default function BackfillPage() {
                 </div>
                 {variance != null && (
                   <p className={`text-xs mt-2 font-medium ${overTol ? 'text-red-600' : variance < 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                    Expected closing: {expectedClosing.toFixed(2)} L (open {opening.toFixed(2)} + in {delivered.toFixed(2)} − sold {(soldFromPumps || 0).toFixed(2)})
-                    {' · '}Variance: {variance > 0 ? '+' : ''}{variance.toFixed(2)} L
-                    {overTol ? ` ⚠ over tolerance (±${tolBand.toFixed(2)} L)` : ''}
+                    Expected closing: {fmtN(expectedClosing)} L (open {fmtN(opening)} + in {fmtN(delivered)} − sold {fmtN(soldFromPumps || 0)})
+                    {' · '}Variance: {variance > 0 ? '+' : ''}{fmtN(variance)} L
+                    {overTol ? ` ⚠ over tolerance (±${fmtN(tolBand)} L)` : ''}
                   </p>
                 )}
               </div>
@@ -1171,7 +1171,7 @@ export default function BackfillPage() {
                     {d.name} <span className="text-xs text-slate-400 font-normal">({d.fuelType})</span>
                   </p>
                   {pumpNet != null && (
-                    <span className="text-xs bg-slate-100 text-slate-500 rounded-full px-2 py-0.5">Meter net: {pumpNet.toFixed(2)} L</span>
+                    <span className="text-xs bg-slate-100 text-slate-500 rounded-full px-2 py-0.5">Meter net: {fmtN(pumpNet)} L</span>
                   )}
                 </div>
                 <div className="grid grid-cols-2 gap-3 items-end">

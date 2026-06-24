@@ -94,18 +94,18 @@ function SupervisorEntriesContent() {
   const columns = [
     { header: 'Pump', field: 'pumpLabel' },
     { header: 'Supervisor', field: 'supervisorName' },
-    { header: 'Opening', render: (r) => r.opening != null ? r.opening.toFixed(2) : '-' },
+    { header: 'Opening', render: (r) => r.opening != null ? r.opening.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-' },
     {
       header: 'Closing',
       render: (r) => r.closing != null
-        ? r.closing.toFixed(2)
+        ? r.closing.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         : <span className="text-amber-600 text-xs font-medium">Pending</span>,
     },
-    { header: 'RTT', render: (r) => r.closing != null ? (r.rtt ?? 0).toFixed(2) : '-' },
+    { header: 'RTT', render: (r) => r.closing != null ? (r.rtt ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-' },
     {
       header: 'Net (L)',
       render: (r) => r.closing != null
-        ? (r.closing - r.opening - (r.rtt ?? 0)).toFixed(2)
+        ? (r.closing - r.opening - (r.rtt ?? 0)).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         : '-',
     },
     {

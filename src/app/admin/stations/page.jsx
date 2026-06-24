@@ -629,19 +629,19 @@ export default function StationsPage() {
     )},
     {
       header: 'PMS Price (₦)',
-      render: (row) => row.currentPrices?.PMS?.toFixed(2) || '0.00'
+      render: (row) => row.currentPrices?.PMS != null ? Number(row.currentPrices.PMS).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'
     },
     {
       header: 'AGO Price (₦)',
-      render: (row) => row.currentPrices?.AGO?.toFixed(2) || '0.00'
+      render: (row) => row.currentPrices?.AGO != null ? Number(row.currentPrices.AGO).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'
     },
     {
       header: 'PMS Stock (L)',
-      render: (row) => row.currentStock?.PMS?.toFixed(2) || '0.00'
+      render: (row) => row.currentStock?.PMS != null ? Number(row.currentStock.PMS).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'
     },
     {
       header: 'AGO Stock (L)',
-      render: (row) => row.currentStock?.AGO?.toFixed(2) || '0.00'
+      render: (row) => row.currentStock?.AGO != null ? Number(row.currentStock.AGO).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'
     },
     {
       header: 'Tanks',

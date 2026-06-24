@@ -184,7 +184,7 @@ export default function MeterBookPage() {
                             <td className={`py-2.5 pr-4 font-semibold ${r.discrepancyFlag ? 'text-amber-700' : ''}`}>{r.opening}</td>
                             <td className="py-2.5 pr-4">{r.closing}</td>
                             <td className="py-2.5 pr-4">{r.rtt}</td>
-                            <td className="py-2.5 pr-4 font-semibold">{net.toFixed(2)}</td>
+                            <td className="py-2.5 pr-4 font-semibold">{Number(net).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td className="py-2.5">
                               {r.discrepancyFlag ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
@@ -210,7 +210,7 @@ export default function MeterBookPage() {
                       <div key={r._id} className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-sm">
                         <p className="font-medium text-amber-800">{r.pumpLabel || r.pumpId}</p>
                         <p className="text-amber-700 text-xs mt-0.5">
-                          Previous closing: {r.previousDayClosing} → Today&apos;s opening: {r.opening} (diff: {(r.opening - r.previousDayClosing).toFixed(2)})
+                          Previous closing: {r.previousDayClosing} → Today&apos;s opening: {r.opening} (diff: {(r.opening - r.previousDayClosing).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                         </p>
                         {r.discrepancyComment && (
                           <p className="text-amber-700 text-xs mt-1">Comment: &ldquo;{r.discrepancyComment}&rdquo;</p>

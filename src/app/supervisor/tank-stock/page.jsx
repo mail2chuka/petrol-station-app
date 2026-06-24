@@ -27,7 +27,7 @@ function TankCard({ tank, openingEntry, closingEntry, prevDayClosing, canEdit, s
   const openingDipstick = openingEntry?.closingStockMeasured;
   const closingDipstick = closingEntry?.closingStockMeasured;
   const volumeUsed = openingDipstick != null && closingDipstick != null
-    ? (openingDipstick - closingDipstick).toFixed(2) : null;
+    ? openingDipstick - closingDipstick : null;
 
   async function saveEntry(period, value, noteVal) {
     setSaving(true);
@@ -159,7 +159,7 @@ function TankCard({ tank, openingEntry, closingEntry, prevDayClosing, canEdit, s
                 {volumeUsed != null && (
                   <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl text-sm">
                     <span className="text-slate-500 text-xs uppercase tracking-wide">Volume Used</span>
-                    <span className="font-bold text-slate-900">{Number(volumeUsed).toLocaleString()} L</span>
+                    <span className="font-bold text-slate-900">{Number(volumeUsed).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L</span>
                   </div>
                 )}
               </div>
@@ -172,7 +172,7 @@ function TankCard({ tank, openingEntry, closingEntry, prevDayClosing, canEdit, s
                 {closingVal && !isNaN(parseFloat(closingVal)) && openingDipstick != null && (
                   <div className="p-3 bg-emerald-50 rounded-xl text-sm">
                     Volume used: <span className="font-bold text-emerald-700">
-                      {(openingDipstick - parseFloat(closingVal)).toFixed(2)} L
+                      {(openingDipstick - parseFloat(closingVal)).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L
                     </span>
                   </div>
                 )}

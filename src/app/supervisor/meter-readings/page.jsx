@@ -41,7 +41,7 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
   const isFlagged = existing?.discrepancyFlag;
 
   const net = closingDone
-    ? (closing - opening - (existing?.rtt ?? 0)).toFixed(2)
+    ? closing - opening - (existing?.rtt ?? 0)
     : null;
 
   async function autoSetOpening(manualVal) {
@@ -243,7 +243,7 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
             {closingVal && !isNaN(parseFloat(closingVal)) && (
               <div className="p-3 bg-emerald-50 rounded-xl text-sm">
                 Net sold: <span className="font-bold text-emerald-700">
-                  {((parseFloat(closingVal) || 0) - (opening || 0) - (parseFloat(rttVal) || 0)).toFixed(2)}
+                  {((parseFloat(closingVal) || 0) - (opening || 0) - (parseFloat(rttVal) || 0)).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             )}
@@ -279,7 +279,7 @@ function PumpCard({ pump, existing, prevClosing, canEdit, stationId, date, onSav
             <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl">
               <div>
                 <p className="text-xs text-slate-500 uppercase tracking-wide">Net Sold</p>
-                <p className="text-2xl font-bold text-emerald-700 mt-0.5">{net}</p>
+                <p className="text-2xl font-bold text-emerald-700 mt-0.5">{net != null ? net.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</p>
               </div>
               {canEdit && (
                 <button onClick={() => { setClosingVal(String(closing)); setRttVal(String(existing?.rtt ?? 0)); setStage('closing_form'); }}

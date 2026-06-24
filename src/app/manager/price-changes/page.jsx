@@ -96,8 +96,8 @@ function ManagerPriceChangesPageContent() {
 
   const columns = [
     { header: 'Fuel', field: 'fuelType' },
-    { header: 'Current', render: (row) => `N${Number(row.previousPrice || 0).toFixed(2)}` },
-    { header: 'Requested', render: (row) => `N${Number(row.newPrice || 0).toFixed(2)}` },
+    { header: 'Current', render: (row) => `N${Number(row.previousPrice || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+    { header: 'Requested', render: (row) => `N${Number(row.newPrice || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
     { header: 'Status', render: (row) => (
       <TableBadge variant={row.approvalStatus === 'approved' ? 'success' : row.approvalStatus === 'rejected' ? 'danger' : 'warning'}>
         {row.approvalStatus}
@@ -131,11 +131,11 @@ function ManagerPriceChangesPageContent() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="rounded-xl bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">PMS</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">N{Number(station?.currentPrices?.PMS || 0).toFixed(2)}</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">N{Number(station?.currentPrices?.PMS || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">AGO</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">N{Number(station?.currentPrices?.AGO || 0).toFixed(2)}</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">N{Number(station?.currentPrices?.AGO || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
         </div>
       </Card>

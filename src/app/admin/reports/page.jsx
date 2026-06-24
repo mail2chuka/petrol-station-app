@@ -162,7 +162,7 @@ function DetailModal({ item, onClose, onSaved }) {
         <Row label="Price at Start (₦/L)" value={fmtNum(d.priceAtStart)} />
         <Row label="Initial Reading (L)" value={d.initialReading != null ? Number(d.initialReading).toLocaleString('en-NG') : '—'} />
         <Row label="Final Reading (L)" value={d.finalReading != null ? Number(d.finalReading).toLocaleString('en-NG') : '—'} />
-        <Row label="Total (L)" value={d.totalLiters != null ? Number(d.totalLiters).toFixed(2) : '—'} />
+        <Row label="Total (L)" value={d.totalLiters != null ? fmtNum(d.totalLiters) : '—'} />
       </dl>
     );
   }
@@ -174,7 +174,7 @@ function DetailModal({ item, onClose, onSaved }) {
         <Row label="Pump" value={d.dispenserName} />
         <Row label="Fuel Type" value={d.fuelType} />
         <Row label="Supervisor" value={d.supervisorName} />
-        <Row label="Liters Sold (L)" value={Number(d.liters).toFixed(2)} />
+        <Row label="Liters Sold (L)" value={fmtNum(d.liters)} />
         <Row label="Price / Liter (₦)" value={fmtNum(d.pricePerLiter)} />
         <Row label="Expected Amount (₦)" value={fmtNum(d.expectedAmount)} />
         <Row label="Time Entered" value={fmtDate(d.createdAt)} />
@@ -203,7 +203,7 @@ function DetailModal({ item, onClose, onSaved }) {
         <Row label="Opening Reading (L)" value={d.opening} />
         <Row label="Closing Reading (L)" value={d.closing ?? '—'} />
         <Row label="RTT (L)" value={d.rtt ?? 0} />
-        <Row label="Net Sold (L)" value={d.closing != null ? Math.max(0, d.closing - d.opening - (d.rtt || 0)).toFixed(2) : '—'} />
+        <Row label="Net Sold (L)" value={d.closing != null ? fmtNum(Math.max(0, d.closing - d.opening - (d.rtt || 0))) : '—'} />
         {d.discrepancyFlag && <Row label="Discrepancy" value={<span className="text-amber-700 font-medium">⚠ {d.discrepancyComment || 'Flagged'}</span>} />}
         <Row label="Review Status" value={<Pill status={d.managerReviewStatus || 'pending'} />} />
         {d.managerReviewNote && <Row label="Review Note" value={d.managerReviewNote} />}
@@ -425,7 +425,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
           <Card key={fuel}>
             <div className="text-center">
               <p className="text-xs text-gray-500 mb-1">{fuel} Sales</p>
-              <p className="text-xl font-bold text-ecana-maroon">{v.liters.toFixed(1)} L</p>
+              <p className="text-xl font-bold text-ecana-maroon">{v.liters.toLocaleString('en-NG', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} L</p>
               <p className="text-xs text-gray-500">{fmtN(v.amount)}</p>
             </div>
           </Card>
@@ -594,7 +594,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                         {filteredReadings.map((r, i) => {
                           const tankId = pumpTankMap[r.pumpId];
                           const rowColor = tankId ? tankColorMap[tankId] || '' : '';
-                          const netSold = r.closing != null ? Math.max(0, r.closing - r.opening - (r.rtt || 0)).toFixed(2) : '—';
+                          const netSold = r.closing != null ? fmtNum(Math.max(0, r.closing - r.opening - (r.rtt || 0))) : '—';
                           return (
                             <ClickRow key={r._id || i} className={rowColor} onClick={() => setDetailItem({ type: 'reading', data: r })}>
                               <TD className="font-medium">{r.pumpLabel || r.pumpId}</TD>
@@ -695,7 +695,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                       {report.supervisorSummaries.map((sup, i) => (
                         <tr key={i}>
                           <TD className="font-medium">{sup.supervisorName}</TD>
-                          <TD>{sup.totalLiters.toFixed(2)}</TD>
+                          <TD>{fmtNum(sup.totalLiters)}</TD>
                           <TD>{fmtNum(sup.totalExpected)}</TD>
                           <TD>{fmtNum(sup.totalCash)}</TD>
                           <TD>{fmtNum(sup.totalPos)}</TD>

@@ -101,8 +101,8 @@ function ReceiveStockPageContent() {
           setError(
             `This quantity would exceed the capacity of ${selectedTank.label} ` +
             `(capacity: ${selectedTank.capacity.toLocaleString()} L, ` +
-            `current stock: ${currentFuelStock.toFixed(2)} L, ` +
-            `maximum you can add: ${remaining.toFixed(2)} L).`
+            `current stock: ${currentFuelStock.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L, ` +
+            `maximum you can add: ${remaining.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L).`
           );
           return;
         }
@@ -156,7 +156,7 @@ function ReceiveStockPageContent() {
 
       if (res.ok) {
         setSuccess(
-          `Stock received! ${formData.fuelType} updated: ${data.stockUpdate.previousStock.toFixed(2)} L → ${data.stockUpdate.newStock.toFixed(2)} L`
+          `Stock received! ${formData.fuelType} updated: ${data.stockUpdate.previousStock.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L → ${data.stockUpdate.newStock.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`
         );
         setFormData(prev => ({ ...prev, tankId: '', quantity: '', expectedQuantity: '', cost: '', supplier: '', notes: '' }));
         setDistribution([]);
@@ -183,10 +183,10 @@ function ReceiveStockPageContent() {
 
   const availableProducts = station?.availableProducts || ['PMS', 'AGO'];
   const costPerLiter = formData.quantity && formData.cost
-    ? (parseFloat(formData.cost) / parseFloat(formData.quantity)).toFixed(2)
+    ? parseFloat(formData.cost) / parseFloat(formData.quantity)
     : null;
   const variance = formData.expectedQuantity && formData.quantity
-    ? (parseFloat(formData.quantity) - parseFloat(formData.expectedQuantity)).toFixed(2)
+    ? parseFloat(formData.quantity) - parseFloat(formData.expectedQuantity)
     : null;
   const distributionTotal = distribution.reduce((sum, item) => sum + (Number(item.litres) || 0), 0);
   const quantityValue = Number(formData.quantity || 0);
@@ -210,10 +210,10 @@ function ReceiveStockPageContent() {
               <div key={product} className={`p-3 rounded-xl ${formData.fuelType === product ? 'bg-ecana-maroon/5 border border-ecana-maroon/20' : 'bg-slate-50'}`}>
                 <p className="text-sm text-gray-600">{FUEL_TYPE_LABELS[product] || product}</p>
                 <p className="text-2xl font-bold text-slate-800">
-                  {getStock(station, product).toFixed(2)} L
+                  {getStock(station, product).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L
                 </p>
                 <p className="text-sm text-gray-500">
-                  Price: ₦{getPrice(station, product).toFixed(2)}/L
+                  Price: ₦{getPrice(station, product).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/L
                 </p>
               </div>
             ))}
@@ -265,7 +265,7 @@ function ReceiveStockPageContent() {
               return (
                 <div className={`mb-4 px-4 py-3 rounded-xl text-sm ${willExceed ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-slate-50'}`}>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Tank Capacity</p>
-                  <p className="font-semibold text-gray-800">{tank.capacity.toLocaleString()} L total · <span className={willExceed ? 'text-amber-700' : 'text-green-700'}>{remaining.toFixed(2)} L remaining</span></p>
+                  <p className="font-semibold text-gray-800">{tank.capacity.toLocaleString()} L total · <span className={willExceed ? 'text-amber-700' : 'text-green-700'}>{remaining.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L remaining</span></p>
                   {willExceed && <p className="text-xs mt-1 font-medium">This quantity will exceed tank capacity.</p>}
                 </div>
               );
@@ -295,8 +295,8 @@ function ReceiveStockPageContent() {
             {variance !== null && (
               <div className="mb-4 p-3 rounded-xl bg-amber-50">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">Supply Variance (Actual − Expected)</p>
-                <p className={`text-xl font-bold mt-0.5 ${Number(variance) < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
-                  {Number(variance) >= 0 ? '+' : ''}{variance} L
+                <p className={`text-xl font-bold mt-0.5 ${variance < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                  {variance >= 0 ? '+' : ''}{Number(variance).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L
                 </p>
               </div>
             )}
@@ -356,10 +356,10 @@ function ReceiveStockPageContent() {
                 </Button>
                 {distribution.length > 0 && (
                   <span className="text-xs text-slate-600">
-                    Total split: <strong>{distributionTotal.toFixed(2)} L</strong>
+                    Total split: <strong>{distributionTotal.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L</strong>
                     {quantityValue > 0 && (
                       <span className={Math.abs(distributionTotal - quantityValue) < 0.001 ? ' text-emerald-600' : ' text-red-600'}>
-                        {' '}/ {quantityValue.toFixed(2)} L
+                        {' '}/ {quantityValue.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L
                       </span>
                     )}
                   </span>
@@ -381,7 +381,7 @@ function ReceiveStockPageContent() {
             {costPerLiter && (
               <div className="mb-4 p-3 rounded-xl bg-slate-50">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">Cost Per Litre</p>
-                <p className="text-xl font-bold text-slate-800 mt-0.5">₦{costPerLiter}</p>
+                <p className="text-xl font-bold text-slate-800 mt-0.5">₦{Number(costPerLiter).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
             )}
 

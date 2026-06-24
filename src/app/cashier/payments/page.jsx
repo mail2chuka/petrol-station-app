@@ -151,7 +151,7 @@ function CollectionForm({ dispenser, salesEntry, activeDayShift, onSubmitted }) 
           <div className="flex flex-wrap gap-4">
             <div>
               <p className="text-xs text-gray-400">Liters</p>
-              <p className="font-semibold text-gray-800">{Number(salesEntry.liters).toFixed(2)} L</p>
+              <p className="font-semibold text-gray-800">{Number(salesEntry.liters).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L</p>
             </div>
             <div>
               <p className="text-xs text-gray-400">Price/L</p>
