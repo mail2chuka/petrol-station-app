@@ -73,21 +73,21 @@ export default function AuditorDashboard() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="card-modern p-5 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Stations</p>
-              <p className="text-3xl font-bold text-gray-800">{stations.length}</p>
+              <p className="text-2xl font-bold text-gray-800 tabular-nums">{stations.length}</p>
             </div>
             <div className={`card-modern p-5 text-center ${critical > 0 ? 'bg-red-50 border-red-200' : ''}`}>
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Critical</p>
-              <p className={`text-3xl font-bold ${critical > 0 ? 'text-red-700' : 'text-gray-800'}`}>{critical}</p>
+              <p className={`text-2xl font-bold tabular-nums ${critical > 0 ? 'text-red-700' : 'text-gray-800'}`}>{critical}</p>
               <p className="text-xs text-gray-400 mt-0.5">open flags</p>
             </div>
             <div className={`card-modern p-5 text-center ${warning > 0 ? 'bg-amber-50 border-amber-200' : ''}`}>
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Warning</p>
-              <p className={`text-3xl font-bold ${warning > 0 ? 'text-amber-700' : 'text-gray-800'}`}>{warning}</p>
+              <p className={`text-2xl font-bold tabular-nums ${warning > 0 ? 'text-amber-700' : 'text-gray-800'}`}>{warning}</p>
               <p className="text-xs text-gray-400 mt-0.5">open flags</p>
             </div>
             <div className="card-modern p-5 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Info</p>
-              <p className="text-3xl font-bold text-gray-800">{info}</p>
+              <p className="text-2xl font-bold text-gray-800 tabular-nums">{info}</p>
               <p className="text-xs text-gray-400 mt-0.5">open flags</p>
             </div>
           </div>

@@ -60,21 +60,21 @@ export default function MaterialsStaffPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <Card>
               <p className="text-sm text-slate-500">Total Customers</p>
-              <p className="text-3xl font-bold text-slate-900 mt-1">{stats.totalCustomers}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1 tabular-nums">{stats.totalCustomers}</p>
             </Card>
             <Card>
               <p className="text-sm text-slate-500">Pending Orders</p>
-              <p className="text-3xl font-bold text-amber-600 mt-1">{stats.pendingOrders}</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1 tabular-nums">{stats.pendingOrders}</p>
             </Card>
             <Card>
               <p className="text-sm text-slate-500">Today&apos;s Sales</p>
-              <p className="text-3xl font-bold text-emerald-600 mt-1">
+              <p className="text-lg sm:text-xl font-bold text-emerald-600 mt-1 break-words tabular-nums leading-tight">
                 ₦{(stats.todaySales || 0).toLocaleString()}
               </p>
             </Card>
             <Card>
               <p className="text-sm text-slate-500">Today&apos;s Top-ups</p>
-              <p className="text-3xl font-bold text-blue-600 mt-1">
+              <p className="text-lg sm:text-xl font-bold text-blue-600 mt-1 break-words tabular-nums leading-tight">
                 ₦{(stats.todayTopUps || 0).toLocaleString()}
               </p>
             </Card>

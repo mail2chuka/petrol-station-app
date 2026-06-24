@@ -381,7 +381,7 @@ function ManagerDashboardContent() {
           <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500" />
           <div className="text-center relative z-10">
             <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Dispensers</p>
-            <p className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-orange-600 to-orange-800">
+            <p className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-orange-600 to-orange-800 tabular-nums leading-tight">
               {allDispensers.length || 0}
             </p>
             <p className="text-xs text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">Tap for meter readings</p>

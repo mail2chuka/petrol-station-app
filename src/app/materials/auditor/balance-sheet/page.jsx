@@ -58,21 +58,21 @@ export default function BalanceSheetPage() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               <Card>
                 <p className="text-sm text-slate-500">Total Customer Balances</p>
-                <p className="text-2xl font-bold text-emerald-600 mt-1">₦{(data.totalBalance || 0).toLocaleString()}</p>
+                <p className="text-lg sm:text-xl font-bold text-emerald-600 mt-1 break-words tabular-nums leading-tight">₦{(data.totalBalance || 0).toLocaleString()}</p>
               </Card>
               <Card>
                 <p className="text-sm text-slate-500">Total Top-ups</p>
-                <p className="text-2xl font-bold mt-1">₦{(data.topups.totalAmount || 0).toLocaleString()}</p>
+                <p className="text-lg sm:text-xl font-bold mt-1 break-words tabular-nums leading-tight">₦{(data.topups.totalAmount || 0).toLocaleString()}</p>
                 <p className="text-xs text-slate-400">{data.topups.count} transactions</p>
               </Card>
               <Card>
                 <p className="text-sm text-slate-500">Total Revenue</p>
-                <p className="text-2xl font-bold mt-1">₦{(data.orders.totalRevenue || 0).toLocaleString()}</p>
+                <p className="text-lg sm:text-xl font-bold mt-1 break-words tabular-nums leading-tight">₦{(data.orders.totalRevenue || 0).toLocaleString()}</p>
                 <p className="text-xs text-slate-400">{data.orders.count} orders fulfilled</p>
               </Card>
               <Card>
                 <p className="text-sm text-slate-500">Total Owed</p>
-                <p className="text-2xl font-bold text-red-600 mt-1">₦{(data.orders.totalOwed || 0).toLocaleString()}</p>
+                <p className="text-lg sm:text-xl font-bold text-red-600 mt-1 break-words tabular-nums leading-tight">₦{(data.orders.totalOwed || 0).toLocaleString()}</p>
               </Card>
             </div>
 

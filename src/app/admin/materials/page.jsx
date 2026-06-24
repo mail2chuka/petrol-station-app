@@ -79,13 +79,13 @@ export default function AdminMaterialsDashboard() {
 
           <div className="bg-white rounded-2xl border-2 border-slate-200 shadow p-5">
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Today&#39;s Sales</p>
-            <p className="text-3xl font-black text-emerald-600">₦{(stats.todaySales || 0).toLocaleString()}</p>
+            <p className="text-lg sm:text-xl font-black text-emerald-600 break-words tabular-nums leading-tight">₦{(stats.todaySales || 0).toLocaleString()}</p>
             <p className="text-xs text-gray-400 mt-1">{stats.todayOrderCount || 0} orders</p>
           </div>
 
           <div className="bg-white rounded-2xl border-2 border-slate-200 shadow p-5">
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Today&#39;s Top-ups</p>
-            <p className="text-3xl font-black text-blue-600">₦{(stats.todayTopUps || 0).toLocaleString()}</p>
+            <p className="text-lg sm:text-xl font-black text-blue-600 break-words tabular-nums leading-tight">₦{(stats.todayTopUps || 0).toLocaleString()}</p>
             <p className="text-xs text-gray-400 mt-1">{stats.todayTopUpCount || 0} top-ups</p>
           </div>
         </div>

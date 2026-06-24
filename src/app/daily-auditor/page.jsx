@@ -98,21 +98,21 @@ export default function DailyAuditorDashboard() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="card-modern p-5 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Stations</p>
-              <p className="text-3xl font-bold text-gray-800">{stations.length}</p>
+              <p className="text-2xl font-bold text-gray-800 tabular-nums">{stations.length}</p>
             </div>
             <div className="card-modern p-5 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Today's Shifts</p>
-              <p className="text-3xl font-bold text-gray-800">{shiftsStarted}</p>
+              <p className="text-2xl font-bold text-gray-800 tabular-nums">{shiftsStarted}</p>
               <p className="text-xs text-gray-400 mt-0.5">{shiftsEnded} ended · {shiftsStarted - shiftsEnded} active</p>
             </div>
             <div className={`card-modern p-5 text-center ${critical.length > 0 ? 'bg-red-50 border-red-200' : ''}`}>
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Critical Flags</p>
-              <p className={`text-3xl font-bold ${critical.length > 0 ? 'text-red-700' : 'text-gray-800'}`}>{critical.length}</p>
+              <p className={`text-2xl font-bold tabular-nums ${critical.length > 0 ? 'text-red-700' : 'text-gray-800'}`}>{critical.length}</p>
               <p className="text-xs text-gray-400 mt-0.5">open</p>
             </div>
             <div className={`card-modern p-5 text-center ${warning.length > 0 ? 'bg-amber-50 border-amber-200' : ''}`}>
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Warning Flags</p>
-              <p className={`text-3xl font-bold ${warning.length > 0 ? 'text-amber-700' : 'text-gray-800'}`}>{warning.length}</p>
+              <p className={`text-2xl font-bold tabular-nums ${warning.length > 0 ? 'text-amber-700' : 'text-gray-800'}`}>{warning.length}</p>
               <p className="text-xs text-gray-400 mt-0.5">open</p>
             </div>
           </div>

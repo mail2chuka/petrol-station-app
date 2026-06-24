@@ -106,19 +106,19 @@ export default function CashierDashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="card-modern p-5 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Cash Collected</p>
-              <p className="text-2xl font-bold text-gray-800">₦{fmt(totalCash)}</p>
+              <p className="text-lg sm:text-xl font-bold text-gray-800 break-words tabular-nums leading-tight">₦{fmt(totalCash)}</p>
             </div>
             <div className="card-modern p-5 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">POS Collected</p>
-              <p className="text-2xl font-bold text-gray-800">₦{fmt(totalPos)}</p>
+              <p className="text-lg sm:text-xl font-bold text-gray-800 break-words tabular-nums leading-tight">₦{fmt(totalPos)}</p>
             </div>
             <div className="card-modern p-5 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Collected</p>
-              <p className="text-2xl font-bold text-ecana-maroon">₦{fmt(totalCollected)}</p>
+              <p className="text-lg sm:text-xl font-bold text-ecana-maroon break-words tabular-nums leading-tight">₦{fmt(totalCollected)}</p>
             </div>
             <div className="card-modern p-5 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Bank Deposits</p>
-              <p className="text-2xl font-bold text-green-700">₦{fmt(totalDeposited)}</p>
+              <p className="text-lg sm:text-xl font-bold text-green-700 break-words tabular-nums leading-tight">₦{fmt(totalDeposited)}</p>
             </div>
           </div>
 

@@ -245,7 +245,7 @@ export default function AdminDashboard() {
           <div className="absolute top-0 right-0 w-32 h-32 bg-ecana-maroon-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
           <div className="text-center relative z-10">
             <p className="text-xs sm:text-sm font-bold text-gray-600 mb-2 uppercase tracking-wide">Total Stations</p>
-            <p className="text-4xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br from-ecana-maroon to-ecana-maroon-800">{stats?.totalStations || 0}</p>
+            <p className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-ecana-maroon to-ecana-maroon-800 break-words tabular-nums leading-tight">{stats?.totalStations || 0}</p>
             <p className="text-xs text-gray-500 mt-2">View stations</p>
           </div>
         </Link>
@@ -257,7 +257,7 @@ export default function AdminDashboard() {
           <div className="absolute top-0 right-0 w-32 h-32 bg-green-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
           <div className="text-center relative z-10">
             <p className="text-xs sm:text-sm font-bold text-gray-600 mb-2 uppercase tracking-wide">Total Users</p>
-            <p className="text-4xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br from-green-600 to-green-800">{stats?.totalUsers || 0}</p>
+            <p className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-green-600 to-green-800 break-words tabular-nums leading-tight">{stats?.totalUsers || 0}</p>
             <p className="text-xs text-gray-500 mt-2">View users</p>
           </div>
         </Link>
@@ -269,7 +269,7 @@ export default function AdminDashboard() {
           <div className="absolute top-0 right-0 w-32 h-32 bg-ecana-blue-100 rounded-full -mr-16 -mt-16 opacity-50 group-hover:scale-150 transition-transform duration-500"></div>
           <div className="text-center relative z-10">
             <p className="text-xs sm:text-sm font-bold text-gray-600 mb-2 uppercase tracking-wide">Staff</p>
-            <p className="text-4xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br from-ecana-blue to-ecana-blue-800">{stats?.staff || 0}</p>
+            <p className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-ecana-blue to-ecana-blue-800 break-words tabular-nums leading-tight">{stats?.staff || 0}</p>
             <p className="text-xs text-gray-500 mt-2">View staff list</p>
           </div>
         </Link>
