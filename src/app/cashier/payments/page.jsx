@@ -31,6 +31,16 @@ function today() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
 }
 
+// Live estimate of the amount the supervisor should hand over, derived from the
+// pump meter when the formal sale hasn't been recorded yet:
+//   (closing − opening − rtt) × price per litre
+function meterExpected(meter, price) {
+  if (!meter || meter.opening == null || meter.closing == null) return null;
+  const dispensed = Math.max(0, Number(meter.closing) - Number(meter.opening) - Number(meter.rtt || 0));
+  const p = Number(price) || 0;
+  return { dispensed, price: p, amount: dispensed * p };
+}
+
 function emptyPosEntry() {
   return { bank: '', amount: '', terminalId: '' };
 }
@@ -71,7 +81,7 @@ function PosEntryRow({ entry, index, onChange, onRemove }) {
 }
 
 // Collection form for a single pump
-function CollectionForm({ dispenser, salesEntry, activeDayShift, onSubmitted }) {
+function CollectionForm({ dispenser, salesEntry, meterReading, pricePerLiter, activeDayShift, onSubmitted }) {
   const [cash, setCash] = useState('');
   const [posEntries, setPosEntries] = useState([emptyPosEntry()]);
   const [notes, setNotes] = useState('');
@@ -80,7 +90,13 @@ function CollectionForm({ dispenser, salesEntry, activeDayShift, onSubmitted }) 
 
   const posTotal = posEntries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
   const grandTotal = (parseFloat(cash) || 0) + posTotal;
-  const expected = salesEntry?.expectedAmount ?? null;
+
+  // Prefer the supervisor's recorded sale; otherwise estimate live from the meter.
+  const price = salesEntry?.pricePerLiter ?? pricePerLiter ?? 0;
+  const est = salesEntry ? null : meterExpected(meterReading, price);
+  const liters = salesEntry?.liters ?? est?.dispensed ?? null;
+  const expected = salesEntry?.expectedAmount ?? est?.amount ?? null;
+  const isEstimate = !salesEntry && expected !== null;
   const isMatch = expected !== null && Math.abs(grandTotal - expected) < 0.01;
 
   const updatePosEntry = (index, field, value) => {
@@ -143,23 +159,28 @@ function CollectionForm({ dispenser, salesEntry, activeDayShift, onSubmitted }) 
 
   return (
     <div className="border-t border-amber-100 p-4 bg-amber-50/30 space-y-4">
-      {salesEntry && (
+      {expected !== null && (
         <div className="p-3 bg-white rounded-xl border border-amber-200 text-sm">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
             Expected from {dispenser.dispenserName}
+            {isEstimate && (
+              <span className="ml-1 normal-case font-medium text-amber-600">
+                · estimated from meter
+              </span>
+            )}
           </p>
           <div className="flex flex-wrap gap-4">
             <div>
-              <p className="text-xs text-gray-400">Liters</p>
-              <p className="font-semibold text-gray-800">{Number(salesEntry.liters).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L</p>
+              <p className="text-xs text-gray-400">Liters{isEstimate ? ' (dispensed − RTT)' : ''}</p>
+              <p className="font-semibold text-gray-800">{fmt(Number(liters))} L</p>
             </div>
             <div>
               <p className="text-xs text-gray-400">Price/L</p>
-              <p className="font-semibold text-gray-800">₦{fmt(salesEntry.pricePerLiter)}</p>
+              <p className="font-semibold text-gray-800">₦{fmt(price)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-400">Expected</p>
-              <p className="font-bold text-ecana-maroon">₦{fmt(salesEntry.expectedAmount)}</p>
+              <p className="text-xs text-gray-400">{isEstimate ? 'Est. Expected' : 'Expected'}</p>
+              <p className="font-bold text-ecana-maroon">₦{fmt(expected)}</p>
             </div>
           </div>
         </div>
@@ -246,6 +267,7 @@ export default function RecordPaymentsPage() {
   const [activeDayShift, setActiveDayShift] = useState(null);
   const [dispensers, setDispensers] = useState([]);
   const [salesByDispenser, setSalesByDispenser] = useState({});
+  const [metersByDispenser, setMetersByDispenser] = useState({});
   const [collectedMap, setCollectedMap] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -258,18 +280,26 @@ export default function RecordPaymentsPage() {
     setLoading(true);
     setGlobalError('');
     try {
-      const [shiftRes, paymentsRes] = await Promise.all([
+      const [shiftRes, paymentsRes, metersRes] = await Promise.all([
         fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
         fetch(`/api/payments?stationId=${stationId}&date=${today()}`),
+        fetch(`/api/meter-readings?stationId=${stationId}&date=${today()}`),
       ]);
 
-      const [shiftData, paymentsData] = await Promise.all([
-        shiftRes.json(), paymentsRes.json(),
+      const [shiftData, paymentsData, metersData] = await Promise.all([
+        shiftRes.json(), paymentsRes.json(), metersRes.json(),
       ]);
 
       const shift = (shiftData.dayShifts || [])[0] || null;
       setActiveDayShift(shift);
       setDispensers(shift?.dispenserAssignments || []);
+
+      // Map meter readings by pumpId (= dispenserId) for live expected estimates
+      const metersMap = {};
+      for (const m of (metersData.readings || [])) {
+        metersMap[m.pumpId] = m;
+      }
+      setMetersByDispenser(metersMap);
 
       // Map payment records by dispenserId (multiple allowed per pump)
       const map = {};
@@ -373,9 +403,12 @@ export default function RecordPaymentsPage() {
                     <div>
                       <p className="font-semibold text-gray-800">{disp.dispenserName}</p>
                       <p className="text-xs text-gray-500">{disp.fuelType} · {disp.supervisorName}</p>
-                      {salesEntry
-                        ? <p className="text-xs text-gray-500">Expected: ₦{fmt(salesEntry.expectedAmount)}</p>
-                        : <p className="text-xs text-gray-400">No sales recorded yet</p>}
+                      {(() => {
+                        if (salesEntry) return <p className="text-xs text-gray-500">Expected: ₦{fmt(salesEntry.expectedAmount)}</p>;
+                        const est = meterExpected(metersByDispenser[disp.dispenserId], activeDayShift?.pricesAtStart?.[disp.fuelType]);
+                        if (est) return <p className="text-xs text-amber-600">Est. expected: ₦{fmt(est.amount)} <span className="text-gray-400">(from meter)</span></p>;
+                        return <p className="text-xs text-gray-400">No sales recorded yet</p>;
+                      })()}
                     </div>
                     <button
                       onClick={() => setExpandedId(isOpen ? null : disp.dispenserId)}
@@ -388,6 +421,8 @@ export default function RecordPaymentsPage() {
                     <CollectionForm
                       dispenser={disp}
                       salesEntry={salesByDispenser[disp.dispenserId] || null}
+                      meterReading={metersByDispenser[disp.dispenserId] || null}
+                      pricePerLiter={activeDayShift?.pricesAtStart?.[disp.fuelType]}
                       activeDayShift={activeDayShift}
                       onSubmitted={() => { setExpandedId(null); loadData(); }}
                     />
@@ -466,6 +501,8 @@ export default function RecordPaymentsPage() {
                           <CollectionForm
                             dispenser={disp}
                             salesEntry={salesByDispenser[disp.dispenserId] || null}
+                            meterReading={metersByDispenser[disp.dispenserId] || null}
+                            pricePerLiter={activeDayShift?.pricesAtStart?.[disp.fuelType]}
                             activeDayShift={activeDayShift}
                             onSubmitted={() => { setExpandedId(null); loadData(); }}
                           />
