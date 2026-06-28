@@ -44,7 +44,7 @@ function EndDayPageContent() {
 
   useEffect(() => {
     if (session?.user) fetchData();
-  }, [session]);
+  }, [session, activeStationId]);
 
   const fetchData = async () => {
     if (!activeStationId) return;

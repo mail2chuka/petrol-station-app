@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import Attendant from '@/models/Attendant';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { extractAttendantHrFields } from '@/lib/hr';
 
 // PATCH /api/attendants/[id] — update name, phone, or status
 export async function PATCH(request, { params }) {
@@ -25,6 +26,12 @@ export async function PATCH(request, { params }) {
     if (name !== undefined) attendant.name = name.trim();
     if (phone !== undefined) attendant.phone = phone.trim();
     if (isActive !== undefined) attendant.isActive = Boolean(isActive);
+
+    // Apply any HR profile fields present in the body
+    const hrFields = extractAttendantHrFields(body);
+    for (const [k, v] of Object.entries(hrFields)) {
+      attendant[k] = v;
+    }
 
     await attendant.save();
     return NextResponse.json({ attendant });

@@ -623,7 +623,9 @@ export default function StationsPage() {
   const columns = [
     { header: 'Station', render: (row) => (
       <div>
-        <p className="font-semibold text-gray-900">{row.name}</p>
+        <Link href={`/admin/stations/${row._id}`} className="font-semibold text-gray-900 hover:text-ecana-maroon hover:underline">
+          {row.name}
+        </Link>
         <p className="text-xs text-gray-500">{row.code} • {row.location}</p>
       </div>
     )},
@@ -681,10 +683,10 @@ export default function StationsPage() {
       render: (row) => (
         <div className="flex flex-wrap gap-2 max-w-full">
           <Link
-            href={`/manager?stationId=${row._id}`}
-            className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-xs font-semibold border border-ecana-blue/30 text-ecana-blue hover:bg-ecana-blue/10 transition-colors"
+            href={`/admin/stations/${row._id}`}
+            className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-xs font-semibold border border-ecana-maroon/30 text-ecana-maroon hover:bg-ecana-maroon/10 transition-colors"
           >
-            Manage
+            Properties
           </Link>
           <Button size="sm" variant="outline" onClick={() => openPriceEditor(row)}>
             Set Prices

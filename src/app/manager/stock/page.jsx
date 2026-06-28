@@ -44,7 +44,7 @@ function ReceiveStockPageContent() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  useEffect(() => { fetchStation(); }, [session]);
+  useEffect(() => { fetchStation(); }, [activeStationId]);
 
   const fetchStation = async () => {
     if (!activeStationId) return;

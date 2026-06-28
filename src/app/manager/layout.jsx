@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from 'next-auth/react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Suspense, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
@@ -19,15 +19,29 @@ const managerMenuItems = [
   { label: 'End Day', href: '/manager/end-day' },
   { label: 'Stock In', href: '/manager/stock' },
   { label: 'Closing Stock', href: '/manager/closing-stock' },
-  { label: 'Reports', href: '/manager/reports' },
+
 ];
 
 function ManagerLayoutContent({ children }) {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const stationId = searchParams.get('stationId');
   const isAdmin = session?.user?.role === 'admin';
+
+  // Keep the admin's selected station sticky across navigation. If a link ever
+  // drops ?stationId=, restore it from the last selection so manager pages
+  // (stock, begin-day, etc.) don't lose their data context.
+  useEffect(() => {
+    if (!isAdmin || typeof window === 'undefined') return;
+    if (stationId) {
+      sessionStorage.setItem('admin.activeStationId', stationId);
+    } else {
+      const stored = sessionStorage.getItem('admin.activeStationId');
+      if (stored) router.replace(`${pathname}?stationId=${stored}`);
+    }
+  }, [isAdmin, stationId, pathname, router]);
 
   const menuItems = isAdmin && stationId
     ? managerMenuItems.map((item) => ({

@@ -6,6 +6,7 @@ import { requireAdmin, requireAuth } from '@/lib/auth';
 import { userSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES } from '@/lib/constants';
+import { extractUserHrFields } from '@/lib/hr';
 
 function slugifyLoginId(input) {
   const normalized = String(input || '')
@@ -133,6 +134,7 @@ export async function POST(request) {
     // Create user
     const user = await User.create({
       ...validatedData,
+      ...extractUserHrFields(body),
       email: validatedData.email.toLowerCase(),
       loginId: finalLoginId,
       stationName,

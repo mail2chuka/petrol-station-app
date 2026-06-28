@@ -70,7 +70,7 @@ function ManagerDashboardContent() {
 
   useEffect(() => {
     fetchData();
-  }, [session]);
+  }, [session, activeStationId]);
 
   const fetchData = async () => {
     if (!activeStationId) return;

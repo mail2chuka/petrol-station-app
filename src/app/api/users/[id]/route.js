@@ -4,6 +4,7 @@ import User from '@/models/User';
 import { requireAdmin } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES } from '@/lib/constants';
+import { extractUserHrFields } from '@/lib/hr';
 
 // GET /api/users/[id] - Get user by ID
 export async function GET(request, { params }) {
@@ -84,6 +85,12 @@ export async function PATCH(request, { params }) {
       }
     }
     if (isActive !== undefined) user.isActive = isActive;
+
+    // Apply any HR profile fields present in the body
+    const hrFields = extractUserHrFields(body);
+    for (const [k, v] of Object.entries(hrFields)) {
+      user[k] = v;
+    }
 
     const hasInvalidRole = !allowedRoles.includes(user.role);
     await user.save({ validateBeforeSave: !hasInvalidRole });

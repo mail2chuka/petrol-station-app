@@ -57,6 +57,16 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // ── HR profile (optional) ──────────────────────────────────────────────
+    phone: { type: String, trim: true, default: '' },
+    address: { type: String, trim: true, default: '' },
+    dateOfBirth: { type: Date, default: null },
+    gender: { type: String, enum: ['male', 'female', 'other', ''], default: '' },
+    photoUrl: { type: String, trim: true, default: '' },
+    position: { type: String, trim: true, default: '' }, // Job title, distinct from auth role
+    employeeId: { type: String, trim: true, default: '' }, // HR staff/employee number
+    employmentDate: { type: Date, default: null },
+    employmentType: { type: String, enum: ['full_time', 'part_time', 'contract', ''], default: '' },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

@@ -28,7 +28,7 @@ function BeginDayPageContent() {
   const [zeroStockWarning, setZeroStockWarning] = useState(null);
   const [pendingSubmit, setPendingSubmit] = useState(null);
 
-  useEffect(() => { fetchData(); }, [session]);
+  useEffect(() => { fetchData(); }, [activeStationId]);
 
   const fetchData = async () => {
     if (!activeStationId) return;

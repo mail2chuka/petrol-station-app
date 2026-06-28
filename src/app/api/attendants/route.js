@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import Attendant from '@/models/Attendant';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { extractAttendantHrFields } from '@/lib/hr';
 
 // GET /api/attendants?stationId=&includeInactive=true
 export async function GET(request) {
@@ -66,6 +67,7 @@ export async function POST(request) {
       isActive: true,
       createdById: currentUser.id,
       createdByName: currentUser.name,
+      ...extractAttendantHrFields(body),
     });
 
     return NextResponse.json({ attendant }, { status: 201 });
