@@ -1,8 +1,6 @@
 import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import bcrypt from 'bcryptjs';
 import connectFuelDB from '@/lib/db-fuel';
-import connectMaterialsDB from '@/lib/db-materials';
 import User from '@/models/User';
 
 const AUTH_LOGIN_MODE = (process.env.AUTH_LOGIN_MODE || 'both').toLowerCase();
@@ -34,18 +32,15 @@ function buildIdentifierQuery(identifier) {
   return { loginId: identifier };
 }
 
-function normalizeAuthUser(user, business) {
+function normalizeAuthUser(user) {
   return {
     id: user._id?.toString() || user.id?.toString(),
     email: user.email,
     loginId: user.loginId,
     name: user.name,
     role: user.role,
-    business,
     stationId: user.stationId?.toString(),
     stationName: user.stationName,
-    // For materials customer accounts — used to scope their own data
-    customerId: user.customerId?.toString(),
   };
 }
 
@@ -56,7 +51,7 @@ async function tryFuelLogin(identifier, password) {
   const user = await User.findOne(query).select('+password');
 
   if (!user) {
-    return null; // Not in fuel DB — caller will try materials
+    return null;
   }
 
   if (user.isActive === false) {
@@ -65,41 +60,10 @@ async function tryFuelLogin(identifier, password) {
 
   const isPasswordValid = await user.comparePassword(password);
   if (!isPasswordValid) {
-    return null; // Wrong password — allow materials fallthrough for dual-account owners
-  }
-
-  return normalizeAuthUser(user, 'fuel');
-}
-
-async function tryMaterialsLogin(identifier, password) {
-  if (!process.env.MONGODB_URI_MATERIALS) {
     return null;
   }
 
-  try {
-    const materialsConn = await connectMaterialsDB();
-    const query = buildIdentifierQuery(identifier);
-    const user = await materialsConn.db.collection('users').findOne(query);
-
-    if (!user) return null;
-
-    if (user.isActive === false) {
-      throw new Error('Account deactivated. Contact your administrator.');
-    }
-
-    if (!user.password) return null;
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) return null;
-
-    return normalizeAuthUser(user, 'materials');
-  } catch (error) {
-    if (error.message === 'Account deactivated. Contact your administrator.') {
-      throw error;
-    }
-    console.error('Materials login fallback failed:', error);
-    return null;
-  }
+  return normalizeAuthUser(user);
 }
 
 export const authOptions = {
@@ -119,14 +83,8 @@ export const authOptions = {
         const identifier = normalizeIdentifier(identifierInput);
         const password = credentials.password;
 
-        // Fuel DB is the primary source. tryFuelLogin throws if email is found
-        // but credentials are invalid — preventing fallthrough to materials.
-        const fuelUser = await tryFuelLogin(identifier, password);
-        if (fuelUser) return fuelUser;
-
-        // Email not found in fuel DB — try materials DB (if configured).
-        const materialsUser = await tryMaterialsLogin(identifier, password);
-        if (materialsUser) return materialsUser;
+        const user = await tryFuelLogin(identifier, password);
+        if (user) return user;
 
         throw new Error('Invalid login credentials');
       },
@@ -138,10 +96,8 @@ export const authOptions = {
         token.id = user.id;
         token.loginId = user.loginId;
         token.role = user.role;
-        token.business = user.business || 'fuel';
         token.stationId = user.stationId;
         token.stationName = user.stationName;
-        token.customerId = user.customerId;
       }
       return token;
     },
@@ -150,10 +106,8 @@ export const authOptions = {
         session.user.id = token.id;
         session.user.loginId = token.loginId;
         session.user.role = token.role;
-        session.user.business = token.business || 'fuel';
         session.user.stationId = token.stationId;
         session.user.stationName = token.stationName;
-        session.user.customerId = token.customerId;
       }
       return session;
     },

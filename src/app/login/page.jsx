@@ -79,14 +79,13 @@ export default function LoginPage() {
 
             {/* Description */}
             <p className="text-lg text-white/70 mb-10 leading-relaxed">
-              Your unified platform for managing all Ecana Group businesses — fuel stations, materials supply, and more.
+              Your platform for managing Ecana Group fuel station operations — sales, stock, and reporting.
             </p>
 
             {/* Features */}
             <div className="space-y-4">
               {[
                 { icon: '⛽', text: 'Fuel station operations & sales' },
-                { icon: '🏪', text: 'Materials & supplies management' },
                 { icon: '📊', text: 'Real-time reports & analytics' },
                 { icon: '👥', text: 'Multi-role access across all units' },
               ].map((feature, index) => (

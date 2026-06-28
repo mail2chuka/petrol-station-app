@@ -46,7 +46,6 @@ async function backfillForCollection(label, collection) {
 
 async function run() {
   const fuelUri = process.env.MONGODB_URI_FUEL || process.env.MONGODB_URI;
-  const materialsUri = process.env.MONGODB_URI_MATERIALS;
 
   if (!fuelUri) {
     throw new Error('Missing fuel DB URI (MONGODB_URI_FUEL or MONGODB_URI)');
@@ -57,14 +56,6 @@ async function run() {
   const fuelConn = await mongoose.createConnection(fuelUri).asPromise();
   total += await backfillForCollection('Fuel users', fuelConn.db.collection('users'));
   await fuelConn.close();
-
-  if (materialsUri) {
-    const materialsConn = await mongoose.createConnection(materialsUri).asPromise();
-    total += await backfillForCollection('Materials users', materialsConn.db.collection('users'));
-    await materialsConn.close();
-  } else {
-    console.log('Materials DB URI not set; skipped materials backfill.');
-  }
 
   console.log(`Done. Total users updated: ${total}`);
 }

@@ -9,7 +9,6 @@
     "lint": "eslint .",
     "seed": "node scripts/seed-admin.mjs",
     "seed:fuel": "node scripts/seed-admin.mjs",
-    "seed:materials": "node scripts/seed-materials.mjs",
     "backfill:login-ids": "node scripts/backfill-login-ids.mjs"
   },
   "dependencies": {

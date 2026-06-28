@@ -2,14 +2,13 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import MobileTabBar from '@/components/MobileTabBar';
 import Loading from '@/components/Loading';
 
-const fuelAdminMenuItems = [
+const adminMenuItems = [
   { label: 'Dashboard', href: '/admin' },
   { label: 'Stations', href: '/admin/stations' },
   { label: 'Price Changes', href: '/admin/price-approvals' },
@@ -20,25 +19,13 @@ const fuelAdminMenuItems = [
   { label: 'Flags', href: '/admin/flags' },
   { label: 'Audit Logs', href: '/admin/audit' },
   { label: 'Reset Data', href: '/admin/reset' },
-  { label: 'Switch Business', href: '/select-business' },
-];
-
-const materialsAdminMenuItems = [
-  { label: 'Dashboard', href: '/admin/materials' },
-  { label: 'Customers', href: '/admin/materials/customers' },
-  { label: 'Products', href: '/admin/materials/products' },
-  { label: 'Staff', href: '/admin/materials/staff' },
-  { label: 'Orders', href: '/admin/materials/orders' },
-  { label: 'Switch Business', href: '/select-business' },
 ];
 
 export default function AdminLayout({ children }) {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const pathname = usePathname();
 
-  const menuItems =
-    pathname?.startsWith('/admin/materials') ? materialsAdminMenuItems : fuelAdminMenuItems;
+  const menuItems = adminMenuItems;
 
   useEffect(() => {
     if (status === 'loading') return;

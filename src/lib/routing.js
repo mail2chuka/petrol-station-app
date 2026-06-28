@@ -3,27 +3,11 @@ export function getDefaultRouteForUser(user) {
     return '/login';
   }
 
-  const business = user.business || 'fuel';
   const role = user.role;
 
-  if (role === 'admin') {
-    return '/select-business';
-  }
-
-  if (business === 'materials') {
-    switch (role) {
-      case 'staff':
-        return '/materials/staff';
-      case 'auditor':
-        return '/materials/auditor';
-      case 'customer':
-        return '/materials/customer';
-      default:
-        return '/login';
-    }
-  }
-
   switch (role) {
+    case 'admin':
+      return '/admin';
     case 'manager':
       return '/manager';
     case 'cashier':
