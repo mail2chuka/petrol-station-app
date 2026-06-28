@@ -102,7 +102,7 @@ function SummaryBookContent() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
-                  {['Date','Product','Opening Stock (L)','Stock In (L)','Tolerance (L)','Exp. Tolerance (L)','Sales (L)','Price/L (₦)','Sales Amount (₦)','Shortage Recorded (L)','Closing Stock (L)'].map(h => (
+                  {['Date','Product','Opening Stock (L)','Stock In (L)','Tolerance (L)','Sales (L)','Price/L (₦)','Sales Amount (₦)','Shortage Recorded (L)','Closing Stock (L)'].map(h => (
                     <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -123,9 +123,6 @@ function SummaryBookContent() {
                         <span className={`block font-medium text-gray-700`}>
                           {overage > 0 ? `+${fmtNum(overage)}` : '—'}
                         </span>
-                      </td>
-                      <td className={`px-3 py-2.5 ${isFlagged ? 'bg-amber-50 text-amber-800 font-semibold' : 'text-gray-700'}`}>
-                        {fmtNum(expTol)}{isFlagged && <span className="ml-1 text-amber-600">⚠</span>}
                       </td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.sales)}</td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.priceForDay)}</td>
