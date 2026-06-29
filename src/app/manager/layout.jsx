@@ -17,7 +17,7 @@ const managerMenuItems = [
   { label: 'Cashier Entries', href: '/manager/cashier-entries' },
   { label: 'Summary Book', href: '/manager/summary-book' },
   { label: 'End Day', href: '/manager/end-day' },
-  { label: 'Stock In', href: '/manager/stock' },
+  { label: 'Truck Offload', href: '/manager/stock' },
   { label: 'Closing Stock', href: '/manager/closing-stock' },
 
 ];

@@ -11,6 +11,7 @@ import Loading from '@/components/Loading';
 const adminMenuItems = [
   { label: 'Dashboard', href: '/admin' },
   { label: 'Stations', href: '/admin/stations' },
+  { label: 'Trucks', href: '/admin/trucks' },
   { label: 'Price Changes', href: '/admin/price-approvals' },
   { label: 'Users', href: '/admin/users' },
   { label: 'Staff', href: '/admin/staff' },

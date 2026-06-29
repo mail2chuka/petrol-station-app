@@ -413,12 +413,19 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
 
   if (!report) return (
     <div className="text-center py-16 text-gray-400">
-      <p className="text-base font-medium">No day shift found for this date.</p>
+      <p className="text-base font-medium">No data recorded for this date.</p>
     </div>
   );
 
+  const noShift = !report.dayShift;
+
   return (
     <div className="space-y-4">
+      {noShift && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">
+          No active day shift was started for this day. Balances, deliveries, collections and bank deposits are still shown below.
+        </div>
+      )}
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {Object.entries(s.totalSales).filter(([, v]) => v.liters > 0 || v.amount > 0).map(([fuel, v]) => (
@@ -476,6 +483,12 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
       {/* ── MANAGER INPUTS ── */}
       {activeSection === 'manager' && (
         <div className="space-y-4">
+          {noShift ? (
+            <Card title="Day Shift">
+              <p className="text-sm text-gray-500">No active day shift was started for this day. Any deliveries, collections and bank deposits are shown under the Supervisor and Cashier tabs.</p>
+            </Card>
+          ) : (
+          <>
           <Card title="Day Shift Info">
             <dl className="space-y-2 text-sm">
               <Row label="Status" value={<Pill status={report.dayShift.status === 'in_progress' ? 'pending' : 'approved'} />} />
@@ -524,6 +537,8 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
               </table>
             </div>
           </Card>
+          </>
+          )}
         </div>
       )}
 
@@ -707,6 +722,38 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
                 </div>
               </Card>
             )}
+
+            {/* ── Truck Deliveries (offloads) ── */}
+            {(() => {
+              const offloads = (report.stockMovements || []).filter((m) => m.isOffload);
+              if (offloads.length === 0) return null;
+              return (
+                <Card title="Truck Deliveries">
+                  <div className="overflow-auto max-h-[350px]">
+                    <table className="w-full">
+                      <thead><tr><TH>Truck</TH><TH>Driver</TH><TH>Fuel</TH><TH>Declared (L)</TH><TH>Offloaded (L)</TH><TH>Shortage / Excess</TH></tr></thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {offloads.map((m, i) => {
+                          const v = m.offloadVariance ?? 0;
+                          return (
+                            <tr key={m._id || i}>
+                              <TD className="font-medium">{m.truckPlate || '—'}</TD>
+                              <TD>{m.driverName || '—'}</TD>
+                              <TD>{m.fuelType}</TD>
+                              <TD>{fmtNum(m.declaredLoad)}</TD>
+                              <TD>{fmtNum(m.actualOffloaded)}</TD>
+                              <td className={`px-4 py-2.5 text-sm font-medium ${v < 0 ? 'text-amber-700' : v > 0 ? 'text-blue-700' : 'text-gray-400'}`}>
+                                {v === 0 ? '—' : `${v < 0 ? 'Shortage ' : 'Excess '}${fmtNum(Math.abs(v))} L`}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              );
+            })()}
           </div>
         );
       })()}
@@ -839,19 +886,22 @@ function SummaryListView({ stationId, onSelectDay }) {
   // Use API's pre-computed overage/shortage (already mutually exclusive per row)
   const computedRows = rows.filter(r => !selectedFuel || r.product === selectedFuel).map(r => {
     const overage = r.overage ?? 0;
-    const shortage = r.shortage ?? 0;
+    const shortage = r.shortage ?? 0;                       // combined (sales + delivery)
+    const salesShortage = r.salesShortage ?? r.shortage ?? 0; // sales reconciliation only
+    const deliveryShortage = r.deliveryShortage ?? 0;
     const expTol = r.expectedTolerance ?? 0;
     const sales = r.sales ?? 0;
     const salesAmount = (r.priceForDay ?? 0) * sales;
-    return { ...r, overage, shortage, expTol, salesAmount, sales };
+    return { ...r, overage, shortage, salesShortage, deliveryShortage, expTol, salesAmount, sales };
   });
 
-  const totalSales      = computedRows.reduce((s, r) => s + r.sales, 0);
-  const totalSalesAmt   = computedRows.reduce((s, r) => s + r.salesAmount, 0);
-  const totalOverage    = computedRows.reduce((s, r) => s + r.overage, 0);
-  const totalShortage   = computedRows.reduce((s, r) => s + r.shortage, 0);
-  const totalStockIn    = computedRows.reduce((s, r) => s + (r.stockIn ?? 0), 0);
-  const totalExpTol     = computedRows.reduce((s, r) => s + r.expTol, 0);
+  const totalSales        = computedRows.reduce((s, r) => s + r.sales, 0);
+  const totalSalesAmt     = computedRows.reduce((s, r) => s + r.salesAmount, 0);
+  const totalOverage      = computedRows.reduce((s, r) => s + r.overage, 0);
+  const totalShortage     = computedRows.reduce((s, r) => s + r.shortage, 0);          // Shortage column
+  const totalSalesShortage = computedRows.reduce((s, r) => s + r.salesShortage, 0);    // Tolerance column math
+  const totalStockIn      = computedRows.reduce((s, r) => s + (r.stockIn ?? 0), 0);
+  const totalExpTol       = computedRows.reduce((s, r) => s + r.expTol, 0);
 
   // Per-product breakdown for the Totals row (only used when >1 product is present)
   const totalProducts = [...new Set(computedRows.map(r => r.product).filter(Boolean))];
@@ -860,12 +910,13 @@ function SummaryListView({ stationId, onSelectDay }) {
   totalProducts.forEach(p => {
     const pr = computedRows.filter(r => r.product === p);
     byProduct[p] = {
-      sales:       pr.reduce((s, r) => s + r.sales, 0),
-      salesAmount: pr.reduce((s, r) => s + r.salesAmount, 0),
-      overage:     pr.reduce((s, r) => s + r.overage, 0),
-      shortage:    pr.reduce((s, r) => s + r.shortage, 0),
-      stockIn:     pr.reduce((s, r) => s + (r.stockIn ?? 0), 0),
-      expTol:      pr.reduce((s, r) => s + r.expTol, 0),
+      sales:        pr.reduce((s, r) => s + r.sales, 0),
+      salesAmount:  pr.reduce((s, r) => s + r.salesAmount, 0),
+      overage:      pr.reduce((s, r) => s + r.overage, 0),
+      shortage:     pr.reduce((s, r) => s + r.shortage, 0),
+      salesShortage: pr.reduce((s, r) => s + r.salesShortage, 0),
+      stockIn:      pr.reduce((s, r) => s + (r.stockIn ?? 0), 0),
+      expTol:       pr.reduce((s, r) => s + r.expTol, 0),
     };
   });
 
@@ -935,10 +986,10 @@ function SummaryListView({ stationId, onSelectDay }) {
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
                       <td className="px-4 py-2.5 text-sm text-gray-700">
-                        {r.sales > 0 ? signedAbs(r.overage - r.shortage) : '—'}
+                        {r.sales > 0 ? signedAbs(r.overage - r.salesShortage) : '—'}
                         {r.sales > 0 && (
-                          <span className={`block text-xs font-medium ${((r.overage - r.shortage) - r.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {signedAbs((r.overage - r.shortage) - r.expTol)} ({(r.tolerancePercent ?? ((r.expTol / r.sales) * 100)).toFixed(1)}%)
+                          <span className={`block text-xs font-medium ${((r.overage - r.salesShortage) - r.expTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {signedAbs((r.overage - r.salesShortage) - r.expTol)} ({(r.tolerancePercent ?? ((r.expTol / r.sales) * 100)).toFixed(1)}%)
                           </span>
                         )}
                       </td>
@@ -971,7 +1022,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                     {multiProduct ? (
                       totalProducts.map(p => {
                         const b = byProduct[p];
-                        const variance = b.overage - b.shortage;
+                        const variance = b.overage - b.salesShortage;
                         return (
                           <span key={p} className="block mb-1 last:mb-0">
                             <span className="text-gray-700">
@@ -989,11 +1040,11 @@ function SummaryListView({ stationId, onSelectDay }) {
                     ) : (
                       <>
                         <span className="text-gray-700">
-                          {totalSales > 0 ? signedAbs(totalOverage - totalShortage) : '—'}
+                          {totalSales > 0 ? signedAbs(totalOverage - totalSalesShortage) : '—'}
                         </span>
                         {totalSales > 0 && (
-                          <span className={`block text-xs font-medium ${((totalOverage - totalShortage) - totalExpTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {signedAbs((totalOverage - totalShortage) - totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(1)}%)
+                          <span className={`block text-xs font-medium ${((totalOverage - totalSalesShortage) - totalExpTol) >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {signedAbs((totalOverage - totalSalesShortage) - totalExpTol)} ({((totalExpTol / totalSales) * 100).toFixed(1)}%)
                           </span>
                         )}
                       </>

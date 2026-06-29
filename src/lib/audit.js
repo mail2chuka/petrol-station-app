@@ -55,4 +55,5 @@ export const AUDIT_RESOURCES = {
   PAYMENT_RECORD: 'payment_record',
   STOCK_MOVEMENT: 'stock_movement',
   PRICE: 'price',
+  TRUCK: 'truck',
 };

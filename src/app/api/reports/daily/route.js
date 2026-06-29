@@ -35,22 +35,17 @@ export async function GET(request) {
     const startDate = new Date(date + 'T00:00:00.000Z');
     const endDate = new Date(date + 'T23:59:59.999Z');
 
+    // A day shift is optional — deliveries, cash collections and bank deposits can
+    // happen on days with no shift. We still report whatever data exists for the date.
     const dayShift = await DayShift.findOne({
       stationId,
       date: { $gte: startDate, $lte: endDate },
     });
 
-    if (!dayShift) {
-      return NextResponse.json(
-        { error: 'No day shift found for this date' },
-        { status: 404 }
-      );
-    }
-
-    // Always compute live from entries (works for both in-progress and ended shifts)
+    // Fetch by date (not dayShiftId) so records show with or without a shift.
     const [salesEntries, paymentRecords, meterReadings, tankStockEntries, stockMovements] = await Promise.all([
-      SalesEntry.find({ dayShiftId: dayShift._id }).sort({ createdAt: 1 }),
-      PaymentRecord.find({ dayShiftId: dayShift._id }).sort({ createdAt: 1 }),
+      SalesEntry.find({ stationId, date: { $gte: startDate, $lte: endDate } }).sort({ createdAt: 1 }),
+      PaymentRecord.find({ stationId, date: { $gte: startDate, $lte: endDate } }).sort({ createdAt: 1 }),
       MeterReading.find({ stationId, date: { $gte: startDate, $lte: endDate } }),
       TankStockEntry.find({ stationId, date: { $gte: startDate, $lte: endDate } }),
       StockMovement.find({ stationId, movementType: 'receipt', date: { $gte: startDate, $lte: endDate } }),
@@ -133,8 +128,9 @@ export async function GET(request) {
       stockMovements,
       stockInByTank,
       supervisorSummaries: Object.values(supervisorMap),
+      hasShift: Boolean(dayShift),
       summary: {
-        status: dayShift.status,
+        status: dayShift ? dayShift.status : 'no_shift',
         totalSales,
         totalPayments,
         expectedAmount,

@@ -14,6 +14,7 @@ import connectDB from '@/lib/db';
 import DayShift from '@/models/DayShift';
 import SalesEntry from '@/models/SalesEntry';
 import StockMovement from '@/models/StockMovement';
+import MeterReading from '@/models/MeterReading';
 import TankStockEntry from '@/models/TankStockEntry';
 import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
@@ -30,7 +31,7 @@ async function buildRows(stationId, from, to) {
   const { start, end } = buildDateRange(from, to);
   const stationObjectId = new mongoose.Types.ObjectId(stationId);
 
-  const [station, dayShifts, sales, stockIns, tankEntries] = await Promise.all([
+  const [station, dayShifts, sales, stockIns, readings, tankEntries] = await Promise.all([
     Station.findById(stationId).lean(),
     DayShift.aggregate([
       { $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } },
@@ -40,6 +41,7 @@ async function buildRows(stationId, from, to) {
     StockMovement.aggregate([
       { $match: { stationId: stationObjectId, movementType: 'receipt', date: { $gte: start, $lte: end } } },
     ]),
+    MeterReading.aggregate([{ $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } }]),
     TankStockEntry.aggregate([{ $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } }]),
   ]);
 
@@ -64,17 +66,31 @@ async function buildRows(stationId, from, to) {
     const daySales = sales.filter(
       (s) => new Date(s.date).toISOString().split('T')[0] === dayKey
     );
+    const dayReadings = readings.filter(
+      (r) => new Date(r.date).toISOString().split('T')[0] === dayKey
+    );
+
+    // Per-pump sales: prefer SalesEntry, else fall back to meter net.
+    const dispenserSales = {};
+    for (const sale of daySales) {
+      dispenserSales[sale.dispenserId] = (dispenserSales[sale.dispenserId] || 0) + sale.liters;
+    }
+    for (const r of dayReadings) {
+      if (dispenserSales[r.pumpId] == null && r.closing != null) {
+        dispenserSales[r.pumpId] = Math.max(0, (r.closing || 0) - (r.opening || 0) - (r.rtt || 0));
+      }
+    }
 
     // Attribute sales to specific tanks using pump→tank mapping
     const salesByTank = {};
     const salesByFuelFallback = {};
-    for (const sale of daySales) {
-      const tankId = pumpTankMap[sale.dispenserId];
+    for (const [dispenserId, liters] of Object.entries(dispenserSales)) {
+      const tankId = pumpTankMap[dispenserId];
       if (tankId) {
-        salesByTank[tankId] = (salesByTank[tankId] || 0) + sale.liters;
+        salesByTank[tankId] = (salesByTank[tankId] || 0) + liters;
       } else {
-        const ft = sale.fuelType || pumpFuelTypeMap[sale.dispenserId];
-        if (ft) salesByFuelFallback[ft] = (salesByFuelFallback[ft] || 0) + sale.liters;
+        const ft = pumpFuelTypeMap[dispenserId];
+        if (ft) salesByFuelFallback[ft] = (salesByFuelFallback[ft] || 0) + liters;
       }
     }
 

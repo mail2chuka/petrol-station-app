@@ -61,6 +61,25 @@ const stockMovementSchema = new mongoose.Schema(
           },
         },
       ],
+    // ── Truck offload (receipt via a registered truck) ──────────────────────
+    isOffload: { type: Boolean, default: false, index: true },
+    truckId: { type: mongoose.Schema.Types.ObjectId, ref: 'Truck', index: true },
+    truckPlate: { type: String },          // snapshot
+    driverName: { type: String },          // snapshot (actual driver for this trip)
+    driverPhone: { type: String },         // snapshot
+    declaredLoad: { type: Number },        // litres declared on the depot waybill
+    actualOffloaded: { type: Number },     // Σ of per-tank (closing − opening)
+    offloadVariance: { type: Number },     // actualOffloaded − declaredLoad (− = shortage, + = excess)
+    // Per-tank dipstick detail for the offload
+    offloadDistribution: [
+      {
+        tankId: { type: String, required: true },
+        tankLabel: { type: String, default: '' },
+        openingDip: { type: Number, required: true, min: 0 },
+        closingDip: { type: Number, required: true, min: 0 },
+        offloaded: { type: Number, required: true },
+      },
+    ],
     // For receipts
     costPerLiter: {
       type: Number,

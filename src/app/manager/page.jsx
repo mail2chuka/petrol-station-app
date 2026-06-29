@@ -143,11 +143,17 @@ function ManagerDashboardContent() {
     ? station.availableProducts
     : ['PMS', 'AGO'];
 
-  // Group last closings by product for the stock modal
-  const closingsByProduct = {};
+  // Latest measured level per tank (from last closing dipstick) for the stock modal
+  const closingByTankId = {};
   for (const t of stockModalClosings) {
-    if (!closingsByProduct[t.product]) closingsByProduct[t.product] = [];
-    closingsByProduct[t.product].push(t);
+    closingByTankId[t.tankId] = t;
+  }
+  // All active tanks grouped by product (so every tank shows, even without a reading)
+  const tanksByProduct = {};
+  for (const tank of (station?.tanks || [])) {
+    if (tank.isActive === false) continue;
+    if (!tanksByProduct[tank.product]) tanksByProduct[tank.product] = [];
+    tanksByProduct[tank.product].push(tank);
   }
 
   // Dispenser modal data — index readings by pumpId
@@ -169,7 +175,7 @@ function ManagerDashboardContent() {
             <div className="bg-slate-700 p-4 text-white">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold opacity-80 uppercase tracking-wide">Last Closing Dipstick Per Tank</p>
+                  <p className="text-xs font-semibold opacity-80 uppercase tracking-wide">Current Level Per Tank</p>
                   <p className="text-xl font-black">Fuel Stock</p>
                   <p className="text-xs opacity-70 mt-0.5">{station?.name}</p>
                 </div>
@@ -182,50 +188,63 @@ function ManagerDashboardContent() {
                 <div className="flex items-center justify-center py-10">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600" />
                 </div>
-              ) : stockModalClosings.length === 0 ? (
+              ) : (station?.tanks || []).filter(t => t.isActive !== false).length === 0 ? (
                 <div className="text-center py-10">
                   <p className="text-4xl mb-2">🛢️</p>
-                  <p className="text-gray-600 font-semibold">No closing dipstick readings on record</p>
-                  <p className="text-xs text-gray-400 mt-1">Entered by supervisors via Tank Dipstick</p>
+                  <p className="text-gray-600 font-semibold">No tanks configured for this station</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {availableProducts.map(product => {
-                    const tanks = closingsByProduct[product] || [];
+                    const tanks = tanksByProduct[product] || [];
                     const colors = PRODUCT_COLORS[product] || PRODUCT_COLORS.PMS;
+                    if (tanks.length === 0) return null;
                     return (
                       <div key={product}>
-                        <p className={`text-xs font-bold uppercase tracking-wide mb-2 ${colors.text.replace('bg-clip-text bg-gradient-to-br', '').trim()} text-slate-600`}>
+                        <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-600">
                           {PRODUCT_LABELS[product] || product}
                         </p>
-                        {tanks.length === 0 ? (
-                          <p className="text-xs text-gray-400 italic px-2">No closing reading recorded</p>
-                        ) : (
-                          <div className="space-y-2">
-                            {tanks.map(t => (
-                              <div key={t.tankId} className={`rounded-xl border border-slate-200 overflow-hidden`}>
+                        <div className="space-y-2">
+                          {tanks.map(tank => {
+                            const reading = closingByTankId[tank._id];
+                            const level = reading?.closingStockMeasured;
+                            const cap = Number(tank.capacity || 0);
+                            const pct = cap > 0 && level != null ? Math.min(100, Math.max(0, (level / cap) * 100)) : null;
+                            return (
+                              <div key={tank._id} className="rounded-xl border border-slate-200 overflow-hidden">
                                 <div className={`px-4 py-2 ${colors.badge} font-semibold text-sm flex items-center justify-between`}>
-                                  <span>{t.tankLabel}</span>
-                                  <span className="text-xs font-normal opacity-70">
-                                    {new Date(t.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                  </span>
+                                  <span>{tank.label}</span>
+                                  <span className="text-xs font-normal opacity-70">cap {cap.toLocaleString()}L</span>
                                 </div>
-                                <div className="grid grid-cols-2 divide-x divide-slate-100 bg-white">
-                                  <div className="p-3 text-center">
-                                    <p className="text-xs text-gray-500 font-semibold mb-1">Last Closing</p>
-                                    <p className="text-xl font-black text-gray-800">
-                                      {Number(t.closingStockMeasured).toLocaleString('en-NG', { maximumFractionDigits: 1 })}L
+                                <div className="bg-white p-3">
+                                  <div className="flex items-end justify-between mb-2">
+                                    <div>
+                                      <p className="text-xs text-gray-500 font-semibold">Current level</p>
+                                      <p className="text-2xl font-black text-gray-800">
+                                        {level != null ? `${Number(level).toLocaleString('en-NG', { maximumFractionDigits: 1 })}L` : '—'}
+                                      </p>
+                                    </div>
+                                    {pct != null && (
+                                      <p className="text-sm font-bold text-gray-500">{pct.toFixed(0)}% full</p>
+                                    )}
+                                  </div>
+                                  {pct != null ? (
+                                    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                                      <div className="h-full rounded-full bg-slate-600" style={{ width: `${pct}%` }} />
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-gray-400 italic">No dipstick reading yet</p>
+                                  )}
+                                  {reading?.date && (
+                                    <p className="text-[11px] text-gray-400 mt-1.5">
+                                      as of {new Date(reading.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
                                     </p>
-                                  </div>
-                                  <div className="p-3 text-center">
-                                    <p className="text-xs text-gray-500 font-semibold mb-1">Entered By</p>
-                                    <p className="text-sm font-semibold text-gray-700">{t.supervisorName || '—'}</p>
-                                  </div>
+                                  )}
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        )}
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })}

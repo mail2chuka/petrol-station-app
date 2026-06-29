@@ -70,6 +70,23 @@ export async function GET(request) {
     }
 
     const rows = [];
+    const emitted = new Set(); // `${dayKey}:${fuelType}` rows already produced
+
+    // Truck-offload delivery shortage/excess per day & product (from receipts
+    // flagged isOffload). Accumulates whether or not a day shift exists.
+    const deliveryByDayProduct = {};
+    for (const m of stockIns) {
+      if (!m.isOffload) continue;
+      const dk = new Date(m.date).toISOString().split('T')[0];
+      const ft = m.fuelType;
+      const v = m.offloadVariance ?? 0;
+      if (!deliveryByDayProduct[dk]) deliveryByDayProduct[dk] = {};
+      if (!deliveryByDayProduct[dk][ft]) deliveryByDayProduct[dk][ft] = { shortage: 0, excess: 0, offloaded: 0 };
+      const slot = deliveryByDayProduct[dk][ft];
+      slot.offloaded += m.actualOffloaded || 0;
+      if (v < 0) slot.shortage += -v;
+      else if (v > 0) slot.excess += v;
+    }
 
     for (const dayShift of dayShifts) {
       const dayKey = new Date(dayShift.date).toISOString().split('T')[0];
@@ -90,17 +107,31 @@ export async function GET(request) {
         (r) => new Date(r.date).toISOString().split('T')[0] === dayKey
       );
 
-      // Attribute sales to specific tanks using pump→tank mapping.
+      // Determine litres sold per pump. Prefer the supervisor's SalesEntry; when a
+      // pump has no sales entry, fall back to its meter reading net
+      // (closing − opening − rtt) so days with readings-but-no-sales-entry still
+      // reconcile correctly instead of flagging the whole dipstick drop as shortage.
+      const dispenserSales = {}; // dispenserId → liters
+      for (const sale of daySales) {
+        dispenserSales[sale.dispenserId] = (dispenserSales[sale.dispenserId] || 0) + sale.liters;
+      }
+      for (const r of dayReadings) {
+        if (dispenserSales[r.pumpId] == null && r.closing != null) {
+          dispenserSales[r.pumpId] = Math.max(0, (r.closing || 0) - (r.opening || 0) - (r.rtt || 0));
+        }
+      }
+
+      // Attribute per-pump sales to specific tanks using pump→tank mapping.
       // For pumps not mapped to a tank, fall back to fuel-type grouping.
       const salesByTank = {};        // tankId → liters
       const salesByFuelFallback = {}; // fuelType → liters (for unmapped pumps)
-      for (const sale of daySales) {
-        const tankId = pumpTankMap[sale.dispenserId];
+      for (const [dispenserId, liters] of Object.entries(dispenserSales)) {
+        const tankId = pumpTankMap[dispenserId];
         if (tankId) {
-          salesByTank[tankId] = (salesByTank[tankId] || 0) + sale.liters;
+          salesByTank[tankId] = (salesByTank[tankId] || 0) + liters;
         } else {
-          const ft = sale.fuelType || pumpFuelTypeMap[sale.dispenserId];
-          if (ft) salesByFuelFallback[ft] = (salesByFuelFallback[ft] || 0) + sale.liters;
+          const ft = pumpFuelTypeMap[dispenserId];
+          if (ft) salesByFuelFallback[ft] = (salesByFuelFallback[ft] || 0) + liters;
         }
       }
 
@@ -159,6 +190,9 @@ export async function GET(request) {
         // expectedTolerance = sales × tolerance %
         const expTolerance = expectedTolerance(salesLitres, tolerancePercent);
 
+        // Fold in truck-delivery shortage/excess for this day & product.
+        const delivery = deliveryByDayProduct[dayKey]?.[fuelType] || { shortage: 0, excess: 0 };
+
         rows.push({
           date: dayKey,
           openingTime: dayShift.startTime,
@@ -169,13 +203,46 @@ export async function GET(request) {
           sales: salesLitres,
           priceForDay,
           totalAmount,
-          shortage,
+          shortage: shortage + delivery.shortage,
+          salesShortage: shortage,
+          deliveryShortage: delivery.shortage,
+          deliveryExcess: delivery.excess,
           closingStock: agg.closingStock,
           expectedTolerance: expTolerance,
           tolerancePercent,
         });
+        emitted.add(`${dayKey}:${fuelType}`);
       }
     }
+
+    // Days/products that had truck deliveries but no shift row — surface their
+    // delivery shortage so it still counts in the report and totals.
+    for (const [dk, byProduct] of Object.entries(deliveryByDayProduct)) {
+      for (const [ft, slot] of Object.entries(byProduct)) {
+        if (emitted.has(`${dk}:${ft}`)) continue;
+        rows.push({
+          date: dk,
+          openingTime: null,
+          product: ft,
+          openingStock: 0,
+          stockIn: slot.offloaded,
+          overage: 0,
+          sales: 0,
+          priceForDay: 0,
+          totalAmount: 0,
+          shortage: slot.shortage,
+          salesShortage: 0,
+          deliveryShortage: slot.shortage,
+          deliveryExcess: slot.excess,
+          closingStock: 0,
+          expectedTolerance: 0,
+          tolerancePercent: 0,
+        });
+      }
+    }
+
+    // Keep chronological order (appended delivery-only rows may be out of order)
+    rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.product.localeCompare(b.product)));
 
     return NextResponse.json({
       stationId,

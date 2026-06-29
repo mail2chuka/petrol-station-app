@@ -56,6 +56,35 @@ export const stockReceiptSchema = z.object({
     .optional(),
 });
 
+// Truck Registration Schema
+export const truckSchema = z.object({
+  plateNumber: z.string().min(2, 'Plate number must be at least 2 characters'),
+  driverName: z.string().optional(),
+  driverPhone: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// Truck Offload Schema — declared load vs per-tank dipstick offload
+export const offloadSchema = z.object({
+  truckId: z.string().min(1, 'Select a truck'),
+  driverName: z.string().optional(),
+  driverPhone: z.string().optional(),
+  fuelType: z.enum(Object.values(FUEL_TYPES)),
+  declaredLoad: z.number().positive('Declared load must be positive'),
+  supplier: z.string().optional(),
+  cost: z.number().min(0).optional(),
+  notes: z.string().optional(),
+  tanks: z
+    .array(
+      z.object({
+        tankId: z.string().min(1, 'Tank is required'),
+        openingDip: z.number().min(0, 'Opening dipstick cannot be negative'),
+        closingDip: z.number().min(0, 'Closing dipstick cannot be negative'),
+      })
+    )
+    .min(1, 'At least one receiving tank is required'),
+});
+
 // Begin Day Schema — prices are auto-snapshotted from station.currentPrices (set by admin)
 export const beginDaySchema = z.object({
   stationId: z.string(),
