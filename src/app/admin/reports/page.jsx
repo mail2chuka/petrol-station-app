@@ -386,10 +386,11 @@ function ToleranceHeader() {
 }
 
 // ── Day Detail View (4-section) ───────────────────────────────────────────────
-function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReopen }) {
+function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReopen, onAddPump, onRemovePump, stationDispensers = [] }) {
   const [activeSection, setActiveSection] = useState('supervisor');
   const [cashierSubTab, setCashierSubTab] = useState('collections');
   const [supervisorFuel, setSupervisorFuel] = useState('');
+  const [pumpToAdd, setPumpToAdd] = useState('');
 
   const s = report?.summary;
 
@@ -501,34 +502,89 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
             </Card>
           )}
 
-          <Card title="Pump Assignments">
-            <p className="text-xs text-gray-400 mb-3">Click a row to see full details. Row colour indicates linked tank.</p>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead><tr><TH>Pump</TH><TH>Fuel</TH><TH>Tank</TH><TH>Supervisor</TH><TH>Price / L</TH></tr></thead>
-                <tbody className="divide-y divide-gray-100">
-                  {(() => {
-                    const tcMap = buildTankColorMap(report.dayShift.dispenserAssignments);
-                    return report.dayShift.dispenserAssignments.map((d, i) => {
-                      const price = report.dayShift.pricesAtStart instanceof Map
-                        ? report.dayShift.pricesAtStart.get(d.fuelType)
-                        : report.dayShift.pricesAtStart?.[d.fuelType];
-                      const rowColor = d.tankId ? tcMap[d.tankId] || '' : '';
-                      return (
-                        <ClickRow key={i} className={rowColor} onClick={() => setDetailItem({ type: 'assignment', data: { ...d, priceAtStart: price } })}>
-                          <TD className="font-medium">{d.dispenserName}</TD>
-                          <TD>{d.fuelType}</TD>
-                          <TD>{d.tankLabel || '—'}</TD>
-                          <TD>{d.supervisorName || '—'}</TD>
-                          <TD>{fmtNum(price)}</TD>
-                        </ClickRow>
-                      );
-                    });
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          {(() => {
+            const isInProgress = report.dayShift.status === 'in_progress';
+            const assigned = report.dayShift.dispenserAssignments || [];
+            const assignedIds = new Set(assigned.map(d => d.dispenserId));
+            const addablePumps = (stationDispensers || [])
+              .filter(d => d.isActive !== false && !assignedIds.has(d.dispenserId));
+            const canManage = isInProgress && (onAddPump || onRemovePump);
+
+            return (
+              <Card title="Pump Assignments">
+                <p className="text-xs text-gray-400 mb-3">
+                  Click a row to see full details. Row colour indicates linked tank.
+                  {canManage && ' Use the controls below to activate or remove pumps for this day.'}
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead><tr><TH>Pump</TH><TH>Fuel</TH><TH>Tank</TH><TH>Supervisor</TH><TH>Price / L</TH>{isInProgress && onRemovePump && <TH>Action</TH>}</tr></thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {(() => {
+                        const tcMap = buildTankColorMap(assigned);
+                        return assigned.map((d, i) => {
+                          const price = report.dayShift.pricesAtStart instanceof Map
+                            ? report.dayShift.pricesAtStart.get(d.fuelType)
+                            : report.dayShift.pricesAtStart?.[d.fuelType];
+                          const rowColor = d.tankId ? tcMap[d.tankId] || '' : '';
+                          return (
+                            <ClickRow key={i} className={rowColor} onClick={() => setDetailItem({ type: 'assignment', data: { ...d, priceAtStart: price } })}>
+                              <TD className="font-medium">{d.dispenserName}</TD>
+                              <TD>{d.fuelType}</TD>
+                              <TD>{d.tankLabel || '—'}</TD>
+                              <TD>{d.supervisorName || '—'}</TD>
+                              <TD>{fmtNum(price)}</TD>
+                              {isInProgress && onRemovePump && (
+                                <TD>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); onRemovePump(d.dispenserId); }}
+                                    className="text-xs font-medium px-2.5 py-1 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors"
+                                  >
+                                    Remove
+                                  </button>
+                                </TD>
+                              )}
+                            </ClickRow>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+
+                {isInProgress && onAddPump && (
+                  <div className="mt-4 pt-3 border-t border-gray-100">
+                    {addablePumps.length === 0 ? (
+                      <p className="text-xs text-gray-400">All active pumps are already activated for this day.</p>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-gray-500">Activate a pump:</span>
+                        <select
+                          value={pumpToAdd}
+                          onChange={(e) => setPumpToAdd(e.target.value)}
+                          className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-ecana-maroon bg-white"
+                        >
+                          <option value="">Select pump…</option>
+                          {addablePumps.map(d => (
+                            <option key={d.dispenserId} value={d.dispenserId}>
+                              {d.name} • {d.fuelType}{d.tankId ? ` • ${d.tankId}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          disabled={!pumpToAdd}
+                          onClick={() => { onAddPump(pumpToAdd); setPumpToAdd(''); }}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-ecana-maroon text-white hover:opacity-90 disabled:opacity-40"
+                        >
+                          Add pump
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            );
+          })()}
         </div>
       )}
 
@@ -1055,6 +1111,48 @@ export default function AdminReportsPage() {
     } catch { setDetailError('Network error.'); }
   }, [detailDate, fetchReport]);
 
+  const addPumpToDay = useCallback(async (pumpId) => {
+    if (!report?.dayShift?._id || !pumpId) return;
+    setDetailError('');
+    try {
+      const res = await fetch(`/api/day-shifts/${report.dayShift._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add-pump', pumpId }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setDetailError(data.error || 'Failed to add pump'); return; }
+      fetchReport(detailDate);
+    } catch { setDetailError('Network error.'); }
+  }, [report, detailDate, fetchReport]);
+
+  const removePumpFromDay = useCallback(async (pumpId) => {
+    if (!report?.dayShift?._id || !pumpId) return;
+    setDetailError('');
+    const url = `/api/day-shifts/${report.dayShift._id}`;
+    try {
+      let res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'remove-pump', pumpId }),
+      });
+      let data = await res.json();
+      // Pump already has readings — admin may force-remove (drops its records).
+      if (res.status === 409 && data.requiresForce) {
+        const ok = window.confirm('This pump already has recorded readings. Removing it will delete its readings, sales and collections for the day. Continue?');
+        if (!ok) return;
+        res = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'remove-pump', pumpId, force: true }),
+        });
+        data = await res.json();
+      }
+      if (!res.ok) { setDetailError(data.error || 'Failed to remove pump'); return; }
+      fetchReport(detailDate);
+    } catch { setDetailError('Network error.'); }
+  }, [report, detailDate, fetchReport]);
+
   const stationOptions = stations.map(s => ({ value: s._id, label: `${s.name} (${s.code})` }));
 
   const detailLabel = detailDate
@@ -1120,6 +1218,9 @@ export default function AdminReportsPage() {
             setDetailItem={setDetailItem}
             loading={detailLoading}
             onReopen={reopenDay}
+            onAddPump={addPumpToDay}
+            onRemovePump={removePumpFromDay}
+            stationDispensers={(stations.find(s => s._id === selectedStation)?.dispensers) || []}
           />
         </div>
       )}
