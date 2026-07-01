@@ -29,7 +29,12 @@ function OpenPumpsContent() {
     if (stationId) fetchData();
   }, [stationId]);
 
-  const openPumpIds = useMemo(() => new Set((opening?.pumps || []).map((p) => p._id)), [opening]);
+  // Source of truth for "is this pump in today's shift" is the day shift's
+  // dispenserAssignments — that's what actually gates supervisor meter entry.
+  const openPumpIds = useMemo(
+    () => new Set((activeDay?.dispenserAssignments || []).map((d) => d.dispenserId)),
+    [activeDay]
+  );
 
   async function fetchData() {
     setLoading(true);
@@ -87,34 +92,58 @@ function OpenPumpsContent() {
   async function addPump(pumpId) {
     setError('');
     setSuccess('');
-    const res = await fetch(`/api/pump-openings/${opening._id}`, {
+    if (!activeDay?._id) {
+      setError('No active day shift found.');
+      return;
+    }
+    const res = await fetch(`/api/day-shifts/${activeDay._id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'add', pumpId }),
+      body: JSON.stringify({ action: 'add-pump', pumpId }),
     });
     const data = await res.json();
     if (!res.ok) {
       setError(data.error || 'Failed to add pump');
       return;
     }
-    setSuccess('Pump added to open list');
+    setSuccess('Pump added to today\'s shift');
     await fetchData();
   }
 
   async function removePump(pumpId) {
     setError('');
     setSuccess('');
-    const res = await fetch(`/api/pump-openings/${opening._id}`, {
+    if (!activeDay?._id) {
+      setError('No active day shift found.');
+      return;
+    }
+    const url = `/api/day-shifts/${activeDay._id}`;
+    let res = await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'remove', pumpId }),
+      body: JSON.stringify({ action: 'remove-pump', pumpId }),
     });
-    const data = await res.json();
+    let data = await res.json();
+
+    // Pump already has readings — admins may force-remove (drops its records).
+    if (res.status === 409 && data.requiresForce) {
+      const ok = window.confirm(
+        'This pump already has recorded readings. Removing it will delete its readings, sales and collections for the day. Continue?'
+      );
+      if (!ok) return;
+      res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'remove-pump', pumpId, force: true }),
+      });
+      data = await res.json();
+    }
+
     if (!res.ok) {
       setError(data.error || 'Failed to remove pump');
       return;
     }
-    setSuccess('Pump removed from open list');
+    setSuccess('Pump removed from today\'s shift');
     await fetchData();
   }
 
@@ -181,12 +210,12 @@ function OpenPumpsContent() {
         </Card>
       )}
 
-      {opening && (
+      {activeDay && (activeDay.dispenserAssignments || []).length > 0 && (
         <Card title="Today Open List">
           <ul className="space-y-2">
-            {opening.pumps.map((pump) => (
-              <li key={pump._id} className="text-sm text-gray-700">
-                {pump.pumpLabel} {pump.addedLate ? '• Added late' : ''}
+            {activeDay.dispenserAssignments.map((d) => (
+              <li key={d.dispenserId} className="text-sm text-gray-700">
+                {d.dispenserName || d.dispenserId}
               </li>
             ))}
           </ul>

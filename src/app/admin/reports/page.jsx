@@ -386,7 +386,7 @@ function ToleranceHeader() {
 }
 
 // ── Day Detail View (4-section) ───────────────────────────────────────────────
-function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
+function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReopen }) {
   const [activeSection, setActiveSection] = useState('supervisor');
   const [cashierSubTab, setCashierSubTab] = useState('collections');
   const [supervisorFuel, setSupervisorFuel] = useState('');
@@ -478,6 +478,17 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading }) {
               {report.dayShift.endTime && <Row label="End Time" value={fmtDate(report.dayShift.endTime)} />}
               {report.dayShift.endedByName && <Row label="Ended By" value={report.dayShift.endedByName} />}
             </dl>
+            {report.dayShift.status === 'ended' && onReopen && (
+              <div className="mt-4 pt-3 border-t border-gray-100">
+                <button
+                  onClick={() => onReopen(report.dayShift._id)}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg border border-ecana-maroon text-ecana-maroon hover:bg-ecana-maroon hover:text-white transition-colors"
+                >
+                  Re-open day
+                </button>
+                <p className="text-xs text-gray-400 mt-1.5">Returns the day to In Progress so entries can be corrected or pumps added. You must end the day again afterwards.</p>
+              </div>
+            )}
           </Card>
 
           {report.dayShift.pricesAtStart && Object.keys(report.dayShift.pricesAtStart).length > 0 && (
@@ -1028,6 +1039,22 @@ export default function AdminReportsPage() {
     setDetailItem(null);
   };
 
+  const reopenDay = useCallback(async (dayShiftId) => {
+    if (!dayShiftId) return;
+    if (!window.confirm('Re-open this ended day? It will return to In Progress so entries can be corrected or pumps added. You must end the day again afterwards.')) return;
+    setDetailError('');
+    try {
+      const res = await fetch(`/api/day-shifts/${dayShiftId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reopen' }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setDetailError(data.error || 'Failed to re-open day'); return; }
+      fetchReport(detailDate);
+    } catch { setDetailError('Network error.'); }
+  }, [detailDate, fetchReport]);
+
   const stationOptions = stations.map(s => ({ value: s._id, label: `${s.name} (${s.code})` }));
 
   const detailLabel = detailDate
@@ -1092,6 +1119,7 @@ export default function AdminReportsPage() {
             detailDate={detailDate}
             setDetailItem={setDetailItem}
             loading={detailLoading}
+            onReopen={reopenDay}
           />
         </div>
       )}
