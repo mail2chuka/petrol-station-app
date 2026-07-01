@@ -37,10 +37,12 @@ export async function GET(request) {
 
     // A day shift is optional — deliveries, cash collections and bank deposits can
     // happen on days with no shift. We still report whatever data exists for the date.
+    // Deterministic pick if legacy duplicates exist: prefer an ended shift, then the
+    // most recently started (matches the summary-book canonical-shift selection).
     const dayShift = await DayShift.findOne({
       stationId,
       date: { $gte: startDate, $lte: endDate },
-    });
+    }).sort({ status: 1, startTime: -1 });
 
     // Fetch by date (not dayShiftId) so records show with or without a shift.
     const [salesEntries, paymentRecords, meterReadings, tankStockEntries, stockMovements] = await Promise.all([

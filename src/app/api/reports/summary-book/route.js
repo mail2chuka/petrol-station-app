@@ -8,7 +8,7 @@ import MeterReading from '@/models/MeterReading';
 import TankStockEntry from '@/models/TankStockEntry';
 import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
-import { ROLES } from '@/lib/constants';
+import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { reconcile, expectedTolerance, resolveTolerancePercent } from '@/lib/reconciliation';
 
 function buildDateRange(from, to) {
@@ -88,7 +88,28 @@ export async function GET(request) {
       else if (v > 0) slot.excess += v;
     }
 
-    for (const dayShift of dayShifts) {
+    // Collapse to one canonical day shift per calendar day. Multiple shifts can
+    // exist for the same station+date (e.g. a stray second "begin"). Since the
+    // per-day aggregates below are filtered by dayKey (not by shift), iterating
+    // every shift would emit a duplicate row and double the day's totals.
+    // Prefer an ended shift; among equal status prefer the most recently started.
+    const shiftRank = (s) => (s.status === DAY_STATUS.ENDED ? 1 : 0);
+    const shiftTime = (s) => new Date(s.startTime || s.createdAt || 0).getTime();
+    const canonicalShiftByDay = {};
+    for (const ds of dayShifts) {
+      const dk = new Date(ds.date).toISOString().split('T')[0];
+      const existing = canonicalShiftByDay[dk];
+      if (
+        !existing ||
+        shiftRank(ds) > shiftRank(existing) ||
+        (shiftRank(ds) === shiftRank(existing) && shiftTime(ds) > shiftTime(existing))
+      ) {
+        canonicalShiftByDay[dk] = ds;
+      }
+    }
+    const canonicalDayShifts = Object.values(canonicalShiftByDay);
+
+    for (const dayShift of canonicalDayShifts) {
       const dayKey = new Date(dayShift.date).toISOString().split('T')[0];
 
       const dayTankEntries = tankEntries.filter(

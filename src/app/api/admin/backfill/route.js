@@ -80,6 +80,16 @@ export async function POST(request) {
       return NextResponse.json({ error: 'type, stationId, and date are required.' }, { status: 400 });
     }
 
+    // Backfill is for historical days only — never the present or a future day.
+    // Today's live operations run through the normal begin/close flow.
+    const todayStart = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z');
+    if (new Date(date + 'T00:00:00.000Z') >= todayStart) {
+      return NextResponse.json(
+        { error: 'Cannot backfill the current or a future day. Backfill is for past dates only.' },
+        { status: 400 }
+      );
+    }
+
     const station = await Station.findById(stationId).lean();
     if (!station) {
       return NextResponse.json({ error: 'Station not found.' }, { status: 404 });
@@ -125,30 +135,46 @@ export async function POST(request) {
         }
       }
 
-      const shift = await DayShift.findOneAndUpdate(
-        { stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } },
-        {
-          $set: {
-            stationId: stationObjId,
-            stationName: station.name,
-            date: dateStart,
-            status: DAY_STATUS.ENDED,
-            startedBy: currentUser.id,
-            startedByName: currentUser.name,
-            startTime: dateStart,
-            endedBy: currentUser.id,
-            endedByName: currentUser.name,
-            endTime: dateEnd,
-            dispenserAssignments,
-            pricesAtStart,
-            ...(toleranceVal !== null && Number.isFinite(toleranceVal)
-              ? { tolerancePercent: toleranceVal }
-              : {}),
-          },
-        },
-        { new: true, upsert: true, runValidators: false }
-      );
-      return NextResponse.json({ shift }, { status: 200 });
+      // Editable data only — never the shift's identity or lifecycle timestamps.
+      const editableData = {
+        dispenserAssignments,
+        pricesAtStart,
+        ...(toleranceVal !== null && Number.isFinite(toleranceVal)
+          ? { tolerancePercent: toleranceVal }
+          : {}),
+      };
+
+      const existing = await DayShift.findOne({
+        stationId: stationObjId,
+        date: { $gte: dateStart, $lte: dateEnd },
+      });
+
+      if (existing) {
+        // Day already has a shift: keep its _id, startTime, endTime, status and
+        // started/ended-by. Only update the other data — do not re-stamp times.
+        const shift = await DayShift.findByIdAndUpdate(
+          existing._id,
+          { $set: editableData },
+          { new: true, runValidators: false }
+        );
+        return NextResponse.json({ shift, updated: true }, { status: 200 });
+      }
+
+      // No shift for this historical day yet — create one with day-boundary times.
+      const shift = await DayShift.create({
+        stationId: stationObjId,
+        stationName: station.name,
+        date: dateStart,
+        status: DAY_STATUS.ENDED,
+        startedBy: currentUser.id,
+        startedByName: currentUser.name,
+        startTime: dateStart,
+        endedBy: currentUser.id,
+        endedByName: currentUser.name,
+        endTime: dateEnd,
+        ...editableData,
+      });
+      return NextResponse.json({ shift, created: true }, { status: 200 });
     }
 
     // All remaining types need the day shift

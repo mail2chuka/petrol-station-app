@@ -84,6 +84,22 @@ export async function POST(request) {
       );
     }
 
+    // Guard against a second shift for the same calendar date (regardless of
+    // status). Only one day shift may exist per station per date — a duplicate
+    // would double that day's figures in the summary report.
+    const existingDayForDate = await DayShift.findOne({
+      stationId: validatedData.stationId,
+      date: { $gte: dayStart, $lte: dayEnd },
+    }).session(session);
+
+    if (existingDayForDate) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: `A day shift already exists for ${validatedData.date}. Only one shift is allowed per day.` },
+        { status: 400 }
+      );
+    }
+
     // Validate dispensers
     const dispenserAssignments = [];
     for (const assignment of validatedData.dispensers) {
