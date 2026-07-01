@@ -4,6 +4,7 @@ import connectDB from '@/lib/db';
 import Station from '@/models/Station';
 import StockMovement from '@/models/StockMovement';
 import Truck from '@/models/Truck';
+import TankStockEntry from '@/models/TankStockEntry';
 import { requireAuth } from '@/lib/auth';
 import { offloadSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
@@ -113,6 +114,45 @@ export async function POST(request, { params }) {
       recordedByName: currentUser.name,
       notes: data.notes || '',
     }], { session, ordered: true });
+
+    // Keep each receiving tank's level live: upsert a closing dipstick entry with
+    // the post-offload reading, so the dashboard / lastPerTank reflect the delivery
+    // immediately. On a shift day, end-day later overwrites this with the true
+    // end-of-day dipstick; the day's opening (if any) is preserved.
+    const offloadDayStart = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z');
+    const offloadDayEnd = new Date(new Date().toISOString().split('T')[0] + 'T23:59:59.999Z');
+    for (const t of offloadDistribution) {
+      const tank = stationTanks.get(t.tankId);
+      const openingEntry = await TankStockEntry.findOne({
+        stationId: station._id, tankId: t.tankId, period: 'opening',
+        date: { $gte: offloadDayStart, $lte: offloadDayEnd },
+      }).session(session);
+      const openingStock = openingEntry?.openingStock ?? t.openingDip;
+      const variance = t.closingDip - openingStock;
+      const variancePercent = openingStock > 0 ? (variance / openingStock) * 100 : 0;
+      await TankStockEntry.findOneAndUpdate(
+        { stationId: station._id, tankId: t.tankId, period: 'closing', date: { $gte: offloadDayStart, $lte: offloadDayEnd } },
+        {
+          $set: {
+            stationId: station._id,
+            stationName: station.name,
+            tankId: t.tankId,
+            tankLabel: tank?.label || t.tankId,
+            product: data.fuelType,
+            date: offloadDayStart,
+            period: 'closing',
+            openingStock,
+            closingStockMeasured: t.closingDip,
+            supervisorId: currentUser.id,
+            supervisorName: currentUser.name,
+            variance,
+            variancePercent,
+            notes: `Truck offload (${truck.plateNumber})`,
+          },
+        },
+        { session, upsert: true, runValidators: false, new: true }
+      );
+    }
 
     await createAuditLog({
       userId: currentUser.id,

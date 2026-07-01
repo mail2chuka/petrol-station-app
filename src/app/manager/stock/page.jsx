@@ -95,12 +95,14 @@ function OffloadPageContent() {
     [station, form.fuelType]
   );
 
-  // Prefill opening dipstick with the tank's last known level when fuel changes
+  // Require a fresh opening dipstick at offload time — do NOT prefill from the last
+  // reading (sales since then make it stale). The last known level is shown as a
+  // reference hint only.
   useEffect(() => {
     setDips((prev) => {
       const next = {};
       for (const t of tanks) {
-        next[t._id] = prev[t._id] || { opening: tankLevels[t._id] != null ? String(tankLevels[t._id]) : '', closing: '' };
+        next[t._id] = prev[t._id] || { opening: '', closing: '' };
       }
       return next;
     });
@@ -229,8 +231,10 @@ function OffloadPageContent() {
                   </div>
                   <div className="grid grid-cols-3 gap-2 items-end">
                     <Input label="Opening dip (L)" type="text" inputMode="decimal" value={r.opening}
+                      placeholder="Measure before pour"
                       onChange={(e) => setDips((p) => ({ ...p, [r.tank._id]: { ...p[r.tank._id], opening: e.target.value } }))} />
                     <Input label="Closing dip (L)" type="text" inputMode="decimal" value={r.closing}
+                      placeholder="Measure after pour"
                       onChange={(e) => setDips((p) => ({ ...p, [r.tank._id]: { ...p[r.tank._id], closing: e.target.value } }))} />
                     <div className="pb-2">
                       <p className="text-xs text-gray-500 uppercase tracking-wide">Offloaded</p>
