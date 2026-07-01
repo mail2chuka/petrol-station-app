@@ -18,7 +18,7 @@ import MeterReading from '@/models/MeterReading';
 import TankStockEntry from '@/models/TankStockEntry';
 import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
-import { ROLES } from '@/lib/constants';
+import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { reconcile, expectedTolerance, resolveTolerancePercent } from '@/lib/reconciliation';
 
 function buildDateRange(from, to) {
@@ -54,7 +54,26 @@ async function buildRows(stationId, from, to) {
 
   const rows = [];
 
-  for (const dayShift of dayShifts) {
+  // Collapse to one canonical day shift per calendar day so multiple shifts on
+  // the same date don't double the row (aggregates below are filtered by dayKey,
+  // not by shift). Prefer ended; among equal status prefer most recently started.
+  const shiftRank = (s) => (s.status === DAY_STATUS.ENDED ? 1 : 0);
+  const shiftTime = (s) => new Date(s.startTime || s.createdAt || 0).getTime();
+  const canonicalShiftByDay = {};
+  for (const ds of dayShifts) {
+    const dk = new Date(ds.date).toISOString().split('T')[0];
+    const existing = canonicalShiftByDay[dk];
+    if (
+      !existing ||
+      shiftRank(ds) > shiftRank(existing) ||
+      (shiftRank(ds) === shiftRank(existing) && shiftTime(ds) > shiftTime(existing))
+    ) {
+      canonicalShiftByDay[dk] = ds;
+    }
+  }
+  const canonicalDayShifts = Object.values(canonicalShiftByDay);
+
+  for (const dayShift of canonicalDayShifts) {
     const dayKey = new Date(dayShift.date).toISOString().split('T')[0];
 
     const dayTankEntries = tankEntries.filter(

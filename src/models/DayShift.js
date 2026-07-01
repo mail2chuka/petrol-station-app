@@ -139,5 +139,7 @@ const dayShiftSchema = new mongoose.Schema(
 dayShiftSchema.index({ stationId: 1, date: -1 });
 dayShiftSchema.index({ stationId: 1, status: 1 });
 dayShiftSchema.index({ date: -1, status: 1 });
+// Hard guarantee: at most one day shift per station per calendar date.
+dayShiftSchema.index({ stationId: 1, date: 1 }, { unique: true });
 
 export default mongoose.models.DayShift || mongoose.model('DayShift', dayShiftSchema);
