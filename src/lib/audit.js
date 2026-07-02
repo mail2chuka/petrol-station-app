@@ -48,6 +48,8 @@ export const AUDIT_ACTIONS = {
   CHANGE_PASSWORD: 'change_password',
   ADJUST_PRICE: 'adjust_price',
   RECEIVE_STOCK: 'receive_stock',
+  DELETE_DELIVERY: 'delete_delivery',
+  UPDATE_DEPOSIT: 'update_deposit',
 };
 
 export const AUDIT_RESOURCES = {
@@ -59,4 +61,5 @@ export const AUDIT_RESOURCES = {
   STOCK_MOVEMENT: 'stock_movement',
   PRICE: 'price',
   TRUCK: 'truck',
+  CASH_DEPOSIT: 'cash_deposit',
 };

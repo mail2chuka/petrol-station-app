@@ -11,6 +11,7 @@ import PaymentRecord from '@/models/PaymentRecord';
 import CashDeposit from '@/models/CashDeposit';
 import { requireAuth } from '@/lib/auth';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
+import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 
 const BACKFILL_PIN = '@ghty^&AHATY';
 
@@ -342,6 +343,38 @@ export async function POST(request) {
       return NextResponse.json({ movement }, { status: 200 });
     }
 
+    // ── DELETE DELIVERY ────────────────────────────────────────────────────────
+    if (type === 'deleteDelivery') {
+      const { movementId } = body;
+      if (!movementId) {
+        return NextResponse.json({ error: 'movementId is required.' }, { status: 400 });
+      }
+      const movement = await StockMovement.findOneAndDelete({
+        _id: movementId,
+        stationId: stationObjId,
+      });
+      if (!movement) {
+        return NextResponse.json({ error: 'Delivery record not found or access denied.' }, { status: 404 });
+      }
+      await createAuditLog({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: AUDIT_ACTIONS.DELETE_DELIVERY,
+        resource: AUDIT_RESOURCES.STOCK_MOVEMENT,
+        resourceId: movementId,
+        stationId: stationObjId,
+        stationName: station.name,
+        details: {
+          date: date,
+          fuelType: movement.fuelType,
+          quantity: movement.quantity,
+          supplier: movement.supplier,
+        },
+      });
+      return NextResponse.json({ deleted: true }, { status: 200 });
+    }
+
     // ── TANK DELIVERY (RECEIPT) ─────────────────────────────────────────────────
     if (type === 'tankDelivery') {
       const { fuelType, totalReceived, distribution, supplier, costPerLiter } = body;
@@ -513,6 +546,52 @@ export async function POST(request) {
         approvedByAdminName: currentUser.name,
         approvedAt: new Date(),
         adminNote: note || 'Backfill',
+      });
+      return NextResponse.json({ deposit }, { status: 200 });
+    }
+
+    // ── UPDATE DEPOSIT ──────────────────────────────────────────────────────────
+    if (type === 'updateDeposit') {
+      const { depositId, amount, bankName, accountNumber, bankBranch, note, depositDate } = body;
+      if (!depositId || !amount || !bankName || !accountNumber) {
+        return NextResponse.json({ error: 'depositId, amount, bankName, and accountNumber are required.' }, { status: 400 });
+      }
+
+      // depositDate = actual banking date (can differ from wizard operating date)
+      const depositDateStart = depositDate ? new Date(depositDate + 'T00:00:00.000Z') : dateStart;
+
+      const deposit = await CashDeposit.findOneAndUpdate(
+        { _id: depositId, stationId: stationObjId },
+        {
+          $set: {
+            date: depositDateStart,
+            amount: Number(amount),
+            bankName,
+            bankBranch: bankBranch || '',
+            accountNumber,
+            adminNote: note || '',
+          },
+        },
+        { new: true }
+      );
+      if (!deposit) {
+        return NextResponse.json({ error: 'Deposit record not found or access denied.' }, { status: 404 });
+      }
+      await createAuditLog({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: AUDIT_ACTIONS.UPDATE_DEPOSIT,
+        resource: AUDIT_RESOURCES.CASH_DEPOSIT,
+        resourceId: depositId,
+        stationId: stationObjId,
+        stationName: station.name,
+        details: {
+          forDate: deposit.forDate,
+          amount: deposit.amount,
+          bankName: deposit.bankName,
+          accountNumber: deposit.accountNumber,
+        },
       });
       return NextResponse.json({ deposit }, { status: 200 });
     }

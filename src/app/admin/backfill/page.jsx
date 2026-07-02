@@ -324,7 +324,7 @@ export default function BackfillPage() {
     })();
 
     return () => { cancelled = true; };
-  }, [stationId, date]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stationId, date]);  
 
   // Auto-fill sales liters from pump net readings when entering the sales step
   useEffect(() => {
@@ -435,6 +435,17 @@ export default function BackfillPage() {
       await callBackfill({ type: 'deleteDeposit', depositId });
       await refreshDeposits();
       setResults([{ label: 'Deposit deleted.' }]);
+    } catch (e) {
+      setResults([{ label: 'Delete failed', error: e.message }]);
+    }
+  }
+
+  async function deleteDelivery(movementId) {
+    if (!window.confirm('Delete this delivery record? This cannot be undone.')) return;
+    try {
+      await callBackfill({ type: 'deleteDelivery', movementId });
+      await refreshDeliveries();
+      setResults([{ label: 'Delivery deleted.' }]);
     } catch (e) {
       setResults([{ label: 'Delete failed', error: e.message }]);
     }
@@ -662,18 +673,32 @@ export default function BackfillPage() {
     setSaving(true); setResults([]);
     const res = [];
     for (const d of deposits) {
-      if (d._id) continue; // already in DB — skip to prevent duplicates
       if (!d.amount || !d.bankName || !d.accountNumber) continue;
       try {
-        await callBackfill({
-          type: 'bankDeposit',
-          amount: d.amount,
-          bankName: d.bankName,
-          bankBranch: d.bankBranch,
-          accountNumber: d.accountNumber,
-          note: d.note,
-          depositDate: d.depositDate || date,
-        });
+        if (d._id) {
+          // Update existing deposit
+          await callBackfill({
+            type: 'updateDeposit',
+            depositId: d._id,
+            amount: d.amount,
+            bankName: d.bankName,
+            bankBranch: d.bankBranch,
+            accountNumber: d.accountNumber,
+            note: d.note,
+            depositDate: d.depositDate || date,
+          });
+        } else {
+          // Create new deposit
+          await callBackfill({
+            type: 'bankDeposit',
+            amount: d.amount,
+            bankName: d.bankName,
+            bankBranch: d.bankBranch,
+            accountNumber: d.accountNumber,
+            note: d.note,
+            depositDate: d.depositDate || date,
+          });
+        }
         res.push({ label: d.bankName + ' — ₦' + fmtN(d.amount) });
       } catch (e) { res.push({ label: d.bankName, error: e.message }); }
     }
@@ -1076,9 +1101,14 @@ export default function BackfillPage() {
                     Delivery #{i + 1}
                     {d._id && <span className="ml-2 text-xs font-normal text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full">Saved</span>}
                   </p>
-                  {!d._id && deliveries.length > 1 && (
-                    <button onClick={() => setDeliveries((p) => p.filter((_, j) => j !== i))}
-                      className="text-xs text-red-500 hover:underline">Remove</button>
+                  {d._id ? (
+                    <button onClick={() => deleteDelivery(d._id)}
+                      className="text-xs text-red-500 hover:underline">Delete</button>
+                  ) : (
+                    deliveries.length > 1 && (
+                      <button onClick={() => setDeliveries((p) => p.filter((_, j) => j !== i))}
+                        className="text-xs text-red-500 hover:underline">Remove</button>
+                    )
                   )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -1382,7 +1412,6 @@ export default function BackfillPage() {
                   label="Date of Deposit"
                   type="date"
                   value={d.depositDate || date}
-                  readOnly={!!d._id}
                   onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, depositDate: v } : x))}
                   hint="When the money was physically taken to the bank (can differ from the operating date)"
                 />
@@ -1392,25 +1421,20 @@ export default function BackfillPage() {
                     label="Amount (₦)"
                     type="number"
                     value={d.amount}
-                    readOnly={!!d._id}
                     onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, amount: v } : x))}
                     placeholder={remaining > 0 ? remaining.toFixed(2) : 'e.g. 500000'}
                   />
                   <Field label="Bank Name" value={d.bankName}
-                    readOnly={!!d._id}
                     onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, bankName: v } : x))}
                     placeholder="e.g. First Bank" />
                   <Field label="Account Number" value={d.accountNumber}
-                    readOnly={!!d._id}
                     onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, accountNumber: v } : x))}
                     placeholder="0123456789" />
                   <Field label="Branch (optional)" value={d.bankBranch}
-                    readOnly={!!d._id}
                     onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, bankBranch: v } : x))}
                     placeholder="e.g. Lagos Island" />
                 </div>
                 <Field label="Note (optional)" value={d.note}
-                  readOnly={!!d._id}
                   onChange={(v) => setDeposits((p) => p.map((x, j) => j === i ? { ...x, note: v } : x))}
                   placeholder="Any additional info" />
 
