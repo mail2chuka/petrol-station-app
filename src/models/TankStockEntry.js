@@ -75,6 +75,14 @@ const tankStockEntrySchema = new mongoose.Schema(
       required: true,
     },
     notes: String,
+    adminCorrectedBy: {
+      type: String,
+      default: null,
+    },
+    adminCorrectedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

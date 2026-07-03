@@ -86,7 +86,7 @@ function DetailModal({ item, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
-  const editableTypes = ['sale', 'reading', 'payment', 'deposit'];
+  const editableTypes = ['sale', 'reading', 'payment', 'deposit', 'tankReading'];
 
   function startEdit() {
     const d = item.data;
@@ -98,6 +98,13 @@ function DetailModal({ item, onClose, onSaved }) {
       setForm({ cashReceived: d.cashReceived ?? 0, posReceived: d.posReceived ?? 0 });
     } else if (item.type === 'deposit') {
       setForm({ amount: d.amount ?? 0 });
+    } else if (item.type === 'tankReading') {
+      const opening = d.opening || {};
+      const closing = d.closing || {};
+      setForm({
+        openingStock: opening.closingStockMeasured ?? '',
+        closingStock: closing.closingStockMeasured ?? '',
+      });
     }
     setSaveError('');
     setEditing(true);
@@ -125,6 +132,12 @@ function DetailModal({ item, onClose, onSaved }) {
       } else if (item.type === 'deposit') {
         url = `/api/cash-deposits/${d._id}`;
         body = { amount: parseFloat(form.amount) };
+      } else if (item.type === 'tankReading') {
+        url = `/api/tank-stock/${d._id}`;
+        body = {
+          openingStock: parseFloat(form.openingStock) || null,
+          closingStock: parseFloat(form.closingStock) || null,
+        };
       }
       const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json();
@@ -284,6 +297,38 @@ function DetailModal({ item, onClose, onSaved }) {
     );
   }
 
+  if (item.type === 'tankReading') {
+    const opening = d.opening || {};
+    const closing = d.closing || {};
+    const openingVal = opening.closingStockMeasured;
+    const closingVal = closing.closingStockMeasured;
+    const volumeSold = openingVal != null && closingVal != null ? (openingVal - closingVal) : null;
+
+    title = `Tank Reading — ${d.tankLabel || d.tankId}`;
+    viewBody = (
+      <dl className="space-y-2 text-sm">
+        <Row label="Tank" value={d.tankLabel || d.tankId} />
+        <Row label="Product" value={d.product} />
+        <Row label="Opening Dipstick (L)" value={openingVal != null ? fmtNum(openingVal) : '—'} />
+        <Row label="Closing Dipstick (L)" value={closingVal != null ? fmtNum(closingVal) : '—'} />
+        <Row label="Volume Sold (L)" value={volumeSold != null ? fmtNum(volumeSold) : '—'} />
+        <Row label="Opening Supervisor" value={opening.supervisorName || '—'} />
+        <Row label="Closing Supervisor" value={closing.supervisorName || '—'} />
+        <Row label="Date" value={new Date(d.date).toLocaleDateString('en-NG')} />
+      </dl>
+    );
+    editBody = (
+      <div className="space-y-3 text-sm">
+        <Row label="Tank" value={d.tankLabel || d.tankId} />
+        <Row label="Product" value={d.product} />
+        <div className="border-t pt-3 mt-2 space-y-2">
+          <EditField label="Opening Dipstick (L)" name="openingStock" value={form.openingStock} onChange={handleChange} />
+          <EditField label="Closing Dipstick (L)" name="closingStock" value={form.closingStock} onChange={handleChange} />
+        </div>
+      </div>
+    );
+  }
+
   const canEdit = editableTypes.includes(item.type);
 
   return (
@@ -391,6 +436,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
   const [cashierSubTab, setCashierSubTab] = useState('collections');
   const [supervisorFuel, setSupervisorFuel] = useState('');
   const [pumpToAdd, setPumpToAdd] = useState('');
+  const [attendantAssignments, setAttendantAssignments] = useState({});
 
   const s = report?.summary;
 
@@ -403,6 +449,23 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
     { key: 'supervisor', label: 'Supervisor Inputs' },
     { key: 'cashier', label: 'Cashier Inputs' },
   ];
+
+  useEffect(() => {
+    if (!report || !detailDate) return;
+    const stationId = report.dayShift?.stationId;
+    if (!stationId) return;
+
+    fetch(`/api/attendant-assignments?stationId=${stationId}&date=${detailDate}`)
+      .then(r => r.json())
+      .then(d => {
+        const map = {};
+        for (const a of (d.assignments || [])) {
+          map[a.dispenserId] = a.attendantName;
+        }
+        setAttendantAssignments(map);
+      })
+      .catch(() => {});
+  }, [report, detailDate]);
 
   if (loading) return <div className="flex justify-center py-16"><div className="spinner" /></div>;
 
@@ -650,7 +713,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                   <p className="text-xs text-gray-400 mb-3">Click a row to see full details. Row colour indicates linked tank.</p>
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead><tr><TH>Pump</TH><TH>Supervisor</TH><TH>Opening</TH><TH>Closing</TH><TH>RTT</TH><TH>Net Sold (L)</TH><TH>Status</TH></tr></thead>
+                      <thead><tr><TH>Attendant</TH><TH>Supervisor</TH><TH>Opening</TH><TH>Closing</TH><TH>RTT</TH><TH>Net Sold (L)</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
                         {filteredReadings.map((r, i) => {
                           const tankId = pumpTankMap[r.pumpId];
@@ -658,7 +721,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                           const netSold = r.closing != null ? Math.max(0, r.closing - r.opening - (r.rtt || 0)).toFixed(2) : '—';
                           return (
                             <ClickRow key={r._id || i} className={rowColor} onClick={() => setDetailItem({ type: 'reading', data: r })}>
-                              <TD className="font-medium">{r.pumpLabel || r.pumpId}</TD>
+                              <TD className="font-medium">{attendantAssignments[r.pumpId] || r.pumpLabel || r.pumpId}</TD>
                               <TD>{r.supervisorName}</TD>
                               <TD>{r.opening}</TD>
                               <TD>{r.closing ?? '—'}</TD>
@@ -693,9 +756,11 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
             <Card title="Tank Dipstick Readings">
               {tankRows.length === 0
                 ? <p className="text-sm text-gray-400 py-4 text-center">No tank readings recorded for this day.</p>
-                : <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
+                : <>
+                    <p className="text-xs text-gray-400 mb-3">Click a row to see full details and edit readings.</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
                         <tr>
                           <TH>Tank</TH>
                           <TH>Opening Dipstick (L)</TH>
@@ -713,13 +778,21 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                           const rowColor = tankColorMap[tankId] || '';
                           const enteredBy = tank.closing?.supervisorName || tank.opening?.supervisorName || '—';
                           return (
-                            <tr key={tankId} className={`border-b border-gray-100 ${rowColor}`}>
+                            <ClickRow key={tankId} className={rowColor} onClick={() => setDetailItem({
+                              type: 'tankReading',
+                              data: {
+                                ...tank,
+                                tankId,
+                                date: detailDate,
+                                _id: `${tankId}_${detailDate}`,
+                              }
+                            })}>
                               <TD className="font-medium">{tank.label || tankId}</TD>
                               <TD>{openingVal != null ? fmtNum(openingVal) : <span className="text-amber-500 text-xs">Pending</span>}</TD>
                               <TD>{closingVal != null ? fmtNum(closingVal) : <span className="text-amber-500 text-xs">Pending</span>}</TD>
                               <TD className="font-medium">{volumeSold != null ? fmtNum(volumeSold) : '—'}</TD>
                               <TD className="text-gray-500">{enteredBy}</TD>
-                            </tr>
+                            </ClickRow>
                           );
                         })}
                       </tbody>
@@ -737,7 +810,8 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                         </tr>
                       </tfoot>
                     </table>
-                  </div>
+                    </div>
+                  </>
               }
             </Card>
 
