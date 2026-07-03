@@ -348,7 +348,13 @@ function ManagerDashboardContent() {
       )}
 
       {session?.user?.role === 'admin' && adminStationId && (
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Link
+            href="/admin"
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-ecana-maroon hover:text-ecana-maroon transition-colors"
+          >
+            ← Admin Dashboard
+          </Link>
           <Link
             href={`/admin/stations/${adminStationId}`}
             className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-ecana-maroon hover:text-ecana-maroon transition-colors"
