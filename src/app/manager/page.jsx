@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import Card from '@/components/Card';
 import Loading from '@/components/Loading';
 import Button from '@/components/Button';
@@ -343,6 +344,17 @@ function ManagerDashboardContent() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {session?.user?.role === 'admin' && adminStationId && (
+        <div className="flex gap-2">
+          <Link
+            href={`/admin/stations/${adminStationId}`}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-ecana-maroon hover:text-ecana-maroon transition-colors"
+          >
+            ← Back to Station
+          </Link>
         </div>
       )}
 

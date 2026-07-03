@@ -168,12 +168,20 @@ export default function StationConsolePage() {
           </h1>
           <p className="text-sm text-gray-500">{station.location}</p>
         </div>
-        <Link
-          href={`/manager?stationId=${station._id}`}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-ecana-maroon hover:text-ecana-maroon transition-colors self-start"
-        >
-          Open operational view →
-        </Link>
+        <div className="flex gap-2 self-start">
+          <Link
+            href="/admin"
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-ecana-maroon hover:text-ecana-maroon transition-colors"
+          >
+            ← Admin Dashboard
+          </Link>
+          <Link
+            href={`/manager?stationId=${station._id}`}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-ecana-maroon hover:text-ecana-maroon transition-colors"
+          >
+            Open operational view →
+          </Link>
+        </div>
       </div>
 
       <Banner error={error} success={success} />
