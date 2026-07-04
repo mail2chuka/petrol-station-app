@@ -394,38 +394,7 @@ function ToleranceHeader() {
     <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left bg-gray-50">
       <div className="flex items-center gap-1.5 relative">
         <span>Tolerance</span>
-        <button
-          onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
-          className="w-4 h-4 rounded-full bg-gray-300 hover:bg-gray-400 text-white flex items-center justify-center text-[10px] font-bold leading-none transition-colors flex-shrink-0"
-          title="How this column is calculated"
-        >
-          i
-        </button>
-        {open && (
-          <>
-            <button
-              className="fixed inset-0 z-10"
-              onClick={e => { e.stopPropagation(); setOpen(false); }}
-            />
-            <div className="absolute top-6 left-0 z-20 w-72 bg-white border border-gray-200 rounded-xl shadow-lg p-4 text-left normal-case tracking-normal">
-              <p className="text-xs font-bold text-gray-700 mb-2">Tolerance Column Formula</p>
-              <p className="text-xs text-gray-600 mb-3">
-                <strong>Tolerance (L)</strong> = Closing Stock − Expected Closing<br />
-                <span className="text-gray-400">Positive = tank has more fuel than accounted for (overage).</span>
-              </p>
-              <p className="text-xs text-gray-600 mb-3">
-                <strong>Exp: X.XX (N%)</strong> = Dispensed Volume × Station Tolerance %<br />
-                <span className="text-gray-400">This is the acceptable measurement variance for the day.</span>
-              </p>
-              <p className="text-xs text-gray-600">
-                <strong>% Difference</strong> = (Actual Tolerance − Expected Tolerance) ÷ Total Dispensed × 100<br />
-                <span className="text-gray-400">Green = actual surplus is above expected. Amber = below expected.</span>
-              </p>
-              <button onClick={() => setOpen(false)} className="mt-3 text-xs text-ecana-maroon hover:underline font-medium">Close</button>
-            </div>
-          </>
-        )}
-      </div>
+              </div>
     </th>
   );
 }
