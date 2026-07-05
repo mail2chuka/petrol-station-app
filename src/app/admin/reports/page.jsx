@@ -919,16 +919,13 @@ function SummaryListView({ stationId, onSelectDay }) {
     return Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  // Use API's pre-computed overage/shortage (already mutually exclusive per row)
+  // Use API's pre-computed shortage (already mutually exclusive per row)
   const computedRows = rows.filter(r => !selectedFuel || r.fuelType === selectedFuel).map(r => {
-    const overage = r.overage ?? 0;
     const shortage = r.shortage ?? 0;
     const expTol = r.expectedTolerance ?? 0;
     const sales = r.sales ?? 0;
-    // % annotation: how far actual overage deviates from expected tolerance, as % of sales
-    const diffPercent = sales > 0 ? ((overage - expTol) / sales) * 100 : 0;
     const salesAmount = (r.priceForDay ?? 0) * sales;
-    return { ...r, overage, shortage, expTol, diffPercent, salesAmount, sales };
+    return { ...r, shortage, expTol, salesAmount, sales };
   });
 
   const totalSales      = computedRows.reduce((s, r) => s + r.sales, 0);
