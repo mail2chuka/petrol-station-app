@@ -1006,7 +1006,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                       <TD>{fmtNum(r.stockIn)}</TD>
                       <td className="px-4 py-2.5 text-sm font-bold text-gray-800">
                         {(() => {
-                          const tolerance = (r.openingStock - r.closingStock + (r.stockIn ?? 0)) - (r.sales ?? 0);
+                          const tolerance = (r.sales ?? 0) - (r.openingStock - r.closingStock + (r.stockIn ?? 0));
                           const expectedTol = r.expTol ?? 0;
                           const toleranceDiff = tolerance - expectedTol;
                           const tolPercent = r.tolerancePercent ?? ((expectedTol / (r.sales ?? 1)) * 100);
@@ -1039,7 +1039,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">
                     {(() => {
                       const totalTolerance = computedRows.reduce((sum, r) => {
-                        const tolerance = (r.openingStock - r.closingStock + (r.stockIn ?? 0)) - (r.sales ?? 0);
+                        const tolerance = (r.sales ?? 0) - (r.openingStock - r.closingStock + (r.stockIn ?? 0));
                         return sum + tolerance;
                       }, 0);
                       const toleranceDiff = totalTolerance - totalExpTol;
