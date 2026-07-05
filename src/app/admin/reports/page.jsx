@@ -1059,7 +1059,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalSales)}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtN(totalSalesAmt)}</td>
-                  <td className={`px-4 py-3 text-sm font-bold ${totalShortage > 0 ? 'text-pink-600' : totalOverage > 0 ? 'text-green-600' : 'text-gray-400'}`}>{totalShortage > 0 ? fmtNum(totalShortage) : totalOverage > 0 ? fmtNum(totalOverage) : '—'}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-amber-700">{totalShortage > 0 ? fmtNum(totalShortage) : '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">—</td>
                 </tr>
               </tfoot>
