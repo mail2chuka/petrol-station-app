@@ -5,7 +5,6 @@ import SalesEntry from '@/models/SalesEntry';
 import PaymentRecord from '@/models/PaymentRecord';
 import MeterReading from '@/models/MeterReading';
 import TankStockEntry from '@/models/TankStockEntry';
-import StockMovement from '@/models/StockMovement';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
 
@@ -45,22 +44,12 @@ export async function GET(request) {
     }).sort({ status: 1, startTime: -1 });
 
     // Fetch by date (not dayShiftId) so records show with or without a shift.
-    const [salesEntries, paymentRecords, meterReadings, tankStockEntries, stockMovements] = await Promise.all([
+    const [salesEntries, paymentRecords, meterReadings, tankStockEntries] = await Promise.all([
       SalesEntry.find({ stationId, date: { $gte: startDate, $lte: endDate } }).sort({ createdAt: 1 }),
       PaymentRecord.find({ stationId, date: { $gte: startDate, $lte: endDate } }).sort({ createdAt: 1 }),
       MeterReading.find({ stationId, date: { $gte: startDate, $lte: endDate } }),
       TankStockEntry.find({ stationId, date: { $gte: startDate, $lte: endDate } }),
-      StockMovement.find({ stationId, movementType: 'receipt', date: { $gte: startDate, $lte: endDate } }),
     ]);
-
-    // Per-tank stock-in (deliveries) so the dipstick volume-sold accounts for
-    // fuel received during the day: volume sold = opening + stock-in − closing.
-    const stockInByTank = {};
-    for (const m of stockMovements) {
-      for (const d of (m.distribution || [])) {
-        if (d.tankId) stockInByTank[d.tankId] = (stockInByTank[d.tankId] || 0) + (d.litres || 0);
-      }
-    }
 
     // Aggregate sales by fuel type (liters + expected amounts from supervisor entries)
     const totalSales = {};
