@@ -269,18 +269,6 @@ export async function GET(request) {
       stationId,
       from,
       to,
-      columns: [
-        'Date',
-        'Opening Time',
-        'Opening Stock',
-        'Stock In',
-        'Overage',
-        'Net Sales (Litres Sold)',
-        'Price for the Day',
-        'Total Amount (= Price x Sales)',
-        'Shortage',
-        'Closing Stock',
-      ],
       rows,
     });
   } catch (error) {

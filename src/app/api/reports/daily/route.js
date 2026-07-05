@@ -112,14 +112,10 @@ export async function GET(request) {
 
     return NextResponse.json({
       dayShift,
-      salesEntries,
       paymentRecords,
       meterReadings,
       tankStockEntries,
-      stockMovements,
-      stockInByTank,
       supervisorSummaries: Object.values(supervisorMap),
-      hasShift: Boolean(dayShift),
       summary: {
         status: dayShift ? dayShift.status : 'no_shift',
         totalSales,

@@ -389,7 +389,6 @@ function TH({ children }) {
 }
 
 function ToleranceHeader() {
-  const [open, setOpen] = useState(false);
   return (
     <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left bg-gray-50">
       <div className="flex items-center gap-1.5 relative">
@@ -934,7 +933,6 @@ function SummaryListView({ stationId, onSelectDay }) {
 
   const totalSales      = computedRows.reduce((s, r) => s + r.sales, 0);
   const totalSalesAmt   = computedRows.reduce((s, r) => s + r.salesAmount, 0);
-  const totalOverage    = computedRows.reduce((s, r) => s + r.overage, 0);
   const totalShortage   = computedRows.reduce((s, r) => s + r.shortage, 0);
   const totalStockIn    = computedRows.reduce((s, r) => s + (r.stockIn ?? 0), 0);
   const totalExpTol     = computedRows.reduce((s, r) => s + r.expTol, 0);
