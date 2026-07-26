@@ -934,6 +934,26 @@ function SummaryListView({ stationId, onSelectDay }) {
   const totalStockIn    = computedRows.reduce((s, r) => s + (r.stockIn ?? 0), 0);
   const totalExpTol     = computedRows.reduce((s, r) => s + r.expTol, 0);
 
+  // When "All" products are shown, rows for different products are interleaved
+  // by date — break the totals down per product so it's clear which total
+  // belongs to which fuel, in addition to the combined grand total.
+  const PRODUCT_ORDER = ['PMS', 'AGO', 'LPG', 'DPK'];
+  const productsPresent = [...new Set(computedRows.map(r => r.product))]
+    .sort((a, b) => PRODUCT_ORDER.indexOf(a) - PRODUCT_ORDER.indexOf(b));
+
+  function summarizeTotals(list) {
+    const sales      = list.reduce((s, r) => s + r.sales, 0);
+    const salesAmt   = list.reduce((s, r) => s + r.salesAmount, 0);
+    const shortage   = list.reduce((s, r) => s + r.shortage, 0);
+    const stockIn    = list.reduce((s, r) => s + (r.stockIn ?? 0), 0);
+    const expTol     = list.reduce((s, r) => s + r.expTol, 0);
+    const tolerance  = list.reduce((sum, r) => {
+      const t = (r.sales ?? 0) - (r.openingStock - r.closingStock + (r.stockIn ?? 0));
+      return sum + t;
+    }, 0);
+    return { sales, salesAmt, shortage, stockIn, expTol, tolerance };
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -974,6 +994,7 @@ function SummaryListView({ stationId, onSelectDay }) {
               <thead>
                 <tr className="bg-gray-50">
                   <TH>Date</TH>
+                  <TH>Product</TH>
                   <TH>Opening Stock (L)</TH>
                   <TH>Stock In (L)</TH>
                   <ToleranceHeader />
@@ -997,6 +1018,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                       <TD className="font-medium whitespace-nowrap">
                         {new Date(r.date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}
                       </TD>
+                      <TD className="font-medium whitespace-nowrap">{r.product}</TD>
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
                       <td className="px-4 py-2.5 text-sm font-bold text-gray-800">
@@ -1027,9 +1049,34 @@ function SummaryListView({ stationId, onSelectDay }) {
                 })}
               </tbody>
               <tfoot>
+                {productsPresent.length > 1 && productsPresent.map((p) => {
+                  const t = summarizeTotals(computedRows.filter(r => r.product === p));
+                  const toleranceDiff = t.tolerance - t.expTol;
+                  const tolPercent = t.sales > 0 ? ((t.expTol / t.sales) * 100) : 0;
+                  return (
+                    <tr key={p} className="bg-gray-50 border-t border-t-gray-200">
+                      <td className="px-4 py-3 text-sm font-bold text-gray-600 uppercase tracking-wide" colSpan={2}>Total — {p}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{t.stockIn > 0 ? fmtNum(t.stockIn) : '—'}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-700">
+                        <span>{fmtNum(t.tolerance)}</span>
+                        {t.sales > 0 && (
+                          <span className={`block text-xs font-medium ${toleranceDiff >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {toleranceDiff >= 0 ? '+' : ''}{fmtNum(toleranceDiff)} ({tolPercent.toFixed(1)}%)
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{fmtNum(t.sales)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{fmtN(t.salesAmt)}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-amber-700">{t.shortage > 0 ? fmtNum(t.shortage) : '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                    </tr>
+                  );
+                })}
                 <tr className="bg-gray-100 border-t-2 border-t-gray-300">
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide">Totals</td>
-                  <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide" colSpan={2}>
+                    {productsPresent.length > 1 ? 'Grand Total (All Products)' : 'Totals'}
+                  </td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{totalStockIn > 0 ? fmtNum(totalStockIn) : '—'}</td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">
                     {(() => {

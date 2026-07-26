@@ -5,6 +5,7 @@ import { requireAuth, requireAdmin } from '@/lib/auth';
 import { stationSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES } from '@/lib/constants';
+import { getLiveCurrentStock, applyLiveStock } from '@/lib/liveStock';
 
 // GET /api/stations - List all stations
 export async function GET(request) {
@@ -23,7 +24,12 @@ export async function GET(request) {
       query._id = currentUser.stationId;
     }
 
-    const stations = await Station.find(query).sort({ createdAt: -1 });
+    const stations = await Station.find(query).sort({ createdAt: -1 }).lean();
+
+    const liveStock = await getLiveCurrentStock(stations.map((s) => s._id));
+    for (const station of stations) {
+      applyLiveStock(station, liveStock);
+    }
 
     return NextResponse.json({ stations });
   } catch (error) {

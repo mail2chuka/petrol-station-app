@@ -4,6 +4,7 @@ import Station from '@/models/Station';
 import { requireAuth, requireAdmin, requireManagerOrAdmin } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES } from '@/lib/constants';
+import { getLiveCurrentStock, applyLiveStock } from '@/lib/liveStock';
 
 // GET /api/stations/[id] - Get station by ID
 export async function GET(request, { params }) {
@@ -19,10 +20,13 @@ export async function GET(request, { params }) {
       }
     }
 
-    const station = await Station.findById(id);
+    const station = await Station.findById(id).lean();
     if (!station) {
       return NextResponse.json({ error: 'Station not found' }, { status: 404 });
     }
+
+    const liveStock = await getLiveCurrentStock([station._id]);
+    applyLiveStock(station, liveStock);
 
     return NextResponse.json({ station });
   } catch (error) {
