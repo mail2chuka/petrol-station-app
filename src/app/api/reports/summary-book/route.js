@@ -8,13 +8,17 @@ import MeterReading from '@/models/MeterReading';
 import TankStockEntry from '@/models/TankStockEntry';
 import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
-import { ROLES, DAY_STATUS } from '@/lib/constants';
+import { ROLES } from '@/lib/constants';
 import { reconcile, expectedTolerance, resolveTolerancePercent } from '@/lib/reconciliation';
 
 function buildDateRange(from, to) {
   const start = new Date(from + 'T00:00:00.000Z');
   const end = new Date((to || from) + 'T23:59:59.999Z');
   return { start, end };
+}
+
+function dayKeyOf(date) {
+  return new Date(date).toISOString().split('T')[0];
 }
 
 // GET /api/reports/summary-book?stationId=...&from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -45,7 +49,7 @@ export async function GET(request) {
       Station.findById(stationId).lean(),
       DayShift.aggregate([
         { $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } },
-        { $sort: { date: 1 } },
+        { $sort: { date: 1, shiftOrder: 1 } },
       ]),
       SalesEntry.aggregate([
         { $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } },
@@ -69,64 +73,78 @@ export async function GET(request) {
       if (d.tankId) pumpTankMap[d.dispenserId] = d.tankId;
     }
 
-    const rows = [];
-    const emitted = new Set(); // `${dayKey}:${fuelType}` rows already produced
-
-    // Truck-offload delivery shortage/excess per day & product (from receipts
-    // flagged isOffload). Accumulates whether or not a day shift exists.
-    const deliveryByDayProduct = {};
-    for (const m of stockIns) {
-      if (!m.isOffload) continue;
-      const dk = new Date(m.date).toISOString().split('T')[0];
-      const ft = m.fuelType;
-      const v = m.offloadVariance ?? 0;
-      if (!deliveryByDayProduct[dk]) deliveryByDayProduct[dk] = {};
-      if (!deliveryByDayProduct[dk][ft]) deliveryByDayProduct[dk][ft] = { shortage: 0, excess: 0, offloaded: 0 };
-      const slot = deliveryByDayProduct[dk][ft];
-      slot.offloaded += m.actualOffloaded || 0;
-      if (v < 0) slot.shortage += -v;
-      else if (v > 0) slot.excess += v;
+    // Group shifts by calendar day, in shift order, so multi-shift days emit
+    // one row per shift per product instead of collapsing to a single row.
+    const shiftsByDay = {};
+    for (const ds of dayShifts) {
+      const dk = dayKeyOf(ds.date);
+      if (!shiftsByDay[dk]) shiftsByDay[dk] = [];
+      shiftsByDay[dk].push(ds);
     }
 
-    // Collapse to one canonical day shift per calendar day. Multiple shifts can
-    // exist for the same station+date (e.g. a stray second "begin"). Since the
-    // per-day aggregates below are filtered by dayKey (not by shift), iterating
-    // every shift would emit a duplicate row and double the day's totals.
-    // Prefer an ended shift; among equal status prefer the most recently started.
-    const shiftRank = (s) => (s.status === DAY_STATUS.ENDED ? 1 : 0);
-    const shiftTime = (s) => new Date(s.startTime || s.createdAt || 0).getTime();
-    const canonicalShiftByDay = {};
-    for (const ds of dayShifts) {
-      const dk = new Date(ds.date).toISOString().split('T')[0];
-      const existing = canonicalShiftByDay[dk];
-      if (
-        !existing ||
-        shiftRank(ds) > shiftRank(existing) ||
-        (shiftRank(ds) === shiftRank(existing) && shiftTime(ds) > shiftTime(existing))
-      ) {
-        canonicalShiftByDay[dk] = ds;
+    // StockMovement (truck deliveries/receipts) has no shift reference —
+    // attribute each one to whichever shift was actually running at its
+    // timestamp (the shift with the latest startTime at or before the
+    // delivery), so a multi-shift day's stock-in and delivery shortage/excess
+    // land on the correct shift instead of every shift on that date.
+    // Deliveries outside any shift's window fall back to a day-level bucket.
+    function attributedShiftFor(movement) {
+      const dk = dayKeyOf(movement.date);
+      const candidates = shiftsByDay[dk] || [];
+      if (!candidates.length) return null;
+      const started = candidates
+        .filter((s) => new Date(s.startTime || s.date).getTime() <= new Date(movement.date).getTime())
+        .sort((a, b) => new Date(b.startTime || b.date) - new Date(a.startTime || a.date));
+      return started[0] || candidates[0]; // fallback: day's first shift if delivery precedes every start
+    }
+
+    // dayShiftId → StockMovement[] for that shift (all receipts, not just offloads)
+    const stockInsByShiftId = {};
+    // dayKey → StockMovement[] for movements on a date with no shift at all
+    const orphanStockInsByDay = {};
+    for (const m of stockIns) {
+      const shift = attributedShiftFor(m);
+      if (shift) {
+        (stockInsByShiftId[shift._id] ||= []).push(m);
+      } else {
+        const dk = dayKeyOf(m.date);
+        (orphanStockInsByDay[dk] ||= []).push(m);
       }
     }
-    const canonicalDayShifts = Object.values(canonicalShiftByDay);
 
-    for (const dayShift of canonicalDayShifts) {
-      const dayKey = new Date(dayShift.date).toISOString().split('T')[0];
+    function deliveryShortageByProduct(movements) {
+      const out = {}; // fuelType → {shortage, excess, offloaded}
+      for (const m of movements) {
+        if (!m.isOffload) continue;
+        const ft = m.fuelType;
+        const v = m.offloadVariance ?? 0;
+        if (!out[ft]) out[ft] = { shortage: 0, excess: 0, offloaded: 0 };
+        out[ft].offloaded += m.actualOffloaded || 0;
+        if (v < 0) out[ft].shortage += -v;
+        else if (v > 0) out[ft].excess += v;
+      }
+      return out;
+    }
 
-      const dayTankEntries = tankEntries.filter(
-        (t) => new Date(t.date).toISOString().split('T')[0] === dayKey
-      );
+    const rows = [];
+    const emittedShiftProduct = new Set(); // `${dayShiftId}:${fuelType}` rows already produced
 
-      const dayStockIns = stockIns.filter(
-        (s) => new Date(s.date).toISOString().split('T')[0] === dayKey
-      );
+    for (const dayShift of dayShifts) {
+      const dayKey = dayKeyOf(dayShift.date);
+      const isSoleShiftForDay = (shiftsByDay[dayKey] || []).length === 1;
 
-      const daySales = sales.filter(
-        (s) => new Date(s.date).toISOString().split('T')[0] === dayKey
-      );
+      // A doc with no dayShiftId predates multi-shift support — safe to
+      // attribute to "the" shift only when there's unambiguously just one
+      // shift for that date (true for every pre-existing date, since
+      // multi-shift days only exist from the deploy of this feature onward).
+      const belongsToShift = (doc) =>
+        doc.dayShiftId ? String(doc.dayShiftId) === String(dayShift._id) : isSoleShiftForDay;
 
-      const dayReadings = readings.filter(
-        (r) => new Date(r.date).toISOString().split('T')[0] === dayKey
-      );
+      const dayTankEntries = tankEntries.filter(belongsToShift);
+      const daySales = sales.filter((s) => String(s.dayShiftId) === String(dayShift._id));
+      const dayReadings = readings.filter(belongsToShift);
+      const dayStockIns = stockInsByShiftId[dayShift._id] || [];
+      const deliveryByProduct = deliveryShortageByProduct(dayStockIns);
 
       // Determine litres sold per pump. Prefer the supervisor's SalesEntry; when a
       // pump has no sales entry, fall back to its meter reading net
@@ -158,7 +176,7 @@ export async function GET(request) {
 
       // Aggregate opening stock, stock in, closing stock, and sales by product across all tanks.
       // Group by tankId+period first to avoid double-counting when both an opening and a closing
-      // entry exist for the same tank on the same day.
+      // entry exist for the same tank on the same shift.
       const productAgg = {};
       const entriesByTankPeriod = {};
       for (const t of dayTankEntries) {
@@ -194,7 +212,7 @@ export async function GET(request) {
         if (productAgg[ft]) productAgg[ft].sales += liters;
       }
 
-      // Per-day tolerance snapshot (set at price time), else station's current value.
+      // Per-shift tolerance snapshot (set at price time), else station's current value.
       const tolerancePercent = resolveTolerancePercent(dayShift, station);
 
       for (const [fuelType, agg] of Object.entries(productAgg)) {
@@ -211,12 +229,16 @@ export async function GET(request) {
         // expectedTolerance = sales × tolerance %
         const expTolerance = expectedTolerance(salesLitres, tolerancePercent);
 
-        // Fold in truck-delivery shortage/excess for this day & product.
-        const delivery = deliveryByDayProduct[dayKey]?.[fuelType] || { shortage: 0, excess: 0 };
+        // Fold in truck-delivery shortage/excess attributed to this shift & product.
+        const delivery = deliveryByProduct[fuelType] || { shortage: 0, excess: 0 };
 
         rows.push({
           date: dayKey,
           openingTime: dayShift.startTime,
+          shiftKey: dayShift.shiftKey || 'default',
+          shiftLabel: dayShift.shiftLabel || 'Full Day',
+          shiftOrder: dayShift.shiftOrder || 1,
+          dayShiftId: String(dayShift._id),
           product: fuelType,
           openingStock: agg.openingStock,
           stockIn: agg.stockIn,
@@ -232,18 +254,51 @@ export async function GET(request) {
           expectedTolerance: expTolerance,
           tolerancePercent,
         });
-        emitted.add(`${dayKey}:${fuelType}`);
+        emittedShiftProduct.add(`${dayShift._id}:${fuelType}`);
+      }
+
+      // Products that had a delivery attributed to this shift but the shift
+      // never produced a tank-stock row for that product (e.g. tank not yet
+      // dipped) — surface the delivery shortage so it still counts.
+      for (const [ft, slot] of Object.entries(deliveryByProduct)) {
+        if (emittedShiftProduct.has(`${dayShift._id}:${ft}`)) continue;
+        rows.push({
+          date: dayKey,
+          openingTime: null,
+          shiftKey: dayShift.shiftKey || 'default',
+          shiftLabel: dayShift.shiftLabel || 'Full Day',
+          shiftOrder: dayShift.shiftOrder || 1,
+          dayShiftId: String(dayShift._id),
+          product: ft,
+          openingStock: 0,
+          stockIn: slot.offloaded,
+          overage: 0,
+          sales: 0,
+          priceForDay: 0,
+          totalAmount: 0,
+          shortage: slot.shortage,
+          salesShortage: 0,
+          deliveryShortage: slot.shortage,
+          deliveryExcess: slot.excess,
+          closingStock: 0,
+          expectedTolerance: 0,
+          tolerancePercent: 0,
+        });
+        emittedShiftProduct.add(`${dayShift._id}:${ft}`);
       }
     }
 
-    // Days/products that had truck deliveries but no shift row — surface their
-    // delivery shortage so it still counts in the report and totals.
-    for (const [dk, byProduct] of Object.entries(deliveryByDayProduct)) {
+    // Deliveries on a date with no shift at all — surface as a day-level row.
+    for (const [dk, movements] of Object.entries(orphanStockInsByDay)) {
+      const byProduct = deliveryShortageByProduct(movements);
       for (const [ft, slot] of Object.entries(byProduct)) {
-        if (emitted.has(`${dk}:${ft}`)) continue;
         rows.push({
           date: dk,
           openingTime: null,
+          shiftKey: 'default',
+          shiftLabel: 'Full Day',
+          shiftOrder: 1,
+          dayShiftId: null,
           product: ft,
           openingStock: 0,
           stockIn: slot.offloaded,
@@ -262,8 +317,12 @@ export async function GET(request) {
       }
     }
 
-    // Keep chronological order (appended delivery-only rows may be out of order)
-    rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.product.localeCompare(b.product)));
+    // Keep chronological order, then shift order, then product.
+    rows.sort((a, b) =>
+      a.date < b.date ? -1 : a.date > b.date ? 1 :
+      a.shiftOrder !== b.shiftOrder ? a.shiftOrder - b.shiftOrder :
+      a.product.localeCompare(b.product)
+    );
 
     return NextResponse.json({
       stationId,

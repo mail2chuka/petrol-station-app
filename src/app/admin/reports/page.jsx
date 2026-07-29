@@ -994,6 +994,7 @@ function SummaryListView({ stationId, onSelectDay }) {
               <thead>
                 <tr className="bg-gray-50">
                   <TH>Date</TH>
+                  <TH>Shift</TH>
                   <TH>Product</TH>
                   <TH>Opening Stock (L)</TH>
                   <TH>Stock In (L)</TH>
@@ -1018,6 +1019,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                       <TD className="font-medium whitespace-nowrap">
                         {new Date(r.date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}
                       </TD>
+                      <TD className="whitespace-nowrap text-gray-500">{r.shiftLabel || 'Full Day'}</TD>
                       <TD className="font-medium whitespace-nowrap">{r.product}</TD>
                       <TD>{fmtNum(r.openingStock)}</TD>
                       <TD>{fmtNum(r.stockIn)}</TD>
@@ -1055,7 +1057,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                   const tolPercent = t.sales > 0 ? ((t.expTol / t.sales) * 100) : 0;
                   return (
                     <tr key={p} className="bg-gray-50 border-t border-t-gray-200">
-                      <td className="px-4 py-3 text-sm font-bold text-gray-600 uppercase tracking-wide" colSpan={2}>Total — {p}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-600 uppercase tracking-wide" colSpan={3}>Total — {p}</td>
                       <td className="px-4 py-3 text-sm font-bold text-gray-700">{t.stockIn > 0 ? fmtNum(t.stockIn) : '—'}</td>
                       <td className="px-4 py-3 text-sm font-bold text-gray-700">
                         <span>{fmtNum(t.tolerance)}</span>
@@ -1074,7 +1076,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                   );
                 })}
                 <tr className="bg-gray-100 border-t-2 border-t-gray-300">
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide" colSpan={2}>
+                  <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide" colSpan={3}>
                     {productsPresent.length > 1 ? 'Grand Total (All Products)' : 'Totals'}
                   </td>
                   <td className="px-4 py-3 text-sm font-bold text-gray-800">{totalStockIn > 0 ? fmtNum(totalStockIn) : '—'}</td>

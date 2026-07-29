@@ -81,12 +81,18 @@ function EndDayPageContent() {
 
       const stationObj = stationData.station || null;
       setStation(stationObj);
-      setMeterReadings(mrData.readings || []);
+      // The GET routes return every record for the date across all shifts —
+      // scope to this shift's own records (tolerating legacy docs that
+      // predate the dayShiftId field) so a later shift's end-day doesn't mix
+      // in an earlier shift's readings on the same date.
+      const belongsToShift = (e) => !e.dayShiftId || String(e.dayShiftId) === String(dayShift._id);
+      setMeterReadings((mrData.readings || []).filter(belongsToShift));
       setSalesEntries(salesData.salesEntries || []);
       setPaymentRecords(payData.paymentRecords || []);
 
-      initTankState(stationObj, tsData.entries || []);
-      setTankStockEntries(tsData.entries || []);
+      const shiftTankEntries = (tsData.entries || []).filter(belongsToShift);
+      initTankState(stationObj, shiftTankEntries);
+      setTankStockEntries(shiftTankEntries);
     } catch (err) {
       console.error(err);
       setError('Failed to load data');
@@ -117,7 +123,9 @@ function EndDayPageContent() {
   const refreshTankStock = async () => {
     const tsRes = await fetch(`/api/tank-stock?stationId=${activeStationId}&date=${dateStr}`);
     const tsData = await tsRes.json();
-    const entries = tsData.entries || [];
+    const entries = (tsData.entries || []).filter(
+      (e) => !e.dayShiftId || String(e.dayShiftId) === String(activeDayShift._id)
+    );
     setTankStockEntries(entries);
     initTankState(station, entries);
   };
@@ -146,6 +154,7 @@ function EndDayPageContent() {
           period: 'closing',
           stockValue: value,
           notes: form.notes || '',
+          dayShiftId: activeDayShift._id,
         }),
       });
       const data = await res.json();
@@ -254,7 +263,9 @@ function EndDayPageContent() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-800">End Day</h1>
+        <h1 className="text-3xl font-bold text-gray-800">
+          End Day{activeDayShift.shiftLabel && activeDayShift.shiftLabel !== 'Full Day' ? ` — ${activeDayShift.shiftLabel}` : ''}
+        </h1>
         <p className="text-gray-500 mt-1">
           {activeDayShift.stationName} —{' '}
           {new Date(activeDayShift.date).toLocaleDateString('en-NG', { dateStyle: 'full' })}

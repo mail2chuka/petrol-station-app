@@ -206,15 +206,35 @@ export async function POST(request) {
     const pumpLabel = bodyPumpLabel || shiftDispenser.dispenserName || pumpId;
 
     // ── OPENING ACTION ──────────────────────────────────────────────────────────
-    // Opening is auto-set from the most recent closing of the previous operating day.
-    // Supervisors cannot enter the opening value manually.
+    // Opening is auto-set from the most recent closing — the immediately prior
+    // shift on the same date if this isn't the day's first shift, else the
+    // previous operating day's closing. Supervisors cannot enter the opening
+    // value manually (except on first-time setup, below).
     if (action === 'opening') {
-      const previousReading = await MeterReading.findOne({
-        stationId,
-        pumpId,
-        date: { $lt: startDate },
-        closing: { $ne: null },
-      }).sort({ date: -1, createdAt: -1 });
+      let previousReading = null;
+      if (activeShift.shiftOrder > 1) {
+        const priorShift = await DayShift.findOne({
+          stationId,
+          date: { $gte: startDate, $lte: endDate },
+          shiftOrder: activeShift.shiftOrder - 1,
+        });
+        if (priorShift) {
+          previousReading = await MeterReading.findOne({
+            stationId,
+            pumpId,
+            dayShiftId: priorShift._id,
+            closing: { $ne: null },
+          });
+        }
+      }
+      if (!previousReading) {
+        previousReading = await MeterReading.findOne({
+          stationId,
+          pumpId,
+          date: { $lt: startDate },
+          closing: { $ne: null },
+        }).sort({ date: -1, createdAt: -1 });
+      }
 
       const previousDayClosing = previousReading?.closing ?? null;
 
@@ -233,8 +253,11 @@ export async function POST(request) {
         opening = manualOpening;
       }
 
+      // Match either this shift's own doc or a pre-deploy doc that hasn't been
+      // tagged with a dayShiftId yet (in-flight shift crossing the deploy) —
+      // avoids treating that as "no opening yet" and creating a duplicate.
       const reading = await MeterReading.findOneAndUpdate(
-        { stationId, pumpId, date: { $gte: startDate, $lte: endDate } },
+        { stationId, pumpId, date: { $gte: startDate, $lte: endDate }, dayShiftId: { $in: [activeShift._id, null] } },
         {
           $set: {
             stationId,
@@ -242,6 +265,7 @@ export async function POST(request) {
             pumpId,
             pumpLabel,
             date: startDate,
+            dayShiftId: activeShift._id,
             opening,
             openingSubmittedAt: new Date(),
             supervisorId: currentUser.id,
@@ -278,6 +302,7 @@ export async function POST(request) {
         stationId,
         pumpId,
         date: { $gte: startDate, $lte: endDate },
+        dayShiftId: { $in: [activeShift._id, null] },
       });
 
       if (!reading) {
@@ -331,6 +356,7 @@ export async function POST(request) {
         stationId,
         pumpId,
         date: { $gte: startDate, $lte: endDate },
+        dayShiftId: { $in: [activeShift._id, null] },
       });
 
       if (!existing) {
@@ -340,6 +366,7 @@ export async function POST(request) {
       existing.closing = closing;
       existing.rtt = isNaN(rtt) ? 0 : rtt;
       existing.closingSubmittedAt = new Date();
+      if (!existing.dayShiftId) existing.dayShiftId = activeShift._id;
       await existing.save();
 
       return NextResponse.json({ reading: existing }, { status: 200 });

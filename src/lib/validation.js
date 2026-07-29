@@ -89,6 +89,7 @@ export const offloadSchema = z.object({
 export const beginDaySchema = z.object({
   stationId: z.string(),
   date: z.string(),
+  shiftKey: z.string().optional(),
   dispensers: z.array(z.object({
     dispenserId: z.string(),
     fuelType: z.enum(Object.values(FUEL_TYPES)),

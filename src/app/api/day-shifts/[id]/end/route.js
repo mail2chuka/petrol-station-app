@@ -54,10 +54,19 @@ export async function POST(request, { params }) {
     const startDate = new Date(dateStr + 'T00:00:00.000Z');
     const endDate = new Date(dateStr + 'T23:59:59.999Z');
 
+    // Scope to this specific shift's records, not the whole calendar day —
+    // matters once a station runs multiple shifts per day. Pre-deploy docs
+    // that predate the dayShiftId field (dayShiftId: null) are also matched,
+    // so a shift already in progress when this shipped still ends cleanly.
+    const shiftRecordFilter = dayShift.shiftKey && dayShift.shiftKey !== 'default'
+      ? { dayShiftId: dayShift._id }
+      : { dayShiftId: { $in: [dayShift._id, null] } };
+
     // Validate: all pumps that have an opening reading must also have a closing reading
     const unclosedReadings = await MeterReading.find({
       stationId: dayShift.stationId,
       date: { $gte: startDate, $lte: endDate },
+      ...shiftRecordFilter,
       opening: { $ne: null },
       closing: null,
     }).session(session);
@@ -78,6 +87,7 @@ export async function POST(request, { params }) {
     const closingEntries = await TankStockEntry.find({
       stationId: dayShift.stationId,
       date: { $gte: startDate, $lte: endDate },
+      ...shiftRecordFilter,
       period: 'closing',
     }).session(session);
 
@@ -99,6 +109,7 @@ export async function POST(request, { params }) {
     const meterReadings = await MeterReading.find({
       stationId: dayShift.stationId,
       date: { $gte: startDate, $lte: endDate },
+      ...shiftRecordFilter,
     }).session(session);
 
     const readingsByPumpId = {};

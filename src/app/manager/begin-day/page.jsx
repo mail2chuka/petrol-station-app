@@ -7,6 +7,7 @@ import Card from '@/components/Card';
 import Button from '@/components/Button';
 import Loading from '@/components/Loading';
 import { FUEL_TYPE_LABELS } from '@/lib/constants';
+import { getEffectiveShiftSchedule } from '@/lib/shifts';
 
 function BeginDayPageContent() {
   const { data: session } = useSession();
@@ -27,20 +28,25 @@ function BeginDayPageContent() {
   const [error, setError] = useState('');
   const [zeroStockWarning, setZeroStockWarning] = useState(null);
   const [pendingSubmit, setPendingSubmit] = useState(null);
+  const [shiftSchedule, setShiftSchedule] = useState([]);
+  const [shiftKey, setShiftKey] = useState('default');
 
   useEffect(() => { fetchData(); }, [activeStationId]);
 
   const fetchData = async () => {
     if (!activeStationId) return;
     try {
-      const [stationsRes, dispensersRes, attendantsRes] = await Promise.all([
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+      const [stationsRes, dispensersRes, attendantsRes, todayShiftsRes] = await Promise.all([
         fetch('/api/stations'),
         fetch(`/api/stations/${activeStationId}/dispensers`),
         fetch(`/api/attendants?stationId=${activeStationId}`),
+        fetch(`/api/day-shifts?stationId=${activeStationId}&date=${today}`),
       ]);
       const stationsData = await stationsRes.json();
       const dispensersData = await dispensersRes.json();
       const attendantsData = await attendantsRes.json();
+      const todayShiftsData = await todayShiftsRes.json().catch(() => ({}));
 
       const currentStation = (stationsData.stations || []).find(s => s._id === activeStationId);
       setStation(currentStation);
@@ -48,6 +54,16 @@ function BeginDayPageContent() {
       const active = (dispensersData.dispensers || []).filter(d => d.isActive);
       setDispensers(active);
       setAttendants(attendantsData.attendants || []);
+
+      // Shift picker — invisible for stations that haven't configured a
+      // schedule (single implicit 'default' shift, same as before). When
+      // configured, pre-select the next shift in order not already begun
+      // today, but allow manual override.
+      const schedule = getEffectiveShiftSchedule(currentStation);
+      setShiftSchedule(schedule);
+      const usedKeys = new Set((todayShiftsData.dayShifts || []).map(d => d.shiftKey || 'default'));
+      const nextShift = schedule.find(s => !usedKeys.has(s.key)) || schedule[0];
+      setShiftKey(nextShift.key);
     } catch {
       setError('Failed to load data');
     } finally {
@@ -85,6 +101,7 @@ function BeginDayPageContent() {
     return {
       stationId: activeStationId,
       date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date()),
+      shiftKey,
       dispensers: selectedDispensers.map(d => ({ dispenserId: d.dispenserId, fuelType: d.fuelType })),
     };
   };
@@ -145,8 +162,10 @@ function BeginDayPageContent() {
         return;
       }
 
-      // Create attendant assignments for each pump
+      // Create attendant assignments for each pump, tied to this shift so the
+      // same pump can have a different attendant on a later shift today.
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+      const newDayShiftId = data.dayShift?._id;
       const assignCalls = [...selected].map(dispenserId => {
         const attendantId = pumpAttendants[dispenserId];
         if (!attendantId) return Promise.resolve();
@@ -157,6 +176,7 @@ function BeginDayPageContent() {
           body: JSON.stringify({
             stationId: activeStationId,
             date: today,
+            dayShiftId: newDayShiftId,
             dispenserId,
             dispenserName: dispenser?.name || dispenserId,
             fuelType: dispenser?.fuelType || '',
@@ -236,6 +256,29 @@ function BeginDayPageContent() {
       )}
 
       <form onSubmit={handleSubmit}>
+        {/* Shift picker — only shown for stations with more than one configured shift */}
+        {shiftSchedule.length > 1 && (
+          <Card title="Shift" className="mb-6">
+            <div className="flex flex-wrap gap-2">
+              {shiftSchedule.map(s => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setShiftKey(s.key)}
+                  className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-colors ${
+                    shiftKey === s.key ? 'border-ecana-maroon bg-ecana-maroon/10 text-ecana-maroon' : 'border-gray-200 text-gray-500'
+                  }`}
+                >
+                  {s.label}
+                  {(s.startTime || s.endTime) && (
+                    <span className="block text-xs font-normal opacity-70">{s.startTime}{s.startTime && s.endTime ? ' – ' : ''}{s.endTime}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
+
         {/* Prices section — read-only snapshot set by admin */}
         <Card title="Today's Prices">
           <p className="text-sm text-gray-500 mb-4">

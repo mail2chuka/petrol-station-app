@@ -45,7 +45,12 @@ export async function GET(request) {
       matchQuery.stationId = currentUser.stationId;
     }
 
-    // Aggregate data
+    // Aggregate data. Note: totalDays historically counted DayShift docs,
+    // which was equivalent to calendar days when there was only ever one
+    // shift per day. Now that a day can have multiple shifts, totalDays
+    // still counts shift-docs (kept as-is so existing consumers don't
+    // silently change meaning); totalShifts is the same number under its
+    // accurate name, and totalOperatingDays counts distinct calendar dates.
     const aggregation = await DayShift.aggregate([
       { $match: matchQuery },
       {
@@ -53,6 +58,8 @@ export async function GET(request) {
           _id: stationId ? null : '$stationId',
           stationName: { $first: '$stationName' },
           totalDays: { $sum: 1 },
+          totalShifts: { $sum: 1 },
+          distinctDates: { $addToSet: '$date' },
           totalPmsLiters: { $sum: '$totalSales.PMS.liters' },
           totalPmsAmount: { $sum: '$totalSales.PMS.amount' },
           totalAgoLiters: { $sum: '$totalSales.AGO.liters' },
@@ -64,6 +71,12 @@ export async function GET(request) {
           totalDiscrepancy: { $sum: '$discrepancy' },
         },
       },
+      {
+        $addFields: {
+          totalOperatingDays: { $size: '$distinctDates' },
+        },
+      },
+      { $project: { distinctDates: 0 } },
       { $sort: { stationName: 1 } },
     ]);
 

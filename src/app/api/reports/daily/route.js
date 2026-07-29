@@ -36,12 +36,18 @@ export async function GET(request) {
 
     // A day shift is optional — deliveries, cash collections and bank deposits can
     // happen on days with no shift. We still report whatever data exists for the date.
-    // Deterministic pick if legacy duplicates exist: prefer an ended shift, then the
-    // most recently started (matches the summary-book canonical-shift selection).
-    const dayShift = await DayShift.findOne({
+    // A date can now have more than one shift — fetch them all (`shifts`) and keep
+    // `dayShift` as a single representative pick (prefer an ended shift, then the
+    // most recently started) so existing consumers of the single-object shape
+    // keep working unchanged.
+    const shifts = await DayShift.find({
       stationId,
       date: { $gte: startDate, $lte: endDate },
-    }).sort({ status: 1, startTime: -1 });
+    }).sort({ shiftOrder: 1, startTime: 1 });
+
+    const dayShift = shifts.find(s => s.status === 'ended')
+      || [...shifts].sort((a, b) => new Date(b.startTime || 0) - new Date(a.startTime || 0))[0]
+      || null;
 
     // Fetch by date (not dayShiftId) so records show with or without a shift.
     const [salesEntries, paymentRecords, meterReadings, tankStockEntries] = await Promise.all([
@@ -112,6 +118,7 @@ export async function GET(request) {
 
     return NextResponse.json({
       dayShift,
+      shifts,
       paymentRecords,
       meterReadings,
       tankStockEntries,

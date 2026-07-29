@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Loading from '@/components/Loading';
+import { getEffectiveShiftSchedule } from '@/lib/shifts';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function todayStr() {
@@ -17,6 +18,10 @@ function yesterdayStr() {
 function fmtN(n) {
   if (n == null || n === '') return '—';
   return Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function slugify(label) {
+  const s = (label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  return s || 'default';
 }
 
 const STEPS = [
@@ -140,6 +145,14 @@ export default function BackfillPage() {
   const [station, setStation] = useState(null);
   const [loadingStation, setLoadingStation] = useState(false);
 
+  // Shift — stations may have run multiple real shifts historically even if
+  // they weren't recorded per-shift at the time. Free text so an admin can
+  // match old paper records even if the station's shift config has changed
+  // since. Defaults to 'default' (Full Day) — invisible for the common case.
+  const [shiftKey, setShiftKey] = useState('default');
+  const [shiftLabel, setShiftLabel] = useState('Full Day');
+  const [shiftsForDate, setShiftsForDate] = useState([]);
+
   // Existing DB data for the selected date+station
   const [existingData, setExistingData] = useState(null);
 
@@ -154,10 +167,12 @@ export default function BackfillPage() {
   // Tank readings
   const [tankReadings, setTankReadings] = useState({});
 
-  // Deliveries – each item has fuelType, tankId, totalReceived, supplier, costPerLiter
+  // Deliveries – each item has fuelType, tankId, totalReceived, declaredLoad, supplier, costPerLiter
+  // declaredLoad = what the truck/waybill declared (optional) — compared against
+  // totalReceived (what actually reached the tank) to detect a supplier shortage.
   // _id: null = not yet saved; _id: '<mongoId>' = already in DB (skip on re-save)
   const [deliveries, setDeliveries] = useState([
-    { _id: null, fuelType: 'PMS', tankId: '', totalReceived: '', supplier: '', costPerLiter: '' },
+    { _id: null, fuelType: 'PMS', tankId: '', totalReceived: '', declaredLoad: '', supplier: '', costPerLiter: '' },
   ]);
 
   // Sales
@@ -184,6 +199,13 @@ export default function BackfillPage() {
       .then((r) => r.json())
       .then((d) => setStations((d.stations || []).filter((s) => s.isActive !== false)));
   }, []);
+
+  // Reset shift selection to the default whenever station or date changes —
+  // a shift chosen for one date shouldn't silently carry over to another.
+  useEffect(() => {
+    setShiftKey('default');
+    setShiftLabel('Full Day');
+  }, [stationId, date]);
 
   // Load station + existing data whenever stationId or date changes
   useEffect(() => {
@@ -218,10 +240,11 @@ export default function BackfillPage() {
         const initPA = {};
         dispensers.forEach((d) => { initPA[d.dispenserId] = { cash: '', pos: '' }; });
 
-        // Fetch existing records for this date
-        const exRes = await fetch(`/api/admin/backfill?stationId=${stationId}&date=${date}`);
+        // Fetch existing records for this date + shift
+        const exRes = await fetch(`/api/admin/backfill?stationId=${stationId}&date=${date}&shiftKey=${encodeURIComponent(shiftKey)}`);
         if (cancelled) return;
         const ex = exRes.ok ? await exRes.json() : {};
+        setShiftsForDate(ex.shiftsForDate || []);
 
         // Apply existing data over empty state (pre-populates all fields)
         const stationTolerance = st?.tolerancePercent != null ? String(st.tolerancePercent) : '';
@@ -274,12 +297,13 @@ export default function BackfillPage() {
               fuelType: m.fuelType || 'PMS',
               tankId: m.distribution?.[0]?.tankId || '',
               totalReceived: m.totalReceived != null ? String(m.totalReceived) : '',
+              declaredLoad: m.declaredLoad != null ? String(m.declaredLoad) : '',
               supplier: m.supplier || '',
               costPerLiter: m.costPerLiter != null ? String(m.costPerLiter) : '',
             }))
           );
         } else {
-          setDeliveries([{ _id: null, fuelType: 'PMS', tankId: '', totalReceived: '', supplier: '', costPerLiter: '' }]);
+          setDeliveries([{ _id: null, fuelType: 'PMS', tankId: '', totalReceived: '', declaredLoad: '', supplier: '', costPerLiter: '' }]);
         }
 
         if (ex.salesEntries?.length) {
@@ -324,7 +348,7 @@ export default function BackfillPage() {
     })();
 
     return () => { cancelled = true; };
-  }, [stationId, date]);  
+  }, [stationId, date, shiftKey]);
 
   // Auto-fill sales liters from pump net readings when entering the sales step
   useEffect(() => {
@@ -377,7 +401,7 @@ export default function BackfillPage() {
     const res = await fetch('/api/admin/backfill', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: pinInput, stationId, date, ...payload }),
+      body: JSON.stringify({ pin: pinInput, stationId, date, shiftKey, shiftLabel, ...payload }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed');
@@ -387,7 +411,7 @@ export default function BackfillPage() {
   // ── Refresh helpers ───────────────────────────────────────────────────────────
   async function fetchBackfillData() {
     if (!stationId || !date) return null;
-    const res = await fetch(`/api/admin/backfill?stationId=${stationId}&date=${date}`);
+    const res = await fetch(`/api/admin/backfill?stationId=${stationId}&date=${date}&shiftKey=${encodeURIComponent(shiftKey)}`);
     if (!res.ok) return null;
     return res.json();
   }
@@ -423,6 +447,7 @@ export default function BackfillPage() {
         fuelType: m.fuelType || 'PMS',
         tankId: m.distribution?.[0]?.tankId || '',
         totalReceived: m.totalReceived != null ? String(m.totalReceived) : '',
+        declaredLoad: m.declaredLoad != null ? String(m.declaredLoad) : '',
         supplier: m.supplier || '',
         costPerLiter: m.costPerLiter != null ? String(m.costPerLiter) : '',
       })));
@@ -581,6 +606,7 @@ export default function BackfillPage() {
             movementId: d._id,
             fuelType: d.fuelType,
             totalReceived: d.totalReceived,
+            declaredLoad: d.declaredLoad || undefined,
             distribution: [{ tankId: d.tankId, litres: Number(d.totalReceived) }],
             supplier: d.supplier,
             costPerLiter: d.costPerLiter || undefined,
@@ -591,6 +617,7 @@ export default function BackfillPage() {
             type: 'tankDelivery',
             fuelType: d.fuelType,
             totalReceived: d.totalReceived,
+            declaredLoad: d.declaredLoad || undefined,
             distribution: [{ tankId: d.tankId, litres: Number(d.totalReceived) }],
             supplier: d.supplier,
             costPerLiter: d.costPerLiter || undefined,
@@ -849,6 +876,46 @@ export default function BackfillPage() {
               <p><span className="font-semibold">Station:</span> {station.name}</p>
               <p><span className="font-semibold">Pumps:</span> {(station.dispensers || []).filter((d) => d.isActive !== false).length}</p>
               <p><span className="font-semibold">Tanks:</span> {(station.tanks || []).filter((t) => t.isActive !== false).length}</p>
+            </div>
+          )}
+          {station && !loadingStation && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+                Shift <span className="font-normal normal-case text-slate-400">(only if this date was actually split into multiple real shifts)</span>
+              </label>
+              {shiftsForDate.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {shiftsForDate.map((s) => (
+                    <button
+                      key={s.shiftKey}
+                      type="button"
+                      onClick={() => { setShiftKey(s.shiftKey); setShiftLabel(s.shiftLabel); }}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+                        shiftKey === s.shiftKey ? 'border-ecana-maroon bg-ecana-maroon/10 text-ecana-maroon' : 'border-slate-200 text-slate-500'
+                      }`}
+                    >
+                      {s.shiftLabel}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => { setShiftKey(`shift-${Date.now()}`); setShiftLabel(''); }}
+                    className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-slate-300 text-slate-500"
+                  >
+                    + New shift for this date
+                  </button>
+                </div>
+              )}
+              <input
+                type="text"
+                value={shiftLabel}
+                onChange={(e) => { setShiftLabel(e.target.value); setShiftKey(slugify(e.target.value)); }}
+                placeholder="Full Day (leave as-is unless entering a specific shift)"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Free text — doesn&apos;t need to match the station&apos;s current shift setup, since old records may predate it.
+              </p>
             </div>
           )}
           {hasAnyExisting && !loadingStation && (
@@ -1138,6 +1205,9 @@ export default function BackfillPage() {
                     </select>
                     {!d.tankId && <p className="text-xs text-amber-600 mt-1">Tank selection is required to save this delivery.</p>}
                   </div>
+                  <Field label="Declared Load (L)" type="number" value={d.declaredLoad}
+                    onChange={(v) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, declaredLoad: v } : x))}
+                    placeholder="Optional — waybill/invoice qty" />
                   <Field label="Total Received (L)" type="number" value={d.totalReceived}
                     onChange={(v) => setDeliveries((p) => p.map((x, j) => j === i ? { ...x, totalReceived: v } : x))}
                     placeholder="e.g. 33000" />
@@ -1153,12 +1223,25 @@ export default function BackfillPage() {
                     Total cost: ₦{fmtN(parseFloat(d.totalReceived) * parseFloat(d.costPerLiter))}
                   </p>
                 )}
+                {d.totalReceived && d.declaredLoad && (() => {
+                  const variance = (parseFloat(d.totalReceived) || 0) - (parseFloat(d.declaredLoad) || 0);
+                  if (variance === 0) return (
+                    <p className="text-xs text-emerald-600 font-medium">No shortage — full declared load received.</p>
+                  );
+                  return (
+                    <p className={`text-xs font-medium ${variance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {variance < 0
+                        ? `Shortage: ${fmtN(-variance)} L short of the declared load`
+                        : `Excess: ${fmtN(variance)} L over the declared load`}
+                    </p>
+                  );
+                })()}
               </div>
             );
           })}
 
           <button
-            onClick={() => setDeliveries((p) => [...p, { _id: null, fuelType: 'PMS', tankId: '', totalReceived: '', supplier: '', costPerLiter: '' }])}
+            onClick={() => setDeliveries((p) => [...p, { _id: null, fuelType: 'PMS', tankId: '', totalReceived: '', declaredLoad: '', supplier: '', costPerLiter: '' }])}
             className="text-sm text-ecana-maroon hover:underline"
           >
             + Add Another Delivery

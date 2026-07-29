@@ -35,14 +35,17 @@ export async function GET(request) {
     const startDate = new Date(date + 'T00:00:00.000Z');
     const endDate = new Date(date + 'T23:59:59.999Z');
 
-    // Look up the DayShift for this date so we can query by dayShiftId (prevents
-    // createdAt timezone mismatches where records saved near midnight fall on the wrong day)
-    const dayShift = await DayShift.findOne({
+    // Look up every DayShift for this date (there can be more than one now) so
+    // we can query by dayShiftId (prevents createdAt timezone mismatches where
+    // records saved near midnight fall on the wrong day). Summing across all
+    // of the date's shifts — querying just one arbitrary shift here would
+    // silently drop the other shifts' sales/payments.
+    const dayShifts = await DayShift.find({
       stationId,
       date: { $gte: startDate, $lte: endDate },
     });
 
-    if (!dayShift) {
+    if (!dayShifts.length) {
       return NextResponse.json({
         summary: {
           totalSalesExpected: 0,
@@ -57,9 +60,10 @@ export async function GET(request) {
       });
     }
 
+    const dayShiftIds = dayShifts.map((d) => d._id);
     const [salesEntries, paymentRecords, stockMovements] = await Promise.all([
-      SalesEntry.find({ dayShiftId: dayShift._id }),
-      PaymentRecord.find({ dayShiftId: dayShift._id }),
+      SalesEntry.find({ dayShiftId: { $in: dayShiftIds } }),
+      PaymentRecord.find({ dayShiftId: { $in: dayShiftIds } }),
       StockMovement.find({
         stationId,
         date: { $gte: startDate, $lte: endDate },

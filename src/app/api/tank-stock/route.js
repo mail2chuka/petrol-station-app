@@ -18,6 +18,7 @@ const createSchema = z.object({
   period: z.enum(['opening', 'closing']),
   stockValue: z.number().min(0),
   notes: z.string().optional(),
+  dayShiftId: z.string().optional(),
 });
 
 // GET /api/tank-stock?stationId=&date=YYYY-MM-DD
@@ -251,7 +252,23 @@ export async function POST(request) {
     const startDate = new Date(payload.date + 'T00:00:00.000Z');
     const endDate = new Date(payload.date + 'T23:59:59.999Z');
 
-    // For closing entries: look up today's opening entry to get openingStock
+    // Resolve which shift this entry belongs to. Callers that already know
+    // their active DayShift (manager/supervisor UI) pass it explicitly; older
+    // callers fall back to the date's shift the same way begin/end already do
+    // (arbitrary pick among same-date shifts — only ambiguous once a station
+    // has actually configured more than one shift).
+    let dayShiftId = payload.dayShiftId || null;
+    if (!dayShiftId) {
+      const fallbackShift = await DayShift.findOne({
+        stationId: payload.stationId,
+        date: { $gte: startDate, $lte: endDate },
+      }).sort({ status: 1, startTime: -1 });
+      dayShiftId = fallbackShift?._id || null;
+    }
+
+    // For closing entries: look up this shift's opening entry to get openingStock.
+    // Also match a pre-deploy doc that hasn't been tagged with a dayShiftId yet
+    // (in-flight shift crossing the deploy) so its opening isn't missed.
     let openingStock = payload.stockValue;
     if (payload.period === 'closing') {
       const openingEntry = await TankStockEntry.findOne({
@@ -259,6 +276,7 @@ export async function POST(request) {
         tankId: payload.tankId,
         date: { $gte: startDate, $lte: endDate },
         period: 'opening',
+        dayShiftId: { $in: [dayShiftId, null] },
       });
       if (openingEntry) {
         openingStock = openingEntry.openingStock;
@@ -277,6 +295,7 @@ export async function POST(request) {
       product: tank.product,
       date: startDate,
       period: payload.period,
+      dayShiftId,
       openingStock,
       closingStockMeasured,
       supervisorId: currentUser.id,
@@ -298,6 +317,10 @@ export async function POST(request) {
         tankId: payload.tankId,
         date: { $gte: startDate, $lte: endDate },
         period: payload.period,
+        // Match either this shift's own doc or a pre-deploy doc that hasn't
+        // been tagged with a dayShiftId yet (in-flight shift crossing the
+        // deploy) — avoids creating a duplicate that end-day can't find.
+        dayShiftId: { $in: [dayShiftId, null] },
       },
       updateData,
       { new: true, upsert: true, runValidators: true }

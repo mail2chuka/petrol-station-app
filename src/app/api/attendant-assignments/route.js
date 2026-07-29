@@ -37,7 +37,7 @@ export async function POST(request) {
     await connectDB();
 
     const body = await request.json();
-    const { stationId: bodyStationId, date, dispenserId, dispenserName, fuelType, attendantId } = body;
+    const { stationId: bodyStationId, date, dayShiftId, dispenserId, dispenserName, fuelType, attendantId } = body;
     const stationId = currentUser.stationId || bodyStationId;
 
     if (!date || !dispenserId || !attendantId) {
@@ -48,10 +48,14 @@ export async function POST(request) {
     if (!attendant) return NextResponse.json({ error: 'Attendant not found' }, { status: 404 });
 
     const assignment = await AttendantAssignment.findOneAndUpdate(
-      { stationId, date, dispenserId },
+      // Match either this shift's own doc or a pre-deploy doc that hasn't
+      // been tagged with a dayShiftId yet (in-flight shift crossing the
+      // deploy) — avoids creating a duplicate.
+      { stationId, date, dispenserId, dayShiftId: { $in: [dayShiftId || null, null] } },
       {
         stationId,
         date,
+        dayShiftId: dayShiftId || null,
         dispenserId,
         dispenserName: dispenserName || '',
         fuelType: fuelType || '',

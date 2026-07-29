@@ -10,6 +10,7 @@ import { beginDaySchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
+import { resolveShiftMeta } from '@/lib/shifts';
 
 // POST /api/day-shifts/begin - Begin a new day
 export async function POST(request) {
@@ -84,18 +85,26 @@ export async function POST(request) {
       );
     }
 
-    // Guard against a second shift for the same calendar date (regardless of
-    // status). Only one day shift may exist per station per date — a duplicate
-    // would double that day's figures in the summary report.
+    const shiftMeta = resolveShiftMeta(station, validatedData.shiftKey);
+
+    // Guard against a second DayShift for the same calendar date AND shift
+    // (regardless of status). Stations without a configured shift schedule
+    // always resolve to the single 'default' shift, so this is unchanged for
+    // them — only stations with multiple configured shifts can begin more
+    // than one DayShift on the same date.
+    // A pre-deploy doc has no shiftKey field at all — treat that as equivalent
+    // to 'default' so the "one shift per day" guard still catches it during
+    // the transition window.
     const existingDayForDate = await DayShift.findOne({
       stationId: validatedData.stationId,
       date: { $gte: dayStart, $lte: dayEnd },
+      shiftKey: shiftMeta.key === 'default' ? { $in: ['default', null] } : shiftMeta.key,
     }).session(session);
 
     if (existingDayForDate) {
       await session.abortTransaction();
       return NextResponse.json(
-        { error: `A day shift already exists for ${validatedData.date}. Only one shift is allowed per day.` },
+        { error: `The ${shiftMeta.label} shift already exists for ${validatedData.date}.` },
         { status: 400 }
       );
     }
@@ -140,6 +149,9 @@ export async function POST(request) {
       stationName: station.name,
       date: dayDate,
       status: DAY_STATUS.IN_PROGRESS,
+      shiftKey: shiftMeta.key,
+      shiftLabel: shiftMeta.label,
+      shiftOrder: shiftMeta.order,
       startedBy: currentUser.id,
       startedByName: currentUser.name,
       startTime: new Date(),
@@ -171,35 +183,61 @@ export async function POST(request) {
       { new: true, upsert: true, session }
     );
 
-    // Auto-create opening TankStockEntry for each active tank,
-    // carrying forward the previous day's closing stock as today's opening.
+    // Auto-create opening TankStockEntry for each active tank, carrying
+    // forward the previous shift's closing stock as this shift's opening —
+    // the immediately prior shift on the same date if this isn't the day's
+    // first shift, else the previous operating day's closing.
     const activeTanks = (station.tanks || []).filter(t => t.isActive);
     const dayDateUTC = new Date(validatedData.date + 'T00:00:00.000Z');
+    const newDayShiftId = dayShift[0]._id;
+
+    let priorShiftId = null;
+    if (shiftMeta.order > 1) {
+      const priorShift = await DayShift.findOne({
+        stationId: validatedData.stationId,
+        date: { $gte: dayDateUTC, $lte: new Date(validatedData.date + 'T23:59:59.999Z') },
+        shiftOrder: shiftMeta.order - 1,
+      }).session(session);
+      priorShiftId = priorShift?._id || null;
+    }
 
     for (const tank of activeTanks) {
       const tankIdStr = tank._id.toString();
 
-      // Find the most recent closing entry for this tank before today
-      const prevClosing = await TankStockEntry.findOne({
-        stationId: validatedData.stationId,
-        tankId: tankIdStr,
-        period: 'closing',
-        date: { $lt: dayDateUTC },
-      }).sort({ date: -1 }).session(session);
+      let prevClosing = null;
+      if (priorShiftId) {
+        prevClosing = await TankStockEntry.findOne({
+          stationId: validatedData.stationId,
+          tankId: tankIdStr,
+          period: 'closing',
+          dayShiftId: priorShiftId,
+        }).session(session);
+      }
+      if (!prevClosing) {
+        // O === 1, or the prior same-day shift never produced a closing entry —
+        // fall back to the most recent closing entry before today.
+        prevClosing = await TankStockEntry.findOne({
+          stationId: validatedData.stationId,
+          tankId: tankIdStr,
+          period: 'closing',
+          date: { $lt: dayDateUTC },
+        }).sort({ date: -1 }).session(session);
+      }
 
-      // Use previous day's per-tank closing; default 0 on first day (never use product total)
+      // Use previous shift's per-tank closing; default 0 on first day (never use product total)
       let openingValue = 0;
       if (prevClosing) {
         openingValue = prevClosing.closingStockManager ?? prevClosing.closingStockMeasured ?? 0;
       }
 
-      // Upsert — don't overwrite if the manager already entered one today
+      // Upsert — don't overwrite if this shift's opening was already entered
       await TankStockEntry.findOneAndUpdate(
         {
           stationId: validatedData.stationId,
           tankId: tankIdStr,
           date: { $gte: dayDateUTC, $lte: new Date(validatedData.date + 'T23:59:59.999Z') },
           period: 'opening',
+          dayShiftId: newDayShiftId,
         },
         {
           $setOnInsert: {
@@ -210,6 +248,7 @@ export async function POST(request) {
             product: tank.product,
             date: dayDateUTC,
             period: 'opening',
+            dayShiftId: newDayShiftId,
             openingStock: openingValue,
             closingStockMeasured: openingValue,
             recordedBy: currentUser.id,

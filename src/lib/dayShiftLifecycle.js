@@ -49,9 +49,18 @@ async function autoCloseOneShift(dayShift, session) {
   const startDate = new Date(dateStr + 'T00:00:00.000Z');
   const endDate = new Date(dateStr + 'T23:59:59.999Z');
 
+  // Scope to this shift's own closing entries, not the whole calendar day —
+  // matters once a station runs multiple shifts per day. 'default'-shift days
+  // also match pre-deploy docs (dayShiftId: null) since there's always at
+  // most one shift per date for stations that never configured a schedule.
+  const shiftRecordFilter = dayShift.shiftKey && dayShift.shiftKey !== 'default'
+    ? { dayShiftId: dayShift._id }
+    : { dayShiftId: { $in: [dayShift._id, null] } };
+
   const closingEntries = await TankStockEntry.find({
     stationId: dayShift.stationId,
     date: { $gte: startDate, $lte: endDate },
+    ...shiftRecordFilter,
     period: 'closing',
   }, null, options);
 

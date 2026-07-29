@@ -31,6 +31,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const stationId = searchParams.get('stationId');
     const date = searchParams.get('date');
+    const shiftKey = searchParams.get('shiftKey') || 'default';
     if (!stationId || !date) {
       return NextResponse.json({ error: 'stationId and date are required.' }, { status: 400 });
     }
@@ -38,18 +39,34 @@ export async function GET(request) {
     const dateEnd = new Date(date + 'T23:59:59.999Z');
     const stationObjId = new mongoose.Types.ObjectId(stationId);
 
-    const [dayShift, meterReadings, tankStockEntries, stockMovements, salesEntries, paymentRecords, cashDeposits] =
+    // List every shift already recorded for this date (for the shift picker),
+    // and the specific shift matching shiftKey (legacy docs with no shiftKey
+    // are treated as 'default' so pre-multi-shift backfilled days still load).
+    const allShiftsForDate = await DayShift.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean();
+    const dayShift = allShiftsForDate.find((s) => (s.shiftKey || 'default') === shiftKey) || null;
+    const shiftFilter = dayShift
+      ? { dayShiftId: { $in: [dayShift._id, null] } }
+      : {};
+
+    const [meterReadings, tankStockEntries, stockMovements, salesEntries, paymentRecords, cashDeposits] =
       await Promise.all([
-        DayShift.findOne({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
-        MeterReading.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
-        TankStockEntry.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
+        MeterReading.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, ...shiftFilter }).lean(),
+        TankStockEntry.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, ...shiftFilter }).lean(),
         StockMovement.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, movementType: 'receipt' }).lean(),
-        SalesEntry.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
-        PaymentRecord.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean(),
+        dayShift
+          ? SalesEntry.find({ stationId: stationObjId, dayShiftId: dayShift._id }).lean()
+          : Promise.resolve([]),
+        dayShift
+          ? PaymentRecord.find({ stationId: stationObjId, dayShiftId: dayShift._id }).lean()
+          : Promise.resolve([]),
         CashDeposit.find({ stationId: stationObjId, forDate: { $gte: dateStart, $lte: dateEnd } }).lean(),
       ]);
 
-    return NextResponse.json({ dayShift, meterReadings, tankStockEntries, stockMovements, salesEntries, paymentRecords, cashDeposits });
+    return NextResponse.json({
+      dayShift,
+      shiftsForDate: allShiftsForDate.map((s) => ({ shiftKey: s.shiftKey || 'default', shiftLabel: s.shiftLabel || 'Full Day', shiftOrder: s.shiftOrder || 1 })),
+      meterReadings, tankStockEntries, stockMovements, salesEntries, paymentRecords, cashDeposits,
+    });
   } catch (error) {
     console.error('Backfill GET error:', error);
     return NextResponse.json({ error: error.message || 'Failed to load existing data.' }, { status: 500 });
@@ -68,7 +85,9 @@ export async function POST(request) {
 
     await connectDB();
     const body = await request.json();
-    const { pin, type, stationId, date } = body;
+    const { pin, type, stationId, date, shiftKey: rawShiftKey, shiftLabel: rawShiftLabel } = body;
+    const shiftKey = rawShiftKey || 'default';
+    const shiftLabel = rawShiftLabel || (shiftKey === 'default' ? 'Full Day' : shiftKey);
 
     if (!verifyPin(pin)) {
       return NextResponse.json({ error: 'Invalid backfill PIN.' }, { status: 401 });
@@ -145,28 +164,36 @@ export async function POST(request) {
           : {}),
       };
 
-      const existing = await DayShift.findOne({
+      // Legacy docs with no shiftKey are treated as 'default' so pre-multi-shift
+      // backfilled days keep matching without needing a data migration.
+      const existingForDate = await DayShift.find({
         stationId: stationObjId,
         date: { $gte: dateStart, $lte: dateEnd },
       });
+      const existing = existingForDate.find((s) => (s.shiftKey || 'default') === shiftKey) || null;
 
       if (existing) {
-        // Day already has a shift: keep its _id, startTime, endTime, status and
+        // Day already has this shift: keep its _id, startTime, endTime, status and
         // started/ended-by. Only update the other data — do not re-stamp times.
         const shift = await DayShift.findByIdAndUpdate(
           existing._id,
-          { $set: editableData },
+          { $set: { ...editableData, shiftLabel } },
           { new: true, runValidators: false }
         );
         return NextResponse.json({ shift, updated: true }, { status: 200 });
       }
 
-      // No shift for this historical day yet — create one with day-boundary times.
+      // No such shift for this historical day yet — create one with day-boundary
+      // times. shiftOrder is free-text/best-effort for backfill: next in sequence
+      // among whatever shifts already exist for this date.
       const shift = await DayShift.create({
         stationId: stationObjId,
         stationName: station.name,
         date: dateStart,
         status: DAY_STATUS.ENDED,
+        shiftKey,
+        shiftLabel,
+        shiftOrder: existingForDate.length + 1,
         startedBy: currentUser.id,
         startedByName: currentUser.name,
         startTime: dateStart,
@@ -178,13 +205,15 @@ export async function POST(request) {
       return NextResponse.json({ shift, created: true }, { status: 200 });
     }
 
-    // All remaining types need the day shift
-    const shift = await DayShift.findOne({
+    // All remaining types need the day shift. Legacy docs with no shiftKey are
+    // treated as 'default' so pre-multi-shift backfilled days keep matching.
+    const shiftsForDate = await DayShift.find({
       stationId: stationObjId,
       date: { $gte: dateStart, $lte: dateEnd },
     });
+    const shift = shiftsForDate.find((s) => (s.shiftKey || 'default') === shiftKey) || null;
     if (!shift) {
-      return NextResponse.json({ error: 'No day shift found for this date. Create the day shift first.' }, { status: 409 });
+      return NextResponse.json({ error: 'No day shift found for this date/shift. Create the day shift first.' }, { status: 409 });
     }
 
     // ── PRUNE ORPHANS ───────────────────────────────────────────────────────────
@@ -201,6 +230,7 @@ export async function POST(request) {
           MeterReading.deleteMany({
             stationId: stationObjId,
             date: { $gte: dateStart, $lte: dateEnd },
+            dayShiftId: { $in: [shift._id, null] },
             pumpId: { $nin: keepDispenserIds },
           }),
           SalesEntry.deleteMany({
@@ -223,6 +253,7 @@ export async function POST(request) {
         const tse = await TankStockEntry.deleteMany({
           stationId: stationObjId,
           date: { $gte: dateStart, $lte: dateEnd },
+          dayShiftId: { $in: [shift._id, null] },
           tankId: { $nin: keepTankIds },
         });
         pruned.tankStockEntries = tse.deletedCount;
@@ -242,7 +273,7 @@ export async function POST(request) {
       const rttVal = rtt !== undefined ? Number(rtt) : 0;
 
       const reading = await MeterReading.findOneAndUpdate(
-        { stationId: stationObjId, pumpId, date: { $gte: dateStart, $lte: dateEnd } },
+        { stationId: stationObjId, pumpId, date: { $gte: dateStart, $lte: dateEnd }, dayShiftId: { $in: [shift._id, null] } },
         {
           $set: {
             stationId: stationObjId,
@@ -250,6 +281,7 @@ export async function POST(request) {
             pumpId,
             pumpLabel: pumpLabel || pumpId,
             date: dateStart,
+            dayShiftId: shift._id,
             opening: openingVal,
             openingSubmittedAt: dateStart,
             closing: closingVal,
@@ -284,6 +316,7 @@ export async function POST(request) {
         const openingEntry = await TankStockEntry.findOne({
           stationId: stationObjId, tankId, period: 'opening',
           date: { $gte: dateStart, $lte: dateEnd },
+          dayShiftId: { $in: [shift._id, null] },
         });
         if (openingEntry) openingStock = openingEntry.openingStock;
       }
@@ -292,7 +325,7 @@ export async function POST(request) {
       const variancePercent = openingStock > 0 ? (variance / openingStock) * 100 : 0;
 
       const entry = await TankStockEntry.findOneAndUpdate(
-        { stationId: stationObjId, tankId, period, date: { $gte: dateStart, $lte: dateEnd } },
+        { stationId: stationObjId, tankId, period, date: { $gte: dateStart, $lte: dateEnd }, dayShiftId: { $in: [shift._id, null] } },
         {
           $set: {
             stationId: stationObjId,
@@ -302,6 +335,7 @@ export async function POST(request) {
             product: tank.product,
             date: dateStart,
             period,
+            dayShiftId: shift._id,
             openingStock,
             closingStockMeasured: val,
             supervisorId: currentUser.id,
@@ -319,18 +353,29 @@ export async function POST(request) {
 
     // ── UPDATE EXISTING DELIVERY ────────────────────────────────────────────────
     if (type === 'updateDelivery') {
-      const { movementId, fuelType, totalReceived, distribution, supplier, costPerLiter } = body;
+      const { movementId, fuelType, totalReceived, distribution, supplier, costPerLiter, declaredLoad } = body;
       if (!movementId || !fuelType || !totalReceived) {
         return NextResponse.json({ error: 'movementId, fuelType, and totalReceived are required.' }, { status: 400 });
       }
       const totalCost = costPerLiter ? Number(costPerLiter) * Number(totalReceived) : null;
+      const receivedVal = Number(totalReceived);
+      const declaredLoadVal = declaredLoad !== undefined && declaredLoad !== null && declaredLoad !== ''
+        ? Number(declaredLoad)
+        : null;
+      const offloadVariance = declaredLoadVal != null ? receivedVal - declaredLoadVal : null;
       const movement = await StockMovement.findOneAndUpdate(
         { _id: movementId, stationId: stationObjId },
         {
           $set: {
             fuelType,
-            quantity: Number(totalReceived),
-            totalReceived: Number(totalReceived),
+            isOffload: declaredLoadVal != null,
+            declaredLoad: declaredLoadVal,
+            actualOffloaded: declaredLoadVal != null ? receivedVal : undefined,
+            offloadVariance,
+            quantity: receivedVal,
+            totalReceived: receivedVal,
+            expectedQuantity: declaredLoadVal,
+            varianceQuantity: offloadVariance,
             distribution: distribution || [],
             supplier: supplier || '',
             costPerLiter: costPerLiter ? Number(costPerLiter) : null,
@@ -377,7 +422,7 @@ export async function POST(request) {
 
     // ── TANK DELIVERY (RECEIPT) ─────────────────────────────────────────────────
     if (type === 'tankDelivery') {
-      const { fuelType, totalReceived, distribution, supplier, costPerLiter } = body;
+      const { fuelType, totalReceived, distribution, supplier, costPerLiter, declaredLoad } = body;
       if (!fuelType || !totalReceived) {
         return NextResponse.json({ error: 'fuelType and totalReceived are required.' }, { status: 400 });
       }
@@ -385,6 +430,16 @@ export async function POST(request) {
       const totalCost = costPerLiter ? Number(costPerLiter) * Number(totalReceived) : null;
       const receivedVal = Number(totalReceived);
       const tankId = Array.isArray(distribution) && distribution[0] ? distribution[0].tankId : null;
+
+      // declaredLoad (what the truck/waybill said) is optional — paper records
+      // may not always have it. Only track this as an offload-with-variance
+      // (isOffload: true, feeding the summary-book truck-shortage figure) when
+      // it's actually supplied; otherwise leave it a plain, variance-free
+      // receipt rather than fabricating a zero-shortage claim.
+      const declaredLoadVal = declaredLoad !== undefined && declaredLoad !== null && declaredLoad !== ''
+        ? Number(declaredLoad)
+        : null;
+      const offloadVariance = declaredLoadVal != null ? receivedVal - declaredLoadVal : null;
 
       // Idempotency guard: an identical receipt (same day, fuel, tank, quantity)
       // is almost certainly a duplicate re-submit. Return it instead of creating
@@ -408,8 +463,14 @@ export async function POST(request) {
         date: dateStart,
         fuelType,
         movementType: 'receipt',
+        isOffload: declaredLoadVal != null,
+        declaredLoad: declaredLoadVal,
+        actualOffloaded: declaredLoadVal != null ? receivedVal : undefined,
+        offloadVariance,
         quantity: Number(totalReceived),
         totalReceived: Number(totalReceived),
+        expectedQuantity: declaredLoadVal,
+        varianceQuantity: offloadVariance,
         distribution: distribution || [],
         supplier: supplier || '',
         costPerLiter: costPerLiter ? Number(costPerLiter) : null,
