@@ -18,6 +18,21 @@ const dayShiftSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // Which shift of the day this record represents (see src/lib/shifts.js).
+    // Defaults keep every station that hasn't configured multiple shifts
+    // behaving exactly as before — one implicit 'default' shift per day.
+    shiftKey: {
+      type: String,
+      default: 'default',
+    },
+    shiftLabel: {
+      type: String,
+      default: 'Full Day',
+    },
+    shiftOrder: {
+      type: Number,
+      default: 1,
+    },
     status: {
       type: String,
       enum: Object.values(DAY_STATUS),
@@ -139,7 +154,9 @@ const dayShiftSchema = new mongoose.Schema(
 dayShiftSchema.index({ stationId: 1, date: -1 });
 dayShiftSchema.index({ stationId: 1, status: 1 });
 dayShiftSchema.index({ date: -1, status: 1 });
-// Hard guarantee: at most one day shift per station per calendar date.
-dayShiftSchema.index({ stationId: 1, date: 1 }, { unique: true });
+// Hard guarantee: at most one day shift per station per calendar date per
+// shift (stations without a configured shift schedule always use the
+// implicit 'default' shiftKey, so this is unchanged for them).
+dayShiftSchema.index({ stationId: 1, date: 1, shiftKey: 1 }, { unique: true });
 
 export default mongoose.models.DayShift || mongoose.model('DayShift', dayShiftSchema);

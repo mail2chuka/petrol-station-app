@@ -57,6 +57,7 @@ export async function PATCH(request, { params }) {
       tanks,
       dispensers,
       availableProducts,
+      shiftSchedule,
       editReason,
     } = body;
 
@@ -121,6 +122,31 @@ export async function PATCH(request, { params }) {
           { error: `Invalid product "${invalid}". Valid options: ${VALID_PRODUCTS.join(', ')}.` },
           { status: 400 }
         );
+      }
+    }
+
+    if (shiftSchedule !== undefined) {
+      if (!isAdmin) {
+        return NextResponse.json(
+          { error: 'Only admins can update shiftSchedule.' },
+          { status: 403 }
+        );
+      }
+      if (!Array.isArray(shiftSchedule)) {
+        return NextResponse.json({ error: 'shiftSchedule must be an array' }, { status: 400 });
+      }
+      const keys = new Set();
+      for (const s of shiftSchedule) {
+        if (!s?.key || !s?.label || !Number.isFinite(Number(s?.order))) {
+          return NextResponse.json(
+            { error: 'Each shift requires key, label, and order' },
+            { status: 400 }
+          );
+        }
+        if (keys.has(s.key)) {
+          return NextResponse.json({ error: `Duplicate shift key: ${s.key}` }, { status: 400 });
+        }
+        keys.add(s.key);
       }
     }
 
@@ -192,6 +218,16 @@ export async function PATCH(request, { params }) {
     if (code) station.code = String(code).toUpperCase();
     if (isActive !== undefined) station.isActive = isActive;
     if (availableProducts !== undefined && isAdmin) station.availableProducts = availableProducts;
+    if (shiftSchedule !== undefined && isAdmin) {
+      station.shiftSchedule = shiftSchedule.map((s) => ({
+        key: s.key,
+        label: s.label,
+        order: Number(s.order),
+        startTime: s.startTime || '',
+        endTime: s.endTime || '',
+        isActive: s.isActive !== false,
+      }));
+    }
     if (tolerancePercent !== undefined) {
       station.tolerancePercent = Number(tolerancePercent);
     }

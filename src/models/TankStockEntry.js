@@ -18,6 +18,15 @@ const tankStockEntrySchema = new mongoose.Schema(
       index: true,
     },
     tankLabel: String,
+    // Which DayShift (shift, not just calendar day) this dip belongs to.
+    // Null for records predating multi-shift support — treated as the
+    // station's implicit 'default' shift. See src/lib/shifts.js.
+    dayShiftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'DayShift',
+      default: null,
+      index: true,
+    },
     product: {
       type: String,
       enum: ['PMS', 'AGO', 'DPK', 'LPG'],
@@ -89,9 +98,11 @@ const tankStockEntrySchema = new mongoose.Schema(
   }
 );
 
-// Compound index: one entry per tank per date per period
+// Compound index: one entry per tank per date per period per shift
+// (dayShiftId is null for stations without a configured shift schedule,
+// so this is unchanged for them).
 tankStockEntrySchema.index(
-  { stationId: 1, tankId: 1, date: 1, period: 1 },
+  { stationId: 1, tankId: 1, date: 1, period: 1, dayShiftId: 1 },
   { unique: true }
 );
 tankStockEntrySchema.index({ stationId: 1, supervisorId: 1, date: -1 });

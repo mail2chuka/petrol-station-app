@@ -23,6 +23,15 @@ const meterReadingSchema = new mongoose.Schema(
       required: [true, 'Date is required'],
       index: true,
     },
+    // Which DayShift (shift, not just calendar day) this reading belongs to.
+    // Null for records predating multi-shift support — treated as the
+    // station's implicit 'default' shift. See src/lib/shifts.js.
+    dayShiftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'DayShift',
+      default: null,
+      index: true,
+    },
     // Opening is entered when supervisor "opens" the pump at start of shift
     opening: {
       type: Number,
@@ -118,7 +127,9 @@ const meterReadingSchema = new mongoose.Schema(
   }
 );
 
-meterReadingSchema.index({ stationId: 1, pumpId: 1, date: 1 }, { unique: true });
+// dayShiftId is null for stations without a configured shift schedule, so
+// this is unchanged for them.
+meterReadingSchema.index({ stationId: 1, pumpId: 1, date: 1, dayShiftId: 1 }, { unique: true });
 meterReadingSchema.index({ stationId: 1, supervisorId: 1, date: -1 });
 meterReadingSchema.index({ stationId: 1, discrepancyFlag: 1 });
 
