@@ -317,9 +317,9 @@ export async function GET(request) {
       }
     }
 
-    // Keep chronological order, then shift order, then product.
+    // Latest date first; within a date, shift order then product.
     rows.sort((a, b) =>
-      a.date < b.date ? -1 : a.date > b.date ? 1 :
+      a.date > b.date ? -1 : a.date < b.date ? 1 :
       a.shiftOrder !== b.shiftOrder ? a.shiftOrder - b.shiftOrder :
       a.product.localeCompare(b.product)
     );
