@@ -8,9 +8,12 @@ import PaymentRecord from '@/models/PaymentRecord';
 import StockMovement from '@/models/StockMovement';
 import MeterReading from '@/models/MeterReading';
 import TankStockEntry from '@/models/TankStockEntry';
+import Attendant from '@/models/Attendant';
+import AttendantAssignment from '@/models/AttendantAssignment';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
+import { computeShiftMeta } from '@/lib/shifts';
 
 // POST /api/day-shifts/[id]/end - End the day
 export async function POST(request, { params }) {
@@ -28,6 +31,8 @@ export async function POST(request, { params }) {
     }
 
     const { id } = await params;
+    const body = await request.json().catch(() => ({}));
+    const { continueToNextShift, attendantAssignments } = body;
 
     session = await mongoose.startSession();
     session.startTransaction();
@@ -243,6 +248,113 @@ export async function POST(request, { params }) {
     dayShift.actualAmount = actualAmount;
     dayShift.discrepancy = discrepancy;
 
+    // If this isn't the last planned shift, either continue into the next
+    // shift (carrying forward closing data as its opening) or recalibrate
+    // the plan down to what actually happened today.
+    let nextShift = null;
+    const isFinalShift = dayShift.shiftOrder >= (dayShift.totalShiftsPlanned || 1);
+    if (!isFinalShift) {
+      if (continueToNextShift) {
+        // Re-snapshot current prices — same requirement as Begin Day.
+        const nextPrices = {};
+        for (const fuelType of availableProducts) {
+          const val = Number(station.currentPrices?.get?.(fuelType) ?? station.currentPrices?.[fuelType] ?? 0);
+          if (!val || val <= 0) {
+            await session.abortTransaction();
+            return NextResponse.json(
+              { error: `No price set for ${fuelType}. Ask admin to set prices before starting the next shift.` },
+              { status: 400 }
+            );
+          }
+          nextPrices[fuelType] = val;
+        }
+
+        const nextOrder = dayShift.shiftOrder + 1;
+        const nextMeta = computeShiftMeta(nextOrder, dayShift.totalShiftsPlanned);
+        const nextDispenserAssignments = dayShift.dispenserAssignments.map((a) => ({
+          dispenserId: a.dispenserId,
+          dispenserName: a.dispenserName,
+          fuelType: a.fuelType,
+          tankId: a.tankId,
+          tankLabel: a.tankLabel,
+          supervisorId: null,
+          supervisorName: '',
+          initialReading: 0,
+          totalLiters: 0,
+        }));
+
+        const [created] = await DayShift.create([{
+          stationId: dayShift.stationId,
+          stationName: dayShift.stationName,
+          date: dayShift.date,
+          status: DAY_STATUS.IN_PROGRESS,
+          shiftKey: nextMeta.key,
+          shiftLabel: nextMeta.label,
+          shiftOrder: nextOrder,
+          totalShiftsPlanned: dayShift.totalShiftsPlanned,
+          startedBy: currentUser.id,
+          startedByName: currentUser.name,
+          startTime: new Date(),
+          dispenserAssignments: nextDispenserAssignments,
+          pricesAtStart: nextPrices,
+        }], { session, ordered: true });
+        nextShift = created;
+
+        // Carry forward this shift's closing tank stock as the next shift's
+        // opening — sourced directly from closingEntries already loaded above,
+        // no extra lookup needed (mirrors begin/route.js's carry-forward).
+        for (const tank of activeTanks) {
+          const closingEntry = closingByTankId[tank._id];
+          const openingValue = closingEntry
+            ? (closingEntry.closingStockManager ?? closingEntry.closingStockMeasured ?? 0)
+            : 0;
+          await TankStockEntry.create([{
+            stationId: dayShift.stationId,
+            stationName: dayShift.stationName,
+            tankId: tank._id,
+            tankLabel: tank.label,
+            product: tank.product,
+            date: startDate,
+            period: 'opening',
+            dayShiftId: nextShift._id,
+            openingStock: openingValue,
+            closingStockMeasured: openingValue,
+            supervisorId: currentUser.id,
+            supervisorName: currentUser.name,
+            variance: 0,
+            variancePercent: 0,
+            notes: `Carried forward from ${dayShift.shiftLabel}`,
+          }], { session, ordered: true });
+        }
+
+        // Attendant assignments for the new shift — recycle or reassign, per pump.
+        for (const entry of (attendantAssignments || [])) {
+          if (!entry?.dispenserId || !entry?.attendantId) continue;
+          const attendant = await Attendant.findById(entry.attendantId).session(session);
+          if (!attendant) continue;
+          const assignment = dayShift.dispenserAssignments.find((a) => a.dispenserId === entry.dispenserId);
+          await AttendantAssignment.create([{
+            stationId: dayShift.stationId.toString(),
+            date: dateStr,
+            dayShiftId: nextShift._id,
+            dispenserId: entry.dispenserId,
+            dispenserName: assignment?.dispenserName || '',
+            fuelType: assignment?.fuelType || '',
+            attendantId: attendant._id,
+            attendantStaffNumber: attendant.staffNumber,
+            attendantName: attendant.name,
+            assignedAt: new Date(),
+            assignedByManagerId: currentUser.id,
+            assignedByManagerName: currentUser.name,
+          }], { session, ordered: true });
+        }
+      } else {
+        // Manager confirmed this was actually the final shift — recalibrate
+        // the plan down instead of leaving a phantom shift that never begins.
+        dayShift.totalShiftsPlanned = dayShift.shiftOrder;
+      }
+    }
+
     await dayShift.save({ session });
     await session.commitTransaction();
 
@@ -262,11 +374,13 @@ export async function POST(request, { params }) {
         expectedAmount,
         actualAmount,
         discrepancy,
+        nextShiftId: nextShift?._id?.toString(),
       },
     });
 
     return NextResponse.json({
       dayShift,
+      nextShift,
       summary: {
         totalSales,
         totalPayments,

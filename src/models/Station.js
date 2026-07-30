@@ -107,37 +107,6 @@ const stationSchema = new mongoose.Schema(
         },
       },
     ],
-    // Optional per-station shift schedule (morning/afternoon/night, etc).
-    // Stations without one behave as a single implicit 'default' shift —
-    // see src/lib/shifts.js getEffectiveShiftSchedule().
-    shiftSchedule: [
-      {
-        key: {
-          type: String,
-          required: true,
-        },
-        label: {
-          type: String,
-          required: true,
-        },
-        order: {
-          type: Number,
-          required: true,
-        },
-        startTime: {
-          type: String, // 'HH:mm', informational only
-          default: '',
-        },
-        endTime: {
-          type: String,
-          default: '',
-        },
-        isActive: {
-          type: Boolean,
-          default: true,
-        },
-      },
-    ],
     isActive: {
       type: Boolean,
       default: true,

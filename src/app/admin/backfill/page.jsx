@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Loading from '@/components/Loading';
-import { getEffectiveShiftSchedule } from '@/lib/shifts';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function todayStr() {

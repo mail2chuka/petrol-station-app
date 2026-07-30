@@ -633,68 +633,9 @@ function ConfigTab({ station, onChanged, onError }) {
       <ProductsSection station={station} onChanged={onChanged} onError={onError} />
       <DetailsSection station={station} onChanged={onChanged} onError={onError} />
       <MappingSection station={station} onChanged={onChanged} onError={onError} />
-      <ShiftScheduleSection station={station} onChanged={onChanged} onError={onError} />
       <SeedSection station={station} onChanged={onChanged} onError={onError} />
       <DangerSection station={station} onChanged={onChanged} onError={onError} />
     </div>
-  );
-}
-
-function ShiftScheduleSection({ station, onChanged, onError }) {
-  const [shifts, setShifts] = useState(() =>
-    (station.shiftSchedule || []).map((s) => ({ ...s, isActive: s.isActive !== false }))
-  );
-  const [saving, setSaving] = useState(false);
-
-  const updShift = (i, k, v) => setShifts((s) => s.map((x, j) => j === i ? { ...x, [k]: v } : x));
-
-  const addShift = () => setShifts((s) => [
-    ...s,
-    { key: `shift-${Date.now()}`, label: '', order: s.length + 1, startTime: '', endTime: '', isActive: true },
-  ]);
-
-  const save = async () => {
-    for (const s of shifts) {
-      if (!s.label.trim()) { onError('Every shift needs a label.'); return; }
-    }
-    const keys = shifts.map((s) => s.key);
-    if (new Set(keys).size !== keys.length) { onError('Shift keys must be unique.'); return; }
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/stations/${station._id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          shiftSchedule: shifts.map((s, i) => ({
-            key: s.key, label: s.label.trim(), order: i + 1,
-            startTime: s.startTime || '', endTime: s.endTime || '', isActive: s.isActive !== false,
-          })),
-        }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) { onError(d.error || 'Failed to save shift schedule'); return; }
-      onChanged('Shift schedule saved.');
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <Card title="Shift Schedule">
-      <p className="text-xs text-gray-500 -mt-1 mb-2">
-        Leave empty for a single full-day operating shift (default). Add shifts to split the day into
-        morning/afternoon/night, each with its own tank dipstick and shortage figure.
-      </p>
-      <div className="space-y-2 mb-4">
-        {shifts.map((s, i) => (
-          <div key={s.key} className="grid grid-cols-2 sm:grid-cols-[1fr_auto_auto_auto] gap-2 items-end">
-            <Input label={i === 0 ? 'Label' : undefined} value={s.label} onChange={(e) => updShift(i, 'label', e.target.value)} placeholder="e.g. Morning Shift" />
-            <Input label={i === 0 ? 'Start' : undefined} type="time" value={s.startTime} onChange={(e) => updShift(i, 'startTime', e.target.value)} />
-            <Input label={i === 0 ? 'End' : undefined} type="time" value={s.endTime} onChange={(e) => updShift(i, 'endTime', e.target.value)} />
-            <Button size="sm" variant="danger" onClick={() => setShifts((s2) => s2.filter((_, j) => j !== i))}>Remove</Button>
-          </div>
-        ))}
-        <Button size="sm" variant="secondary" onClick={addShift}>+ Add Shift</Button>
-      </div>
-      <Button variant="primary" disabled={saving} onClick={save}>{saving ? 'Saving...' : 'Save Shift Schedule'}</Button>
-    </Card>
   );
 }
 

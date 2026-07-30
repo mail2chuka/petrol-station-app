@@ -1,17 +1,9 @@
-// Shared helper for resolving a station's shift schedule. Stations that
-// haven't configured shifts (the vast majority, at least initially) behave
-// as a single implicit 'default' shift spanning the whole day — this keeps
-// every unconfigured station's begin/end/report flow unchanged.
-export const DEFAULT_SHIFT = { key: 'default', label: 'Full Day', order: 1, isActive: true };
-
-export function getEffectiveShiftSchedule(station) {
-  const configured = (station?.shiftSchedule || []).filter((s) => s.isActive !== false);
-  if (!configured.length) return [DEFAULT_SHIFT];
-  return [...configured].sort((a, b) => a.order - b.order);
-}
-
-export function resolveShiftMeta(station, shiftKey) {
-  const schedule = getEffectiveShiftSchedule(station);
-  const match = schedule.find((s) => s.key === (shiftKey || DEFAULT_SHIFT.key));
-  return match || DEFAULT_SHIFT;
+// Computes a shift's identity from its position in the day, not from any
+// per-station configuration. A day with totalShiftsPlanned <= 1 (the vast
+// majority) always resolves to the single implicit 'default'/'Full Day'
+// shift, keeping every single-shift day's behavior/labels unchanged.
+export function computeShiftMeta(order, totalShiftsPlanned) {
+  const total = totalShiftsPlanned || 1;
+  if (total <= 1) return { key: 'default', label: 'Full Day', order: 1 };
+  return { key: `shift-${order}`, label: `Shift ${order}`, order };
 }

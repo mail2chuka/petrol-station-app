@@ -33,6 +33,14 @@ const dayShiftSchema = new mongoose.Schema(
       type: Number,
       default: 1,
     },
+    // How many shifts the manager planned for this calendar day (1-3, set at
+    // Begin Day, carried forward to every subsequent shift that day). A shift
+    // knows it's the last one when shiftOrder >= totalShiftsPlanned. Can be
+    // recalibrated downward if the day ends early (see end/route.js).
+    totalShiftsPlanned: {
+      type: Number,
+      default: 1,
+    },
     status: {
       type: String,
       enum: Object.values(DAY_STATUS),

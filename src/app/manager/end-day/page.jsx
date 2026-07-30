@@ -32,6 +32,11 @@ function EndDayPageContent() {
   const [paymentRecords, setPaymentRecords] = useState([]);
   const [dateStr, setDateStr] = useState(todayStr());
 
+  // Next-shift continuation (only relevant when this isn't the final planned shift)
+  const [attendants, setAttendants] = useState([]);
+  const [pumpAttendants, setPumpAttendants] = useState({}); // dispenserId → attendantId
+  const [showContinuePanel, setShowContinuePanel] = useState(false);
+
   // Per-tank closing stock form state
   const [stockForms, setStockForms] = useState({});
   const [stockEditing, setStockEditing] = useState({});
@@ -63,20 +68,24 @@ function EndDayPageContent() {
       const shiftDate = new Date(dayShift.date).toISOString().split('T')[0];
       setDateStr(shiftDate);
 
-      const [stationRes, mrRes, tsRes, salesRes, payRes] = await Promise.all([
+      const [stationRes, mrRes, tsRes, salesRes, payRes, attRes, assignRes] = await Promise.all([
         fetch(`/api/stations/${activeStationId}`),
         fetch(`/api/meter-readings?stationId=${activeStationId}&date=${shiftDate}`),
         fetch(`/api/tank-stock?stationId=${activeStationId}&date=${shiftDate}`),
         fetch(`/api/sales?dayShiftId=${dayShift._id}`),
         fetch(`/api/payments?dayShiftId=${dayShift._id}`),
+        fetch(`/api/attendants?stationId=${activeStationId}`),
+        fetch(`/api/attendant-assignments?stationId=${activeStationId}&date=${shiftDate}`),
       ]);
 
-      const [stationData, mrData, tsData, salesData, payData] = await Promise.all([
+      const [stationData, mrData, tsData, salesData, payData, attData, assignData] = await Promise.all([
         stationRes.json(),
         mrRes.json(),
         tsRes.json(),
         salesRes.json(),
         payRes.json(),
+        attRes.json(),
+        assignRes.json(),
       ]);
 
       const stationObj = stationData.station || null;
@@ -93,6 +102,14 @@ function EndDayPageContent() {
       const shiftTankEntries = (tsData.entries || []).filter(belongsToShift);
       initTankState(stationObj, shiftTankEntries);
       setTankStockEntries(shiftTankEntries);
+
+      setAttendants(attData.attendants || []);
+      // Pre-fill "recycle" defaults for the continue-to-next-shift panel —
+      // whoever's currently on a pump this shift stays on it unless changed.
+      const currentAssignments = (assignData.assignments || []).filter(belongsToShift);
+      const defaults = {};
+      for (const a of currentAssignments) defaults[a.dispenserId] = a.attendantId;
+      setPumpAttendants(defaults);
     } catch (err) {
       console.error(err);
       setError('Failed to load data');
@@ -185,14 +202,19 @@ function EndDayPageContent() {
     setStockEditing(prev => ({ ...prev, [tankId]: false }));
   };
 
-  const handleEndDay = async () => {
+  const handleEndDay = async (continueToNextShift) => {
     setError('');
     setSubmitting(true);
     try {
+      const attendantAssignments = continueToNextShift
+        ? Object.entries(pumpAttendants)
+            .filter(([, attendantId]) => !!attendantId)
+            .map(([dispenserId, attendantId]) => ({ dispenserId, attendantId }))
+        : undefined;
       const res = await fetch(`/api/day-shifts/${activeDayShift._id}/end`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ continueToNextShift, attendantAssignments }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -228,6 +250,8 @@ function EndDayPageContent() {
       </div>
     );
   }
+
+  const isFinalShift = activeDayShift.shiftOrder >= (activeDayShift.totalShiftsPlanned || 1);
 
   const activeTanks = (station?.tanks || []).filter(t => t.isActive);
   const closingByTankId = {};
@@ -500,7 +524,33 @@ function EndDayPageContent() {
         </div>
       </Card>
 
-      {/* End Day action */}
+      {/* Section 4: Attendant handoff — only when a next shift is planned */}
+      {!isFinalShift && showContinuePanel && (
+        <Card title={`Attendants for Shift ${activeDayShift.shiftOrder + 1}`}>
+          <p className="text-sm text-gray-500 mb-4">
+            Recycle the same attendant or pick a new one for each pump before starting the next shift.
+          </p>
+          <div className="space-y-3">
+            {activeDayShift.dispenserAssignments.map(a => (
+              <div key={a.dispenserId} className="flex items-center gap-3">
+                <span className="w-40 shrink-0 font-medium text-gray-800 text-sm">{a.dispenserName}</span>
+                <select
+                  value={pumpAttendants[a.dispenserId] || ''}
+                  onChange={e => setPumpAttendants(prev => ({ ...prev, [a.dispenserId]: e.target.value }))}
+                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-xl focus:outline-none focus:border-ecana-maroon"
+                >
+                  <option value="">— No attendant —</option>
+                  {attendants.map(att => (
+                    <option key={att._id} value={att._id}>{att.staffNumber} — {att.name}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* End Day / End Shift action */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pb-8">
         {!allClosingEntered && activeTanks.length > 0 && ((
           () => {
@@ -512,18 +562,65 @@ function EndDayPageContent() {
             );
           }
         )())}
-        <button
-          onClick={handleEndDay}
-          disabled={submitting || !allClosingEntered}
-          className="btn-modern text-white font-semibold px-8 py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            background: allClosingEntered
-              ? 'linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)'
-              : '#d1d5db',
-          }}
-        >
-          {submitting ? 'Ending Day…' : 'End Day'}
-        </button>
+
+        {isFinalShift ? (
+          <button
+            onClick={() => handleEndDay(false)}
+            disabled={submitting || !allClosingEntered}
+            className="btn-modern text-white font-semibold px-8 py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              background: allClosingEntered
+                ? 'linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)'
+                : '#d1d5db',
+            }}
+          >
+            {submitting ? 'Ending Day…' : 'End Day'}
+          </button>
+        ) : !showContinuePanel ? (
+          <>
+            <button
+              onClick={() => setShowContinuePanel(true)}
+              disabled={submitting || !allClosingEntered}
+              className="btn-modern text-white font-semibold px-8 py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                background: allClosingEntered
+                  ? 'linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)'
+                  : '#d1d5db',
+              }}
+            >
+              End Shift {activeDayShift.shiftOrder} & Start Shift {activeDayShift.shiftOrder + 1}
+            </button>
+            <button
+              onClick={() => handleEndDay(false)}
+              disabled={submitting || !allClosingEntered}
+              className="btn-modern font-semibold px-8 py-3 rounded-xl border-2 border-gray-300 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              This Was The Final Shift
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => handleEndDay(true)}
+              disabled={submitting || !allClosingEntered}
+              className="btn-modern text-white font-semibold px-8 py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                background: allClosingEntered
+                  ? 'linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)'
+                  : '#d1d5db',
+              }}
+            >
+              {submitting ? 'Ending Shift…' : `Confirm & Start Shift ${activeDayShift.shiftOrder + 1}`}
+            </button>
+            <button
+              onClick={() => setShowContinuePanel(false)}
+              disabled={submitting}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              ← Back
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

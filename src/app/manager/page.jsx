@@ -7,7 +7,6 @@ import Link from 'next/link';
 import Card from '@/components/Card';
 import Loading from '@/components/Loading';
 import Button from '@/components/Button';
-import { getEffectiveShiftSchedule } from '@/lib/shifts';
 
 const PRODUCT_COLORS = {
   PMS: {
@@ -148,15 +147,16 @@ function ManagerDashboardContent() {
     : ['PMS', 'AGO'];
 
   // Shift context — only meaningfully different from the plain single-shift
-  // case once the station has actually configured more than one shift.
-  const shiftSchedule = getEffectiveShiftSchedule(station);
-  const isMultiShift = shiftSchedule.length > 1;
-  const usedShiftKeys = new Set(todayShifts.map((d) => d.shiftKey || 'default'));
-  const nextShift = shiftSchedule.find((s) => !usedShiftKeys.has(s.key)) || null;
-  const allShiftsDoneToday = isMultiShift && !activeDayShift && !nextShift && todayShifts.length > 0;
-  const lastEndedShift = !activeDayShift
-    ? [...todayShifts].filter((d) => d.status === 'ended').sort((a, b) => (b.shiftOrder || 1) - (a.shiftOrder || 1))[0]
-    : null;
+  // case once today's day was begun with more than one shift planned.
+  // Continuation is atomic (ending a non-final shift either starts the next
+  // one automatically or recalibrates the plan down), so there's no
+  // in-between "waiting to begin the next shift" state to handle here.
+  const latestShiftToday = [...todayShifts].sort((a, b) => (b.shiftOrder || 1) - (a.shiftOrder || 1))[0] || null;
+  const totalShiftsPlannedToday = latestShiftToday?.totalShiftsPlanned || 1;
+  const isMultiShift = totalShiftsPlannedToday > 1;
+  const allShiftsDoneToday = isMultiShift && !activeDayShift && latestShiftToday?.status === 'ended'
+    && (latestShiftToday.shiftOrder || 1) >= totalShiftsPlannedToday;
+  const lastEndedShift = !activeDayShift ? latestShiftToday : null;
 
   // Day Status badge — for single-shift stations this is unchanged
   // (🟢 Active / 🔴 Not Started). Multi-shift stations get a status that
@@ -439,9 +439,6 @@ function ManagerDashboardContent() {
             <p className={`text-sm font-bold mt-2 ${activeDayShift ? 'text-green-700' : allShiftsDoneToday ? 'text-emerald-700' : lastEndedShift ? 'text-amber-700' : 'text-red-700'}`}>
               {dayStatusLabel}
             </p>
-            {isMultiShift && nextShift && !activeDayShift && (
-              <p className="text-xs text-gray-400 mt-1">Next: {nextShift.label}</p>
-            )}
           </div>
         </div>
 
@@ -512,14 +509,8 @@ function ManagerDashboardContent() {
                 href={buildManagerHref('/manager/begin-day')}
                 className="block p-4 bg-gradient-to-r from-ecana-maroon-50 to-ecana-maroon-100 hover:from-ecana-maroon-100 hover:to-ecana-maroon-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-ecana-maroon-200"
               >
-                <p className="font-bold text-ecana-maroon text-lg">
-                  🚀 {isMultiShift && nextShift ? `Begin ${nextShift.label}` : 'Begin Day'}
-                </p>
-                <p className="text-sm text-gray-600 mt-1">
-                  {isMultiShift && lastEndedShift
-                    ? `${lastEndedShift.shiftLabel} already ended — start the next shift`
-                    : 'Start operations for today'}
-                </p>
+                <p className="font-bold text-ecana-maroon text-lg">🚀 Begin Day</p>
+                <p className="text-sm text-gray-600 mt-1">Start operations for today</p>
               </a>
             )}
             <a

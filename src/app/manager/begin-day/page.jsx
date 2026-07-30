@@ -7,7 +7,6 @@ import Card from '@/components/Card';
 import Button from '@/components/Button';
 import Loading from '@/components/Loading';
 import { FUEL_TYPE_LABELS } from '@/lib/constants';
-import { getEffectiveShiftSchedule } from '@/lib/shifts';
 
 function BeginDayPageContent() {
   const { data: session } = useSession();
@@ -28,27 +27,21 @@ function BeginDayPageContent() {
   const [error, setError] = useState('');
   const [zeroStockWarning, setZeroStockWarning] = useState(null);
   const [pendingSubmit, setPendingSubmit] = useState(null);
-  const [shiftSchedule, setShiftSchedule] = useState([]);
-  const [shiftKey, setShiftKey] = useState('default');
-  const [todayShifts, setTodayShifts] = useState([]);
-  const [allShiftsDone, setAllShiftsDone] = useState(false);
+  const [totalShiftsPlanned, setTotalShiftsPlanned] = useState(1);
 
   useEffect(() => { fetchData(); }, [activeStationId]);
 
   const fetchData = async () => {
     if (!activeStationId) return;
     try {
-      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
-      const [stationsRes, dispensersRes, attendantsRes, todayShiftsRes] = await Promise.all([
+      const [stationsRes, dispensersRes, attendantsRes] = await Promise.all([
         fetch('/api/stations'),
         fetch(`/api/stations/${activeStationId}/dispensers`),
         fetch(`/api/attendants?stationId=${activeStationId}`),
-        fetch(`/api/day-shifts?stationId=${activeStationId}&date=${today}`),
       ]);
       const stationsData = await stationsRes.json();
       const dispensersData = await dispensersRes.json();
       const attendantsData = await attendantsRes.json();
-      const todayShiftsData = await todayShiftsRes.json().catch(() => ({}));
 
       const currentStation = (stationsData.stations || []).find(s => s._id === activeStationId);
       setStation(currentStation);
@@ -56,29 +49,6 @@ function BeginDayPageContent() {
       const active = (dispensersData.dispensers || []).filter(d => d.isActive);
       setDispensers(active);
       setAttendants(attendantsData.attendants || []);
-
-      // Shift picker — invisible for stations that haven't configured a
-      // schedule (single implicit 'default' shift, same as before). When
-      // configured, pre-select the next shift in order not already begun
-      // today, but allow manual override.
-      const schedule = getEffectiveShiftSchedule(currentStation);
-      setShiftSchedule(schedule);
-      const shiftsToday = todayShiftsData.dayShifts || [];
-      setTodayShifts(shiftsToday);
-      const usedKeys = new Set(shiftsToday.map(d => d.shiftKey || 'default'));
-      const nextShift = schedule.find(s => !usedKeys.has(s.key));
-      if (nextShift) {
-        setShiftKey(nextShift.key);
-        setAllShiftsDone(false);
-      } else if (schedule.length > 1) {
-        // Every configured shift already has a record today — nothing left
-        // to begin. Don't silently re-select an already-used shift, since
-        // submitting would just fail with a confusing "already exists" error.
-        setAllShiftsDone(true);
-      } else {
-        setShiftKey(schedule[0].key);
-        setAllShiftsDone(false);
-      }
     } catch {
       setError('Failed to load data');
     } finally {
@@ -116,7 +86,7 @@ function BeginDayPageContent() {
     return {
       stationId: activeStationId,
       date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date()),
-      shiftKey,
+      totalShiftsPlanned,
       dispensers: selectedDispensers.map(d => ({ dispenserId: d.dispenserId, fuelType: d.fuelType })),
     };
   };
@@ -230,53 +200,11 @@ function BeginDayPageContent() {
 
   if (loading) return <Loading />;
 
-  // Every configured shift for today already has a record — nothing left to
-  // begin. Block here instead of letting the manager submit into a
-  // guaranteed "shift already exists" error.
-  if (allShiftsDone) {
-    return (
-      <div>
-        <h1 className="text-3xl font-bold text-gray-800 mb-6">All Shifts Complete</h1>
-        <Card>
-          <p className="text-sm text-gray-700">
-            Every shift scheduled for {station?.name} today has already been recorded:
-          </p>
-          <ul className="mt-3 space-y-1.5">
-            {todayShifts
-              .slice()
-              .sort((a, b) => (a.shiftOrder || 1) - (b.shiftOrder || 1))
-              .map((s) => (
-                <li key={s._id} className="flex items-center gap-2 text-sm text-gray-700">
-                  <span className={`w-2 h-2 rounded-full ${s.status === 'ended' ? 'bg-green-500' : 'bg-amber-500'}`} />
-                  <span className="font-medium">{s.shiftLabel || 'Full Day'}</span>
-                  <span className="text-gray-400">— {s.status === 'ended' ? 'Ended' : s.status}</span>
-                </li>
-              ))}
-          </ul>
-          <p className="mt-4 text-sm text-gray-500">There&apos;s nothing more to begin today. Come back tomorrow, or contact admin if this station&apos;s shift schedule needs adjusting.</p>
-        </Card>
-      </div>
-    );
-  }
-
   const availableProducts = station?.availableProducts || ['PMS', 'AGO'];
-  const selectedShiftMeta = shiftSchedule.find((s) => s.key === shiftKey);
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-gray-800 mb-1">
-        {shiftSchedule.length > 1 ? `Begin ${selectedShiftMeta?.label || 'Shift'}` : 'Begin Day'}
-      </h1>
-      {shiftSchedule.length > 1 && todayShifts.length > 0 && (
-        <p className="text-sm text-gray-500 mb-8">
-          Already recorded today: {todayShifts
-            .slice()
-            .sort((a, b) => (a.shiftOrder || 1) - (b.shiftOrder || 1))
-            .map((s) => s.shiftLabel || 'Full Day')
-            .join(', ')}
-        </p>
-      )}
-      {(shiftSchedule.length <= 1 || todayShifts.length === 0) && <div className="mb-8" />}
+      <h1 className="text-3xl font-bold text-gray-800 mb-8">Begin Day</h1>
 
       {error && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl mb-4 text-sm">
@@ -313,38 +241,31 @@ function BeginDayPageContent() {
       )}
 
       <form onSubmit={handleSubmit}>
-        {/* Shift picker — only shown for stations with more than one configured shift */}
-        {shiftSchedule.length > 1 && (() => {
-          const usedShiftKeys = new Set(todayShifts.map((s) => s.shiftKey || 'default'));
-          return (
-            <Card title="Shift" className="mb-6">
-              <div className="flex flex-wrap gap-2">
-                {shiftSchedule.map(s => {
-                  const isUsed = usedShiftKeys.has(s.key);
-                  return (
-                    <button
-                      key={s.key}
-                      type="button"
-                      disabled={isUsed}
-                      onClick={() => setShiftKey(s.key)}
-                      className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-colors ${
-                        isUsed
-                          ? 'border-gray-100 text-gray-300 cursor-not-allowed'
-                          : shiftKey === s.key ? 'border-ecana-maroon bg-ecana-maroon/10 text-ecana-maroon' : 'border-gray-200 text-gray-500'
-                      }`}
-                    >
-                      {s.label}
-                      {isUsed && <span className="block text-xs font-normal">Already recorded</span>}
-                      {!isUsed && (s.startTime || s.endTime) && (
-                        <span className="block text-xs font-normal opacity-70">{s.startTime}{s.startTime && s.endTime ? ' – ' : ''}{s.endTime}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </Card>
-          );
-        })()}
+        {/* Number of shifts today — 1 keeps the day exactly as a single
+            operating day; 2 or 3 splits it into shifts that automatically
+            chain together at End Day (no separate "Begin Shift 2" step). */}
+        <Card title="Number of Shifts Today" className="mb-6">
+          <div className="flex gap-2">
+            {[1, 2, 3].map(n => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setTotalShiftsPlanned(n)}
+                className={`px-5 py-2 rounded-xl text-sm font-medium border-2 transition-colors ${
+                  totalShiftsPlanned === n ? 'border-ecana-maroon bg-ecana-maroon/10 text-ecana-maroon' : 'border-gray-200 text-gray-500'
+                }`}
+              >
+                {n} {n === 1 ? 'Shift' : 'Shifts'}
+              </button>
+            ))}
+          </div>
+          {totalShiftsPlanned > 1 && (
+            <p className="text-xs text-gray-500 mt-2">
+              Ending each shift will offer to start the next one automatically, carrying forward tank and meter readings.
+            </p>
+          )}
+        </Card>
+
 
         {/* Prices section — read-only snapshot set by admin */}
         <Card title="Today's Prices">
