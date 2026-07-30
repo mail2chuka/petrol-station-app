@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import AttendantAssignment from '@/models/AttendantAssignment';
 import Attendant from '@/models/Attendant';
+import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
 
@@ -47,11 +48,26 @@ export async function POST(request) {
     const attendant = await Attendant.findById(attendantId).lean();
     if (!attendant) return NextResponse.json({ error: 'Attendant not found' }, { status: 404 });
 
+    // A doc with no dayShiftId predates multi-shift support for this date —
+    // it can only belong to the earliest shift, never a later one added on
+    // top of an already-recorded date.
+    let shiftIdMatch = { $in: [dayShiftId || null, null] };
+    if (dayShiftId) {
+      const shiftsForDate = await DayShift.find({ stationId, date }).lean();
+      const earliestShiftForDate = shiftsForDate.length
+        ? [...shiftsForDate].sort((a, b) =>
+            (a.shiftOrder || 1) - (b.shiftOrder || 1) || String(a._id).localeCompare(String(b._id))
+          )[0]
+        : null;
+      const isEarliestShift = !!(earliestShiftForDate && String(dayShiftId) === String(earliestShiftForDate._id));
+      shiftIdMatch = isEarliestShift ? { $in: [dayShiftId, null] } : dayShiftId;
+    }
+
     const assignment = await AttendantAssignment.findOneAndUpdate(
-      // Match either this shift's own doc or a pre-deploy doc that hasn't
-      // been tagged with a dayShiftId yet (in-flight shift crossing the
-      // deploy) — avoids creating a duplicate.
-      { stationId, date, dispenserId, dayShiftId: { $in: [dayShiftId || null, null] } },
+      // Match either this shift's own doc or — only for the earliest shift on
+      // this date — a pre-deploy doc that hasn't been tagged with a
+      // dayShiftId yet (in-flight shift crossing the deploy).
+      { stationId, date, dispenserId, dayShiftId: shiftIdMatch },
       {
         stationId,
         date,

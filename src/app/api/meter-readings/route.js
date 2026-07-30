@@ -191,6 +191,21 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No active day shift. The manager must begin the day first.' }, { status: 409 });
     }
 
+    // A doc with no dayShiftId predates multi-shift support for this date —
+    // it can only belong to the earliest shift, never a later one added on
+    // top of an already-recorded date. Without this, a station's first
+    // multi-shift live day could steal/overwrite an earlier ended shift's
+    // reading for the same pump instead of creating its own.
+    const shiftsForDate = await DayShift.find({
+      stationId,
+      date: { $gte: startDate, $lte: endDate },
+    });
+    const earliestShiftForDate = [...shiftsForDate].sort((a, b) =>
+      (a.shiftOrder || 1) - (b.shiftOrder || 1) || String(a._id).localeCompare(String(b._id))
+    )[0];
+    const isEarliestShift = !!(earliestShiftForDate && String(activeShift._id) === String(earliestShiftForDate._id));
+    const shiftIdMatch = isEarliestShift ? { $in: [activeShift._id, null] } : activeShift._id;
+
     // Readings can only be submitted for the date of the current active shift.
     // This prevents supervisors from editing past-day readings while today's shift runs.
     const shiftDateStr = new Date(activeShift.date).toISOString().split('T')[0];
@@ -253,11 +268,11 @@ export async function POST(request) {
         opening = manualOpening;
       }
 
-      // Match either this shift's own doc or a pre-deploy doc that hasn't been
-      // tagged with a dayShiftId yet (in-flight shift crossing the deploy) —
-      // avoids treating that as "no opening yet" and creating a duplicate.
+      // Match either this shift's own doc or — only when this is the
+      // earliest shift for the date — a pre-deploy doc that hasn't been
+      // tagged with a dayShiftId yet (in-flight shift crossing the deploy).
       const reading = await MeterReading.findOneAndUpdate(
-        { stationId, pumpId, date: { $gte: startDate, $lte: endDate }, dayShiftId: { $in: [activeShift._id, null] } },
+        { stationId, pumpId, date: { $gte: startDate, $lte: endDate }, dayShiftId: shiftIdMatch },
         {
           $set: {
             stationId,
@@ -302,7 +317,7 @@ export async function POST(request) {
         stationId,
         pumpId,
         date: { $gte: startDate, $lte: endDate },
-        dayShiftId: { $in: [activeShift._id, null] },
+        dayShiftId: shiftIdMatch,
       });
 
       if (!reading) {
@@ -356,7 +371,7 @@ export async function POST(request) {
         stationId,
         pumpId,
         date: { $gte: startDate, $lte: endDate },
-        dayShiftId: { $in: [activeShift._id, null] },
+        dayShiftId: shiftIdMatch,
       });
 
       if (!existing) {

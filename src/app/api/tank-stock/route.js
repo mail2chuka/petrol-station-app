@@ -257,6 +257,10 @@ export async function POST(request) {
     // callers fall back to the date's shift the same way begin/end already do
     // (arbitrary pick among same-date shifts — only ambiguous once a station
     // has actually configured more than one shift).
+    const shiftsForDate = await DayShift.find({
+      stationId: payload.stationId,
+      date: { $gte: startDate, $lte: endDate },
+    }).sort({ shiftOrder: 1, startTime: 1 });
     let dayShiftId = payload.dayShiftId || null;
     if (!dayShiftId) {
       const fallbackShift = await DayShift.findOne({
@@ -266,9 +270,21 @@ export async function POST(request) {
       dayShiftId = fallbackShift?._id || null;
     }
 
+    // A doc with no dayShiftId predates multi-shift support for this date —
+    // it can only belong to the earliest shift (the one that existed before
+    // a second shift was added on the same date), never a later one. Without
+    // this, giving a station its first genuine second shift on a date that
+    // already had real data would leak that data into the new shift, or a
+    // write to the new shift could silently overwrite the old shift's doc.
+    const earliestShiftForDate = shiftsForDate.length
+      ? [...shiftsForDate].sort((a, b) =>
+          (a.shiftOrder || 1) - (b.shiftOrder || 1) || String(a._id).localeCompare(String(b._id))
+        )[0]
+      : null;
+    const isEarliestShift = !!(dayShiftId && earliestShiftForDate && String(dayShiftId) === String(earliestShiftForDate._id));
+    const shiftIdMatch = isEarliestShift ? { $in: [dayShiftId, null] } : dayShiftId;
+
     // For closing entries: look up this shift's opening entry to get openingStock.
-    // Also match a pre-deploy doc that hasn't been tagged with a dayShiftId yet
-    // (in-flight shift crossing the deploy) so its opening isn't missed.
     let openingStock = payload.stockValue;
     if (payload.period === 'closing') {
       const openingEntry = await TankStockEntry.findOne({
@@ -276,7 +292,7 @@ export async function POST(request) {
         tankId: payload.tankId,
         date: { $gte: startDate, $lte: endDate },
         period: 'opening',
-        dayShiftId: { $in: [dayShiftId, null] },
+        dayShiftId: shiftIdMatch,
       });
       if (openingEntry) {
         openingStock = openingEntry.openingStock;
@@ -317,10 +333,12 @@ export async function POST(request) {
         tankId: payload.tankId,
         date: { $gte: startDate, $lte: endDate },
         period: payload.period,
-        // Match either this shift's own doc or a pre-deploy doc that hasn't
-        // been tagged with a dayShiftId yet (in-flight shift crossing the
-        // deploy) — avoids creating a duplicate that end-day can't find.
-        dayShiftId: { $in: [dayShiftId, null] },
+        // Match either this shift's own doc or — only for the earliest shift
+        // on this date — a pre-deploy doc that hasn't been tagged with a
+        // dayShiftId yet (in-flight shift crossing the deploy). A later shift
+        // must never match an untagged doc, or it would silently steal /
+        // overwrite the earlier shift's own record.
+        dayShiftId: shiftIdMatch,
       },
       updateData,
       { new: true, upsert: true, runValidators: true }

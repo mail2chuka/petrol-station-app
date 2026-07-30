@@ -44,12 +44,25 @@ export async function GET(request) {
     // are treated as 'default' so pre-multi-shift backfilled days still load).
     const allShiftsForDate = await DayShift.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean();
     const dayShift = allShiftsForDate.find((s) => (s.shiftKey || 'default') === shiftKey) || null;
+    // A doc with no dayShiftId predates multi-shift support for this date —
+    // it can only belong to the earliest shift (the one that existed before
+    // a second shift was added for this date), never to a later one. Without
+    // this, adding a genuine second shift to a date that already had real
+    // live data leaks that data into the new shift's blank form.
+    const earliestShiftForDate = allShiftsForDate.length
+      ? [...allShiftsForDate].sort((a, b) =>
+          (a.shiftOrder || 1) - (b.shiftOrder || 1) || String(a._id).localeCompare(String(b._id))
+        )[0]
+      : null;
+    const isEarliestShift = !!(dayShift && earliestShiftForDate && String(dayShift._id) === String(earliestShiftForDate._id));
     // A brand-new shift (picked "+ Add another shift", not yet saved) has no
     // DayShift doc yet — there is nothing to scope by, so it must show blank
     // fields, not every record for the date. Without this guard the filter
     // below degrades to "no filter", leaking other shifts' meter readings and
     // tank dips into a shift that hasn't been created yet.
-    const shiftFilter = dayShift ? { dayShiftId: { $in: [dayShift._id, null] } } : null;
+    const shiftFilter = dayShift
+      ? { dayShiftId: isEarliestShift ? { $in: [dayShift._id, null] } : dayShift._id }
+      : null;
 
     const [meterReadings, tankStockEntries, stockMovements, salesEntries, paymentRecords, cashDeposits] =
       await Promise.all([
@@ -234,6 +247,14 @@ export async function POST(request) {
     if (!shift) {
       return NextResponse.json({ error: 'No day shift found for this date/shift. Create the day shift first.' }, { status: 409 });
     }
+    // A doc with no dayShiftId predates multi-shift support for this date —
+    // it can only belong to the earliest shift, never a later one added on
+    // top of an already-recorded date. See the matching comment in GET above.
+    const earliestShiftForDate = [...shiftsForDate].sort((a, b) =>
+      (a.shiftOrder || 1) - (b.shiftOrder || 1) || String(a._id).localeCompare(String(b._id))
+    )[0];
+    const isEarliestShift = String(shift._id) === String(earliestShiftForDate._id);
+    const shiftIdMatch = isEarliestShift ? { $in: [shift._id, null] } : shift._id;
 
     // ── PRUNE ORPHANS ───────────────────────────────────────────────────────────
     // Removes records for pumps / tanks that are no longer in the active selection.
@@ -249,7 +270,7 @@ export async function POST(request) {
           MeterReading.deleteMany({
             stationId: stationObjId,
             date: { $gte: dateStart, $lte: dateEnd },
-            dayShiftId: { $in: [shift._id, null] },
+            dayShiftId: shiftIdMatch,
             pumpId: { $nin: keepDispenserIds },
           }),
           SalesEntry.deleteMany({
@@ -272,7 +293,7 @@ export async function POST(request) {
         const tse = await TankStockEntry.deleteMany({
           stationId: stationObjId,
           date: { $gte: dateStart, $lte: dateEnd },
-          dayShiftId: { $in: [shift._id, null] },
+          dayShiftId: shiftIdMatch,
           tankId: { $nin: keepTankIds },
         });
         pruned.tankStockEntries = tse.deletedCount;
@@ -292,7 +313,7 @@ export async function POST(request) {
       const rttVal = rtt !== undefined ? Number(rtt) : 0;
 
       const reading = await MeterReading.findOneAndUpdate(
-        { stationId: stationObjId, pumpId, date: { $gte: dateStart, $lte: dateEnd }, dayShiftId: { $in: [shift._id, null] } },
+        { stationId: stationObjId, pumpId, date: { $gte: dateStart, $lte: dateEnd }, dayShiftId: shiftIdMatch },
         {
           $set: {
             stationId: stationObjId,
@@ -335,7 +356,7 @@ export async function POST(request) {
         const openingEntry = await TankStockEntry.findOne({
           stationId: stationObjId, tankId, period: 'opening',
           date: { $gte: dateStart, $lte: dateEnd },
-          dayShiftId: { $in: [shift._id, null] },
+          dayShiftId: shiftIdMatch,
         });
         if (openingEntry) openingStock = openingEntry.openingStock;
       }
@@ -344,7 +365,7 @@ export async function POST(request) {
       const variancePercent = openingStock > 0 ? (variance / openingStock) * 100 : 0;
 
       const entry = await TankStockEntry.findOneAndUpdate(
-        { stationId: stationObjId, tankId, period, date: { $gte: dateStart, $lte: dateEnd }, dayShiftId: { $in: [shift._id, null] } },
+        { stationId: stationObjId, tankId, period, date: { $gte: dateStart, $lte: dateEnd }, dayShiftId: shiftIdMatch },
         {
           $set: {
             stationId: stationObjId,

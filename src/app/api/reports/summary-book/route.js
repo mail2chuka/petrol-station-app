@@ -82,6 +82,20 @@ export async function GET(request) {
       shiftsByDay[dk].push(ds);
     }
 
+    // A doc with no dayShiftId predates multi-shift support for that date.
+    // It can only ever belong to the earliest shift on that date — the one
+    // that existed before a second shift was added (e.g. via backfill's "add
+    // another shift for this date" on a day that already had real live data)
+    // — never to a shift created afterward, which always gets a real
+    // dayShiftId stamped on everything it writes.
+    const earliestShiftIdByDay = {};
+    for (const [dk, list] of Object.entries(shiftsByDay)) {
+      const earliest = [...list].sort((a, b) =>
+        (a.shiftOrder || 1) - (b.shiftOrder || 1) || String(a._id).localeCompare(String(b._id))
+      )[0];
+      earliestShiftIdByDay[dk] = String(earliest._id);
+    }
+
     // StockMovement (truck deliveries/receipts) has no shift reference —
     // attribute each one to whichever shift was actually running at its
     // timestamp (the shift with the latest startTime at or before the
@@ -131,14 +145,15 @@ export async function GET(request) {
 
     for (const dayShift of dayShifts) {
       const dayKey = dayKeyOf(dayShift.date);
-      const isSoleShiftForDay = (shiftsByDay[dayKey] || []).length === 1;
+      const isEarliestShiftForDay = String(dayShift._id) === earliestShiftIdByDay[dayKey];
 
-      // A doc with no dayShiftId predates multi-shift support — safe to
-      // attribute to "the" shift only when there's unambiguously just one
-      // shift for that date (true for every pre-existing date, since
-      // multi-shift days only exist from the deploy of this feature onward).
+      // Must also check the doc's own date: tankEntries/readings span the
+      // whole requested range, so without this a null-dayShiftId doc from
+      // any day would match every eligible day in the range, collapsing
+      // the entire month onto whichever doc happened to be filtered in last.
       const belongsToShift = (doc) =>
-        doc.dayShiftId ? String(doc.dayShiftId) === String(dayShift._id) : isSoleShiftForDay;
+        dayKeyOf(doc.date) === dayKey &&
+        (doc.dayShiftId ? String(doc.dayShiftId) === String(dayShift._id) : isEarliestShiftForDay);
 
       const dayTankEntries = tankEntries.filter(belongsToShift);
       const daySales = sales.filter((s) => String(s.dayShiftId) === String(dayShift._id));

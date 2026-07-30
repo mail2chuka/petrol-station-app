@@ -453,10 +453,18 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
   const showShiftTabs = allShifts.length > 1;
   const selectedShift = allShifts.find(sh => sh._id === selectedShiftId) || report.dayShift;
 
-  // A date only ever has more than one DayShift doc from the multi-shift
-  // feature onward, and every doc written by that feature carries a real
-  // dayShiftId — so once tabs are showing, matching is always strict.
-  const belongsToShift = (doc) => !showShiftTabs || String(doc.dayShiftId) === String(selectedShift?._id);
+  // A doc with no dayShiftId predates multi-shift support for this date. It
+  // can only belong to the earliest shift — the one that existed before a
+  // second shift was added (e.g. via backfill's "add another shift for this
+  // date" on a day that already had real live data) — never to a shift
+  // created afterward, which always gets a real dayShiftId stamped on
+  // everything it writes.
+  const earliestShift = allShifts[0];
+  const belongsToShift = (doc) =>
+    !showShiftTabs ||
+    (doc.dayShiftId
+      ? String(doc.dayShiftId) === String(selectedShift?._id)
+      : String(selectedShift?._id) === String(earliestShift?._id));
 
   const shiftMeterReadings = (report.meterReadings || []).filter(belongsToShift);
   const shiftTankStockEntries = (report.tankStockEntries || []).filter(belongsToShift);
