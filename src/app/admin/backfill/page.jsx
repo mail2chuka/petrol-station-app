@@ -206,6 +206,21 @@ export default function BackfillPage() {
     setShiftLabel('Full Day');
   }, [stationId, date]);
 
+  // Refresh the shift pills whenever the Setup step becomes visible again —
+  // otherwise, after saving a new shift and clicking "← Back" to Setup, the
+  // just-created shift wouldn't show up as a pill (the main data-load effect
+  // below only re-runs when stationId/date/shiftKey change, none of which
+  // change on a plain step navigation), leaving no way to add a second shift.
+  useEffect(() => {
+    if (step !== 'setup' || !stationId || !date) return;
+    let cancelled = false;
+    fetch(`/api/admin/backfill?stationId=${stationId}&date=${date}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && !cancelled) setShiftsForDate(d.shiftsForDate || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [step, stationId, date]);
+
   // Load station + existing data whenever stationId or date changes
   useEffect(() => {
     if (!stationId || !date) { setStation(null); setExistingData(null); return; }
