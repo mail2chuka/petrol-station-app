@@ -5,10 +5,11 @@ import Station from '@/models/Station';
 import StockMovement from '@/models/StockMovement';
 import Truck from '@/models/Truck';
 import TankStockEntry from '@/models/TankStockEntry';
+import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { offloadSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
-import { ROLES } from '@/lib/constants';
+import { ROLES, DAY_STATUS } from '@/lib/constants';
 
 // POST /api/stations/[id]/stock - Record a truck offload (delivery)
 // Body: { truckId, driverName?, driverPhone?, fuelType, declaredLoad, supplier?, cost?, notes?,
@@ -75,6 +76,15 @@ export async function POST(request, { params }) {
     session = await mongoose.startSession();
     session.startTransaction();
 
+    // Attribute the delivery to whichever shift is currently running at this
+    // station, so it shows up under that shift (not every shift) in reports
+    // and the backfill wizard. No active shift (e.g. delivery arrives outside
+    // operating hours) leaves it day-level, same as before this field existed.
+    const activeShift = await DayShift.findOne({
+      stationId: station._id,
+      status: DAY_STATUS.IN_PROGRESS,
+    }).session(session);
+
     if (station.currentStock instanceof Map) station.currentStock.set(fuelType, newStock);
     else station.currentStock[fuelType] = newStock;
     station.markModified('currentStock');
@@ -88,6 +98,7 @@ export async function POST(request, { params }) {
       stationId: station._id,
       stationName: station.name,
       date: new Date(),
+      dayShiftId: activeShift?._id || null,
       fuelType,
       movementType: 'receipt',
       isOffload: true,

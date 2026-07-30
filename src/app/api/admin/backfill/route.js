@@ -72,7 +72,9 @@ export async function GET(request) {
         shiftFilter
           ? TankStockEntry.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, ...shiftFilter }).lean()
           : Promise.resolve([]),
-        StockMovement.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, movementType: 'receipt' }).lean(),
+        shiftFilter
+          ? StockMovement.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, movementType: 'receipt', ...shiftFilter }).lean()
+          : Promise.resolve([]),
         dayShift
           ? SalesEntry.find({ stationId: stationObjId, dayShiftId: dayShift._id }).lean()
           : Promise.resolve([]),
@@ -481,13 +483,16 @@ export async function POST(request) {
         : null;
       const offloadVariance = declaredLoadVal != null ? receivedVal - declaredLoadVal : null;
 
-      // Idempotency guard: an identical receipt (same day, fuel, tank, quantity)
+      // Idempotency guard: an identical receipt (same shift, fuel, tank, quantity)
       // is almost certainly a duplicate re-submit. Return it instead of creating
       // a second record. Genuinely distinct loads will differ in quantity/tank.
+      // Scoped to this shift, not the whole date — two different shifts can
+      // legitimately each receive an identical-looking load on the same day.
       const duplicate = await StockMovement.findOne({
         stationId: stationObjId,
         movementType: 'receipt',
         date: { $gte: dateStart, $lte: dateEnd },
+        dayShiftId: shiftIdMatch,
         fuelType,
         quantity: receivedVal,
         ...(tankId ? { 'distribution.tankId': tankId } : {}),
@@ -501,6 +506,7 @@ export async function POST(request) {
         stationId: stationObjId,
         stationName: station.name,
         date: dateStart,
+        dayShiftId: shift._id,
         fuelType,
         movementType: 'receipt',
         isOffload: declaredLoadVal != null,

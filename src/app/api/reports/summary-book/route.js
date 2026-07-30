@@ -96,20 +96,20 @@ export async function GET(request) {
       earliestShiftIdByDay[dk] = String(earliest._id);
     }
 
-    // StockMovement (truck deliveries/receipts) has no shift reference —
-    // attribute each one to whichever shift was actually running at its
-    // timestamp (the shift with the latest startTime at or before the
-    // delivery), so a multi-shift day's stock-in and delivery shortage/excess
-    // land on the correct shift instead of every shift on that date.
-    // Deliveries outside any shift's window fall back to a day-level bucket.
+    // StockMovement (truck deliveries/receipts) now carries its own dayShiftId
+    // going forward — use it directly when present. Only movements recorded
+    // before that field existed fall back to the same earliest-shift rule as
+    // meter/tank readings (they can only belong to the date's earliest shift).
+    // Deliveries on a date with no shift at all fall back to a day-level bucket.
     function attributedShiftFor(movement) {
       const dk = dayKeyOf(movement.date);
       const candidates = shiftsByDay[dk] || [];
       if (!candidates.length) return null;
-      const started = candidates
-        .filter((s) => new Date(s.startTime || s.date).getTime() <= new Date(movement.date).getTime())
-        .sort((a, b) => new Date(b.startTime || b.date) - new Date(a.startTime || a.date));
-      return started[0] || candidates[0]; // fallback: day's first shift if delivery precedes every start
+      if (movement.dayShiftId) {
+        return candidates.find((s) => String(s._id) === String(movement.dayShiftId)) || null;
+      }
+      const earliestId = earliestShiftIdByDay[dk];
+      return candidates.find((s) => String(s._id) === earliestId) || null;
     }
 
     // dayShiftId → StockMovement[] for that shift (all receipts, not just offloads)

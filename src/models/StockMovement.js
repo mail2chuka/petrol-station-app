@@ -18,6 +18,14 @@ const stockMovementSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // Which shift this movement belongs to. Nullable — deliveries recorded
+    // before shift-scoping existed, or outside any active shift, have none.
+    dayShiftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'DayShift',
+      default: null,
+      index: true,
+    },
     fuelType: {
       type: String,
       enum: Object.values(FUEL_TYPES),
