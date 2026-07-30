@@ -44,14 +44,21 @@ export async function GET(request) {
     // are treated as 'default' so pre-multi-shift backfilled days still load).
     const allShiftsForDate = await DayShift.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } }).lean();
     const dayShift = allShiftsForDate.find((s) => (s.shiftKey || 'default') === shiftKey) || null;
-    const shiftFilter = dayShift
-      ? { dayShiftId: { $in: [dayShift._id, null] } }
-      : {};
+    // A brand-new shift (picked "+ Add another shift", not yet saved) has no
+    // DayShift doc yet — there is nothing to scope by, so it must show blank
+    // fields, not every record for the date. Without this guard the filter
+    // below degrades to "no filter", leaking other shifts' meter readings and
+    // tank dips into a shift that hasn't been created yet.
+    const shiftFilter = dayShift ? { dayShiftId: { $in: [dayShift._id, null] } } : null;
 
     const [meterReadings, tankStockEntries, stockMovements, salesEntries, paymentRecords, cashDeposits] =
       await Promise.all([
-        MeterReading.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, ...shiftFilter }).lean(),
-        TankStockEntry.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, ...shiftFilter }).lean(),
+        shiftFilter
+          ? MeterReading.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, ...shiftFilter }).lean()
+          : Promise.resolve([]),
+        shiftFilter
+          ? TankStockEntry.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, ...shiftFilter }).lean()
+          : Promise.resolve([]),
         StockMovement.find({ stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, movementType: 'receipt' }).lean(),
         dayShift
           ? SalesEntry.find({ stationId: stationObjId, dayShiftId: dayShift._id }).lean()
