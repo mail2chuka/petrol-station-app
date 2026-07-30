@@ -7,6 +7,7 @@ import Link from 'next/link';
 import Card from '@/components/Card';
 import Loading from '@/components/Loading';
 import Button from '@/components/Button';
+import { getEffectiveShiftSchedule } from '@/lib/shifts';
 
 const PRODUCT_COLORS = {
   PMS: {
@@ -53,6 +54,7 @@ function ManagerDashboardContent() {
   const activeStationId = session?.user?.role === 'admin' ? adminStationId : session?.user?.stationId;
   const [station, setStation] = useState(null);
   const [activeDayShift, setActiveDayShift] = useState(null);
+  const [todayShifts, setTodayShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stockModal, setStockModal] = useState(false);
   const [stockModalClosings, setStockModalClosings] = useState([]);
@@ -77,9 +79,10 @@ function ManagerDashboardContent() {
     if (!activeStationId) return;
 
     try {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
       const [stationRes, dayShiftRes] = await Promise.all([
         fetch(`/api/stations`),
-        fetch(`/api/day-shifts?stationId=${activeStationId}&status=in_progress`),
+        fetch(`/api/day-shifts?stationId=${activeStationId}&date=${today}`),
       ]);
 
       const stationData = await stationRes.json();
@@ -90,9 +93,9 @@ function ManagerDashboardContent() {
         setStation(found);
       }
 
-      if (dayShiftData.dayShifts?.length > 0) {
-        setActiveDayShift(dayShiftData.dayShifts[0]);
-      }
+      const shiftsToday = dayShiftData.dayShifts || [];
+      setTodayShifts(shiftsToday);
+      setActiveDayShift(shiftsToday.find((d) => d.status === 'in_progress') || null);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -143,6 +146,35 @@ function ManagerDashboardContent() {
   const availableProducts = station?.availableProducts?.length > 0
     ? station.availableProducts
     : ['PMS', 'AGO'];
+
+  // Shift context — only meaningfully different from the plain single-shift
+  // case once the station has actually configured more than one shift.
+  const shiftSchedule = getEffectiveShiftSchedule(station);
+  const isMultiShift = shiftSchedule.length > 1;
+  const usedShiftKeys = new Set(todayShifts.map((d) => d.shiftKey || 'default'));
+  const nextShift = shiftSchedule.find((s) => !usedShiftKeys.has(s.key)) || null;
+  const allShiftsDoneToday = isMultiShift && !activeDayShift && !nextShift && todayShifts.length > 0;
+  const lastEndedShift = !activeDayShift
+    ? [...todayShifts].filter((d) => d.status === 'ended').sort((a, b) => (b.shiftOrder || 1) - (a.shiftOrder || 1))[0]
+    : null;
+
+  // Day Status badge — for single-shift stations this is unchanged
+  // (🟢 Active / 🔴 Not Started). Multi-shift stations get a status that
+  // reflects what actually happened today instead of flattening every
+  // non-active state down to "Not Started".
+  let dayStatusIcon = activeDayShift ? '🟢' : '🔴';
+  let dayStatusLabel = activeDayShift ? 'Active' : 'Not Started';
+  if (isMultiShift) {
+    if (activeDayShift) {
+      dayStatusLabel = `${activeDayShift.shiftLabel || 'Shift'} Active`;
+    } else if (allShiftsDoneToday) {
+      dayStatusIcon = '✅';
+      dayStatusLabel = 'All Shifts Complete';
+    } else if (lastEndedShift) {
+      dayStatusIcon = '🟡';
+      dayStatusLabel = `${lastEndedShift.shiftLabel} Ended`;
+    }
+  }
 
   // Latest measured level per tank (from last closing dipstick) for the stock modal
   const closingByTankId = {};
@@ -264,7 +296,7 @@ function ManagerDashboardContent() {
             <div className="bg-orange-600 p-4 text-white">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold opacity-80 uppercase tracking-wide">Today's Readings</p>
+                  <p className="text-xs font-semibold opacity-80 uppercase tracking-wide">Today&apos;s Readings</p>
                   <p className="text-xl font-black">Dispensers</p>
                   <p className="text-xs opacity-70 mt-0.5">{station?.name}</p>
                 </div>
@@ -402,11 +434,14 @@ function ManagerDashboardContent() {
           <div className="text-center relative z-10">
             <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Day Status</p>
             <p className="text-5xl font-black">
-              {activeDayShift ? '🟢' : '🔴'}
+              {dayStatusIcon}
             </p>
-            <p className={`text-sm font-bold mt-2 ${activeDayShift ? 'text-green-700' : 'text-red-700'}`}>
-              {activeDayShift ? 'Active' : 'Not Started'}
+            <p className={`text-sm font-bold mt-2 ${activeDayShift ? 'text-green-700' : allShiftsDoneToday ? 'text-emerald-700' : lastEndedShift ? 'text-amber-700' : 'text-red-700'}`}>
+              {dayStatusLabel}
             </p>
+            {isMultiShift && nextShift && !activeDayShift && (
+              <p className="text-xs text-gray-400 mt-1">Next: {nextShift.label}</p>
+            )}
           </div>
         </div>
 
@@ -455,21 +490,36 @@ function ManagerDashboardContent() {
 
         <Card title="Quick Actions" className="border border-gray-200">
           <div className="space-y-3">
-            {!activeDayShift ? (
-              <a
-                href={buildManagerHref('/manager/begin-day')}
-                className="block p-4 bg-gradient-to-r from-ecana-maroon-50 to-ecana-maroon-100 hover:from-ecana-maroon-100 hover:to-ecana-maroon-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-ecana-maroon-200"
-              >
-                <p className="font-bold text-ecana-maroon text-lg">🚀 Begin Day</p>
-                <p className="text-sm text-gray-600 mt-1">Start operations for today</p>
-              </a>
-            ) : (
+            {activeDayShift ? (
               <a
                 href={buildManagerHref('/manager/end-day')}
                 className="block p-4 bg-gradient-to-r from-red-50 to-red-100 hover:from-red-100 hover:to-red-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-red-200"
               >
-                <p className="font-bold text-red-700 text-lg">🛑 End Day</p>
-                <p className="text-sm text-gray-600 mt-1">Close operations for today</p>
+                <p className="font-bold text-red-700 text-lg">
+                  🛑 {isMultiShift ? `End ${activeDayShift.shiftLabel || 'Shift'}` : 'End Day'}
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  {isMultiShift ? `Close out the ${activeDayShift.shiftLabel || 'current'} shift` : 'Close operations for today'}
+                </p>
+              </a>
+            ) : allShiftsDoneToday ? (
+              <div className="block p-4 bg-gray-50 rounded-xl border-2 border-gray-200">
+                <p className="font-bold text-gray-500 text-lg">✅ All Shifts Complete</p>
+                <p className="text-sm text-gray-500 mt-1">Every shift scheduled for today has ended. Come back tomorrow.</p>
+              </div>
+            ) : (
+              <a
+                href={buildManagerHref('/manager/begin-day')}
+                className="block p-4 bg-gradient-to-r from-ecana-maroon-50 to-ecana-maroon-100 hover:from-ecana-maroon-100 hover:to-ecana-maroon-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-ecana-maroon-200"
+              >
+                <p className="font-bold text-ecana-maroon text-lg">
+                  🚀 {isMultiShift && nextShift ? `Begin ${nextShift.label}` : 'Begin Day'}
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  {isMultiShift && lastEndedShift
+                    ? `${lastEndedShift.shiftLabel} already ended — start the next shift`
+                    : 'Start operations for today'}
+                </p>
               </a>
             )}
             <a
@@ -477,7 +527,7 @@ function ManagerDashboardContent() {
               className="block p-4 bg-gradient-to-r from-cyan-50 to-cyan-100 hover:from-cyan-100 hover:to-cyan-200 rounded-xl transition-all shadow-sm hover:shadow-md border-2 border-cyan-200"
             >
               <p className="font-bold text-cyan-700 text-lg">⛽ Open Pumps</p>
-              <p className="text-sm text-gray-600 mt-1">Select pumps available for today's operations</p>
+              <p className="text-sm text-gray-600 mt-1">Select pumps available for today&apos;s operations</p>
             </a>
             <a
               href={buildManagerHref('/manager/supervisor-entries')}
