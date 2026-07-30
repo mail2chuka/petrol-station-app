@@ -119,6 +119,7 @@ export async function GET(request) {
     return NextResponse.json({
       dayShift,
       shifts,
+      salesEntries,
       paymentRecords,
       meterReadings,
       tankStockEntries,

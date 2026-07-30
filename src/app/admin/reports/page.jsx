@@ -406,9 +406,9 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
   const [cashierSubTab, setCashierSubTab] = useState('collections');
   const [supervisorFuel, setSupervisorFuel] = useState('');
   const [pumpToAdd, setPumpToAdd] = useState('');
-  const [attendantAssignments, setAttendantAssignments] = useState({});
-
-  const s = report?.summary;
+  const [attendantAssignmentsRaw, setAttendantAssignmentsRaw] = useState([]);
+  const [selectedShiftId, setSelectedShiftId] = useState(null);
+  const [selectedShiftForDate, setSelectedShiftForDate] = useState(null);
 
   const depositsForDate = deposits.filter(dep => {
     return new Date(dep.date).toISOString().split('T')[0] === detailDate;
@@ -427,13 +427,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
 
     fetch(`/api/attendant-assignments?stationId=${stationId}&date=${detailDate}`)
       .then(r => r.json())
-      .then(d => {
-        const map = {};
-        for (const a of (d.assignments || [])) {
-          map[a.dispenserId] = a.attendantName;
-        }
-        setAttendantAssignments(map);
-      })
+      .then(d => setAttendantAssignmentsRaw(d.assignments || []))
       .catch(() => {});
   }, [report, detailDate]);
 
@@ -445,8 +439,97 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
     </div>
   );
 
+  // Default to whichever shift the API picked as "the" representative one
+  // (prefer ended, else most recently started) — same shift the page showed
+  // before per-shift tabs existed. Resets whenever a different day is opened.
+  // (Adjusting state during render, guarded so it only fires once per date —
+  // see https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  if (detailDate !== selectedShiftForDate) {
+    setSelectedShiftForDate(detailDate);
+    setSelectedShiftId(report.dayShift?._id || null);
+  }
+
+  const allShifts = [...(report.shifts || [])].sort((a, b) => (a.shiftOrder || 1) - (b.shiftOrder || 1));
+  const showShiftTabs = allShifts.length > 1;
+  const selectedShift = allShifts.find(sh => sh._id === selectedShiftId) || report.dayShift;
+
+  // A date only ever has more than one DayShift doc from the multi-shift
+  // feature onward, and every doc written by that feature carries a real
+  // dayShiftId — so once tabs are showing, matching is always strict.
+  const belongsToShift = (doc) => !showShiftTabs || String(doc.dayShiftId) === String(selectedShift?._id);
+
+  const shiftMeterReadings = (report.meterReadings || []).filter(belongsToShift);
+  const shiftTankStockEntries = (report.tankStockEntries || []).filter(belongsToShift);
+  const shiftPaymentRecords = (report.paymentRecords || []).filter(belongsToShift);
+  const shiftSalesEntries = (report.salesEntries || []).filter(belongsToShift);
+
+  const attendantAssignments = {};
+  for (const a of attendantAssignmentsRaw.filter(belongsToShift)) {
+    attendantAssignments[a.dispenserId] = a.attendantName;
+  }
+
+  // Recomputed the same way src/app/api/reports/daily/route.js does for the
+  // whole date — done client-side per shift so an in-progress shift (whose
+  // own totalSales/discrepancy fields aren't populated until it ends) still
+  // shows live numbers, not zeros.
+  const totalSales = {};
+  shiftSalesEntries.forEach(sale => {
+    if (!totalSales[sale.fuelType]) totalSales[sale.fuelType] = { liters: 0, amount: 0 };
+    totalSales[sale.fuelType].liters += sale.liters;
+    totalSales[sale.fuelType].amount += sale.expectedAmount;
+  });
+  if (!totalSales.PMS) totalSales.PMS = { liters: 0, amount: 0 };
+  if (!totalSales.AGO) totalSales.AGO = { liters: 0, amount: 0 };
+  const expectedAmount = Object.values(totalSales).reduce((sum, v) => sum + v.amount, 0);
+  const totalPayments = {
+    cash: shiftPaymentRecords.reduce((sum, p) => sum + p.cashReceived, 0),
+    pos: shiftPaymentRecords.reduce((sum, p) => sum + p.posReceived, 0),
+  };
+  const discrepancy = (totalPayments.cash + totalPayments.pos) - expectedAmount;
+  const s = { totalSales, totalPayments, expectedAmount, discrepancy };
+
+  const supervisorMap = {};
+  shiftSalesEntries.forEach(sale => {
+    const key = sale.supervisorId?.toString();
+    if (!key) return;
+    if (!supervisorMap[key]) {
+      supervisorMap[key] = { supervisorId: sale.supervisorId, supervisorName: sale.supervisorName, totalLiters: 0, totalExpected: 0, totalCash: 0, totalPos: 0, totalPaymentReceived: 0 };
+    }
+    supervisorMap[key].totalLiters += sale.liters;
+    supervisorMap[key].totalExpected += sale.expectedAmount;
+  });
+  shiftPaymentRecords.forEach(payment => {
+    const key = payment.supervisorId?.toString();
+    if (!key) return;
+    if (!supervisorMap[key]) {
+      supervisorMap[key] = { supervisorId: payment.supervisorId, supervisorName: payment.supervisorName, totalLiters: 0, totalExpected: 0, totalCash: 0, totalPos: 0, totalPaymentReceived: 0 };
+    }
+    supervisorMap[key].totalCash += payment.cashReceived;
+    supervisorMap[key].totalPos += payment.posReceived;
+    supervisorMap[key].totalPaymentReceived += payment.totalReceived;
+  });
+  const supervisorSummaries = Object.values(supervisorMap);
+
   return (
     <div className="space-y-4">
+      {/* Shift tabs — only when this date has more than one shift */}
+      {showShiftTabs && (
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+          {allShifts.map(sh => (
+            <button
+              key={sh._id}
+              onClick={() => setSelectedShiftId(sh._id)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                selectedShift?._id === sh._id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {sh.shiftLabel || 'Full Day'}
+              <span className={`ml-1.5 inline-block w-1.5 h-1.5 rounded-full align-middle ${sh.status === 'ended' ? 'bg-green-500' : 'bg-amber-500'}`} />
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {Object.entries(s.totalSales).filter(([, v]) => v.liters > 0 || v.amount > 0).map(([fuel, v]) => (
@@ -506,16 +589,16 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
         <div className="space-y-4">
           <Card title="Day Shift Info">
             <dl className="space-y-2 text-sm">
-              <Row label="Status" value={<Pill status={report.dayShift.status === 'in_progress' ? 'pending' : 'approved'} />} />
-              <Row label="Started By" value={report.dayShift.startedByName || '—'} />
-              <Row label="Start Time" value={report.dayShift.startTime ? fmtDate(report.dayShift.startTime) : '—'} />
-              {report.dayShift.endTime && <Row label="End Time" value={fmtDate(report.dayShift.endTime)} />}
-              {report.dayShift.endedByName && <Row label="Ended By" value={report.dayShift.endedByName} />}
+              <Row label="Status" value={<Pill status={selectedShift.status === 'in_progress' ? 'pending' : 'approved'} />} />
+              <Row label="Started By" value={selectedShift.startedByName || '—'} />
+              <Row label="Start Time" value={selectedShift.startTime ? fmtDate(selectedShift.startTime) : '—'} />
+              {selectedShift.endTime && <Row label="End Time" value={fmtDate(selectedShift.endTime)} />}
+              {selectedShift.endedByName && <Row label="Ended By" value={selectedShift.endedByName} />}
             </dl>
-            {report.dayShift.status === 'ended' && onReopen && (
+            {selectedShift.status === 'ended' && onReopen && (
               <div className="mt-4 pt-3 border-t border-gray-100">
                 <button
-                  onClick={() => onReopen(report.dayShift._id)}
+                  onClick={() => onReopen(selectedShift._id)}
                   className="text-xs font-medium px-3 py-1.5 rounded-lg border border-ecana-maroon text-ecana-maroon hover:bg-ecana-maroon hover:text-white transition-colors"
                 >
                   Re-open day
@@ -525,10 +608,10 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
             )}
           </Card>
 
-          {report.dayShift.pricesAtStart && Object.keys(report.dayShift.pricesAtStart).length > 0 && (
+          {selectedShift.pricesAtStart && Object.keys(selectedShift.pricesAtStart).length > 0 && (
             <Card title="Prices at Day Start">
               <dl className="space-y-2 text-sm">
-                {Object.entries(report.dayShift.pricesAtStart).map(([fuel, price]) => (
+                {Object.entries(selectedShift.pricesAtStart).map(([fuel, price]) => (
                   <Row key={fuel} label={`${fuel} (₦/L)`} value={fmtNum(price)} />
                 ))}
               </dl>
@@ -536,8 +619,8 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
           )}
 
           {(() => {
-            const isInProgress = report.dayShift.status === 'in_progress';
-            const assigned = report.dayShift.dispenserAssignments || [];
+            const isInProgress = selectedShift.status === 'in_progress';
+            const assigned = selectedShift.dispenserAssignments || [];
             const assignedIds = new Set(assigned.map(d => d.dispenserId));
             const addablePumps = (stationDispensers || [])
               .filter(d => d.isActive !== false && !assignedIds.has(d.dispenserId));
@@ -556,9 +639,9 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                       {(() => {
                         const tcMap = buildTankColorMap(assigned);
                         return assigned.map((d, i) => {
-                          const price = report.dayShift.pricesAtStart instanceof Map
-                            ? report.dayShift.pricesAtStart.get(d.fuelType)
-                            : report.dayShift.pricesAtStart?.[d.fuelType];
+                          const price = selectedShift.pricesAtStart instanceof Map
+                            ? selectedShift.pricesAtStart.get(d.fuelType)
+                            : selectedShift.pricesAtStart?.[d.fuelType];
                           const rowColor = d.tankId ? tcMap[d.tankId] || '' : '';
                           return (
                             <ClickRow key={i} className={rowColor} onClick={() => setDetailItem({ type: 'assignment', data: { ...d, priceAtStart: price } })}>
@@ -570,7 +653,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                               {isInProgress && onRemovePump && (
                                 <TD>
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); onRemovePump(d.dispenserId); }}
+                                    onClick={(e) => { e.stopPropagation(); onRemovePump(selectedShift._id, d.dispenserId); }}
                                     className="text-xs font-medium px-2.5 py-1 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors"
                                   >
                                     Remove
@@ -606,7 +689,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                         </select>
                         <button
                           disabled={!pumpToAdd}
-                          onClick={() => { onAddPump(pumpToAdd); setPumpToAdd(''); }}
+                          onClick={() => { onAddPump(selectedShift._id, pumpToAdd); setPumpToAdd(''); }}
                           className="text-xs font-medium px-3 py-1.5 rounded-lg bg-ecana-maroon text-white hover:opacity-90 disabled:opacity-40"
                         >
                           Add pump
@@ -623,7 +706,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
 
       {/* ── SUPERVISOR INPUTS ── */}
       {activeSection === 'supervisor' && (() => {
-        const assignments = report.dayShift?.dispenserAssignments || [];
+        const assignments = selectedShift?.dispenserAssignments || [];
         const tankColorMap = buildTankColorMap(assignments);
         const pumpTankMap = {};
         const pumpFuelMap = {};
@@ -634,16 +717,16 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
 
         // Derive available fuel types for the filter
         const allFuels = [...new Set(
-          report.meterReadings.map(r => r.fuelType || pumpFuelMap[r.pumpId]).filter(Boolean)
+          shiftMeterReadings.map(r => r.fuelType || pumpFuelMap[r.pumpId]).filter(Boolean)
         )].sort();
 
         const filteredReadings = supervisorFuel
-          ? report.meterReadings.filter(r => (r.fuelType || pumpFuelMap[r.pumpId]) === supervisorFuel)
-          : report.meterReadings;
+          ? shiftMeterReadings.filter(r => (r.fuelType || pumpFuelMap[r.pumpId]) === supervisorFuel)
+          : shiftMeterReadings;
 
         // Group tank stock entries by tankId for the dipstick table
         const tankEntryMap = {};
-        for (const entry of (report.tankStockEntries || [])) {
+        for (const entry of shiftTankStockEntries) {
           if (!supervisorFuel || entry.product === supervisorFuel) {
             if (!tankEntryMap[entry.tankId]) {
               tankEntryMap[entry.tankId] = { label: entry.tankLabel, product: entry.product };
@@ -786,13 +869,13 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
             </Card>
 
             {/* ── Supervisor Summary ── */}
-            {report.supervisorSummaries.length > 0 && (
+            {supervisorSummaries.length > 0 && (
               <Card title="Supervisor Summary">
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead><tr><TH>Supervisor</TH><TH>Liters (L)</TH><TH>Expected (₦)</TH><TH>Cash (₦)</TH><TH>POS (₦)</TH><TH>Total (₦)</TH></tr></thead>
                     <tbody className="divide-y divide-gray-100">
-                      {report.supervisorSummaries.map((sup, i) => (
+                      {supervisorSummaries.map((sup, i) => (
                         <tr key={i}>
                           <TD className="font-medium">{sup.supervisorName}</TD>
                           <TD>{fmtNum(sup.totalLiters)}</TD>
@@ -825,7 +908,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
 
           {cashierSubTab === 'collections' && (
             <Card title="Payment Collections">
-              {report.paymentRecords.length === 0
+              {shiftPaymentRecords.length === 0
                 ? <p className="text-sm text-gray-400 py-4 text-center">No collections recorded for this day.</p>
                 : <>
                   <p className="text-xs text-gray-400 mb-3">Click a row to see full POS breakdown.</p>
@@ -833,7 +916,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                     <table className="w-full">
                       <thead><tr><TH>Time</TH><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Cash</TH><TH>POS</TH><TH>Total</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
-                        {report.paymentRecords.map((p, i) => (
+                        {shiftPaymentRecords.map((p, i) => (
                           <ClickRow key={p._id || i} onClick={() => setDetailItem({ type: 'payment', data: p })}>
                             <TD>{new Date(p.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</TD>
                             <TD className="font-medium">{p.dispenserName || '—'}</TD>
@@ -1277,11 +1360,11 @@ function AdminReportsPageContent() {
     } catch { setDetailError('Network error.'); }
   }, [detailDate, fetchReport]);
 
-  const addPumpToDay = useCallback(async (pumpId) => {
-    if (!report?.dayShift?._id || !pumpId) return;
+  const addPumpToDay = useCallback(async (dayShiftId, pumpId) => {
+    if (!dayShiftId || !pumpId) return;
     setDetailError('');
     try {
-      const res = await fetch(`/api/day-shifts/${report.dayShift._id}`, {
+      const res = await fetch(`/api/day-shifts/${dayShiftId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'add-pump', pumpId }),
@@ -1290,12 +1373,12 @@ function AdminReportsPageContent() {
       if (!res.ok) { setDetailError(data.error || 'Failed to add pump'); return; }
       fetchReport(detailDate);
     } catch { setDetailError('Network error.'); }
-  }, [report, detailDate, fetchReport]);
+  }, [detailDate, fetchReport]);
 
-  const removePumpFromDay = useCallback(async (pumpId) => {
-    if (!report?.dayShift?._id || !pumpId) return;
+  const removePumpFromDay = useCallback(async (dayShiftId, pumpId) => {
+    if (!dayShiftId || !pumpId) return;
     setDetailError('');
-    const url = `/api/day-shifts/${report.dayShift._id}`;
+    const url = `/api/day-shifts/${dayShiftId}`;
     try {
       let res = await fetch(url, {
         method: 'PATCH',
@@ -1317,7 +1400,7 @@ function AdminReportsPageContent() {
       if (!res.ok) { setDetailError(data.error || 'Failed to remove pump'); return; }
       fetchReport(detailDate);
     } catch { setDetailError('Network error.'); }
-  }, [report, detailDate, fetchReport]);
+  }, [detailDate, fetchReport]);
 
   const stationOptions = stations.map(s => ({ value: s._id, label: `${s.name} (${s.code})` }));
 

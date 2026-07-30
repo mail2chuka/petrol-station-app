@@ -180,6 +180,12 @@ export async function POST(request) {
           { $set: { ...editableData, shiftLabel } },
           { new: true, runValidators: false }
         );
+        // Keep every shift on this date in sync with how many actually exist —
+        // self-corrects as the admin adds/edits shifts for a historical date.
+        await DayShift.updateMany(
+          { stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } },
+          { $set: { totalShiftsPlanned: existingForDate.length } }
+        );
         return NextResponse.json({ shift, updated: true }, { status: 200 });
       }
 
@@ -194,6 +200,7 @@ export async function POST(request) {
         shiftKey,
         shiftLabel,
         shiftOrder: existingForDate.length + 1,
+        totalShiftsPlanned: existingForDate.length + 1,
         startedBy: currentUser.id,
         startedByName: currentUser.name,
         startTime: dateStart,
@@ -202,6 +209,11 @@ export async function POST(request) {
         endTime: dateEnd,
         ...editableData,
       });
+      // Bring the other shifts already on this date up to the new total too.
+      await DayShift.updateMany(
+        { stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd }, _id: { $ne: shift._id } },
+        { $set: { totalShiftsPlanned: existingForDate.length + 1 } }
+      );
       return NextResponse.json({ shift, created: true }, { status: 200 });
     }
 
