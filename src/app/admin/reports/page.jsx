@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
 import Select from '@/components/Select';
+import Loading from '@/components/Loading';
 
 function fmtN(n) {
   return `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1064,25 +1066,35 @@ function SummaryListView({ stationId, onSelectDay }) {
               </tbody>
               <tfoot>
                 {showShiftColumn && shiftsPresent.map((s) => {
-                  const t = summarizeTotals(computedRows.filter(r => (r.shiftLabel || 'Full Day') === s));
+                  const shiftRows = computedRows.filter(r => (r.shiftLabel || 'Full Day') === s);
+                  const t = summarizeTotals(shiftRows);
+                  // Liters of different products can't be meaningfully added together
+                  // (a litre of diesel isn't a litre of petrol) — only show the volume
+                  // columns when this shift's rows are all the same product.
+                  const singleProduct = new Set(shiftRows.map(r => r.product)).size <= 1;
                   const toleranceDiff = t.tolerance - t.expTol;
                   const tolPercent = t.sales > 0 ? ((t.expTol / t.sales) * 100) : 0;
                   return (
                     <tr key={`shift-${s}`} className="bg-blue-50/60 border-t border-t-blue-100">
                       <td className="px-4 py-3 text-sm font-bold text-blue-700 uppercase tracking-wide" colSpan={labelColSpan}>Total — {s}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{t.stockIn > 0 ? fmtNum(t.stockIn) : '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{singleProduct && t.stockIn > 0 ? fmtNum(t.stockIn) : '—'}</td>
                       <td className="px-4 py-3 text-sm font-bold text-gray-700">
-                        <span>{fmtNum(t.tolerance)}</span>
-                        {t.sales > 0 && (
-                          <span className={`block text-xs font-medium ${toleranceDiff >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {toleranceDiff >= 0 ? '+' : ''}{fmtNum(toleranceDiff)} ({tolPercent.toFixed(1)}%)
-                          </span>
-                        )}
+                        {singleProduct ? (
+                          <>
+                            <span>{fmtNum(t.tolerance)}</span>
+                            {t.sales > 0 && (
+                              <span className={`block text-xs font-medium ${toleranceDiff >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                                {toleranceDiff >= 0 ? '+' : ''}{fmtNum(toleranceDiff)} ({tolPercent.toFixed(1)}%)
+                              </span>
+                            )}
+                          </>
+                        ) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{fmtNum(t.sales)}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{singleProduct ? fmtNum(t.sales) : '—'}</td>
                       <td className="px-4 py-3 text-sm text-gray-400">—</td>
                       <td className="px-4 py-3 text-sm font-bold text-gray-700">{fmtN(t.salesAmt)}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-amber-700">{t.shortage > 0 ? fmtNum(t.shortage) : '—'}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-amber-700">{singleProduct && t.shortage > 0 ? fmtNum(t.shortage) : '—'}</td>
                       <td className="px-4 py-3 text-sm text-gray-400">—</td>
                     </tr>
                   );
@@ -1094,6 +1106,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                   return (
                     <tr key={p} className="bg-gray-50 border-t border-t-gray-200">
                       <td className="px-4 py-3 text-sm font-bold text-gray-600 uppercase tracking-wide" colSpan={labelColSpan}>Total — {p}</td>
+                      <td className="px-4 py-3 text-sm text-gray-400">—</td>
                       <td className="px-4 py-3 text-sm font-bold text-gray-700">{t.stockIn > 0 ? fmtNum(t.stockIn) : '—'}</td>
                       <td className="px-4 py-3 text-sm font-bold text-gray-700">
                         <span>{fmtNum(t.tolerance)}</span>
@@ -1111,37 +1124,45 @@ function SummaryListView({ stationId, onSelectDay }) {
                     </tr>
                   );
                 })}
-                <tr className="bg-gray-100 border-t-2 border-t-gray-300">
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide" colSpan={labelColSpan}>
-                    {productsPresent.length > 1 || showShiftColumn ? 'Grand Total' : 'Totals'}
-                  </td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{totalStockIn > 0 ? fmtNum(totalStockIn) : '—'}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">
-                    {(() => {
-                      const totalTolerance = computedRows.reduce((sum, r) => {
-                        const tolerance = (r.sales ?? 0) - (r.openingStock - r.closingStock + (r.stockIn ?? 0));
-                        return sum + tolerance;
-                      }, 0);
-                      const toleranceDiff = totalTolerance - totalExpTol;
-                      const tolPercent = totalSales > 0 ? ((totalExpTol / totalSales) * 100) : 0;
-                      return (
-                        <>
-                          <span>{fmtNum(totalTolerance)}</span>
-                          {totalSales > 0 && (
-                            <span className={`block text-xs font-medium ${toleranceDiff >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                              {toleranceDiff >= 0 ? '+' : ''}{fmtNum(toleranceDiff)} ({tolPercent.toFixed(1)}%)
-                            </span>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtNum(totalSales)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-400">—</td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtN(totalSalesAmt)}</td>
-                  <td className="px-4 py-3 text-sm font-bold text-amber-700">{totalShortage > 0 ? fmtNum(totalShortage) : '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-400">—</td>
-                </tr>
+                {(() => {
+                  // Same rule as the shift subtotal rows: only show summed litres
+                  // when the grand total is genuinely one product; always show the
+                  // ₦ revenue total, since currency is meaningful to add regardless
+                  // of the fuel mix.
+                  const singleProduct = productsPresent.length <= 1;
+                  const totalTolerance = computedRows.reduce((sum, r) => {
+                    const tolerance = (r.sales ?? 0) - (r.openingStock - r.closingStock + (r.stockIn ?? 0));
+                    return sum + tolerance;
+                  }, 0);
+                  const toleranceDiff = totalTolerance - totalExpTol;
+                  const tolPercent = totalSales > 0 ? ((totalExpTol / totalSales) * 100) : 0;
+                  return (
+                    <tr className="bg-gray-100 border-t-2 border-t-gray-300">
+                      <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide" colSpan={labelColSpan}>
+                        {productsPresent.length > 1 ? 'Grand Total (₦ Revenue)' : showShiftColumn ? 'Grand Total' : 'Totals'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-800">{singleProduct && totalStockIn > 0 ? fmtNum(totalStockIn) : '—'}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-800">
+                        {singleProduct ? (
+                          <>
+                            <span>{fmtNum(totalTolerance)}</span>
+                            {totalSales > 0 && (
+                              <span className={`block text-xs font-medium ${toleranceDiff >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                                {toleranceDiff >= 0 ? '+' : ''}{fmtNum(toleranceDiff)} ({tolPercent.toFixed(1)}%)
+                              </span>
+                            )}
+                          </>
+                        ) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-800">{singleProduct ? fmtNum(totalSales) : '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-800">{fmtN(totalSalesAmt)}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-amber-700">{singleProduct && totalShortage > 0 ? fmtNum(totalShortage) : '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-400">—</td>
+                    </tr>
+                  );
+                })()}
               </tfoot>
             </table>
           </div>
@@ -1159,7 +1180,10 @@ function SummaryListView({ stationId, onSelectDay }) {
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-export default function AdminReportsPage() {
+function AdminReportsPageContent() {
+  const searchParams = useSearchParams();
+  const stationIdParam = searchParams.get('stationId');
+
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState('');
 
@@ -1180,10 +1204,16 @@ export default function AdminReportsPage() {
       .then(d => {
         const list = d.stations || [];
         setStations(list);
-        if (list.length > 0) setSelectedStation(list[0]._id);
+        // Deep-link from a station's own page (e.g. "View Report →") lands
+        // directly on that station's report instead of defaulting to the
+        // first one in the list.
+        const preselect = stationIdParam && list.some(s => s._id === stationIdParam)
+          ? stationIdParam
+          : list[0]?._id;
+        if (preselect) setSelectedStation(preselect);
       })
       .catch(() => {});
-  }, []);
+  }, [stationIdParam]);
 
   // Reset to list when station changes
   useEffect(() => {
@@ -1363,5 +1393,13 @@ export default function AdminReportsPage() {
 
       <DetailModal item={detailItem} onClose={() => setDetailItem(null)} onSaved={() => fetchReport(detailDate)} />
     </div>
+  );
+}
+
+export default function AdminReportsPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <AdminReportsPageContent />
+    </Suspense>
   );
 }

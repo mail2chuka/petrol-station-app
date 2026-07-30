@@ -181,6 +181,12 @@ export default function StationConsolePage() {
           >
             Open operational view →
           </Link>
+          <Link
+            href={`/admin/reports?stationId=${station._id}`}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-ecana-maroon hover:text-ecana-maroon transition-colors"
+          >
+            View Report →
+          </Link>
         </div>
       </div>
 
