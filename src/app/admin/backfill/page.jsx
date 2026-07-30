@@ -151,6 +151,10 @@ export default function BackfillPage() {
   const [shiftKey, setShiftKey] = useState('default');
   const [shiftLabel, setShiftLabel] = useState('Full Day');
   const [shiftsForDate, setShiftsForDate] = useState([]);
+  // 'pending' = ask "which shift?" first (only relevant once shiftsForDate is
+  // non-empty); 'existing' = editing one of the shifts found; 'new' = adding
+  // one. Dates with no recorded shifts yet skip straight past this.
+  const [shiftChoice, setShiftChoice] = useState('pending');
 
   // Existing DB data for the selected date+station
   const [existingData, setExistingData] = useState(null);
@@ -204,19 +208,26 @@ export default function BackfillPage() {
   useEffect(() => {
     setShiftKey('default');
     setShiftLabel('Full Day');
+    setShiftChoice('pending');
   }, [stationId, date]);
 
-  // Refresh the shift pills whenever the Setup step becomes visible again —
+  // Refresh the shift list whenever the Setup step becomes visible again —
   // otherwise, after saving a new shift and clicking "← Back" to Setup, the
-  // just-created shift wouldn't show up as a pill (the main data-load effect
-  // below only re-runs when stationId/date/shiftKey change, none of which
-  // change on a plain step navigation), leaving no way to add a second shift.
+  // just-created shift wouldn't show up (the main data-load effect below only
+  // re-runs when stationId/date/shiftKey change, none of which change on a
+  // plain step navigation) — and re-ask which shift, since the answer may be
+  // different now that another shift exists.
   useEffect(() => {
     if (step !== 'setup' || !stationId || !date) return;
     let cancelled = false;
     fetch(`/api/admin/backfill?stationId=${stationId}&date=${date}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d && !cancelled) setShiftsForDate(d.shiftsForDate || []); })
+      .then((d) => {
+        if (!d || cancelled) return;
+        const list = d.shiftsForDate || [];
+        setShiftsForDate(list);
+        setShiftChoice(list.length > 0 ? 'pending' : 'new');
+      })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [step, stationId, date]);
@@ -897,39 +908,87 @@ export default function BackfillPage() {
               <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
                 Shift <span className="font-normal normal-case text-slate-400">(only if this date was actually split into multiple real shifts)</span>
               </label>
-              {shiftsForDate.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {shiftsForDate.map((s) => (
-                    <button
-                      key={s.shiftKey}
-                      type="button"
-                      onClick={() => { setShiftKey(s.shiftKey); setShiftLabel(s.shiftLabel); }}
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
-                        shiftKey === s.shiftKey ? 'border-ecana-maroon bg-ecana-maroon/10 text-ecana-maroon' : 'border-slate-200 text-slate-500'
-                      }`}
-                    >
-                      {s.shiftLabel}
-                    </button>
-                  ))}
+
+              {shiftsForDate.length === 0 ? (
+                // Nothing recorded for this date yet — single simple path, no choice needed.
+                <>
+                  <input
+                    type="text"
+                    value={shiftLabel}
+                    onChange={(e) => { setShiftLabel(e.target.value); setShiftKey(slugify(e.target.value)); }}
+                    placeholder="Full Day (leave as-is unless entering a specific shift)"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Free text — doesn&apos;t need to match the station&apos;s current shift setup, since old records may predate it.
+                  </p>
+                </>
+              ) : shiftChoice === 'pending' ? (
+                // This date already has shifts — make the admin explicitly choose
+                // which one to edit, or that they're adding a new one, rather than
+                // silently defaulting to something.
+                <div className="space-y-2">
+                  <p className="text-sm text-slate-600">
+                    {shiftsForDate.length} shift{shiftsForDate.length > 1 ? 's' : ''} already recorded for {date}:
+                  </p>
+                  <div className="space-y-1.5">
+                    {shiftsForDate.map((s) => (
+                      <button
+                        key={s.shiftKey}
+                        type="button"
+                        onClick={() => { setShiftKey(s.shiftKey); setShiftLabel(s.shiftLabel); setShiftChoice('existing'); }}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-slate-200 hover:border-ecana-maroon text-left text-sm transition-colors"
+                      >
+                        <span className="font-medium text-slate-700">{s.shiftLabel}</span>
+                        <span className="text-xs text-ecana-maroon">Edit →</span>
+                      </button>
+                    ))}
+                  </div>
                   <button
                     type="button"
-                    onClick={() => { setShiftKey(`shift-${Date.now()}`); setShiftLabel(''); }}
-                    className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-slate-300 text-slate-500"
+                    onClick={() => {
+                      setShiftKey(`shift-${Date.now()}`);
+                      setShiftLabel(`Shift ${shiftsForDate.length + 1}`);
+                      setShiftChoice('new');
+                    }}
+                    className="w-full px-3 py-2 rounded-lg border border-dashed border-slate-300 text-sm text-slate-500 hover:border-ecana-maroon hover:text-ecana-maroon transition-colors"
                   >
-                    + New shift for this date
+                    + Add another shift for this date
                   </button>
                 </div>
+              ) : shiftChoice === 'existing' ? (
+                // Editing a found shift — label locked so retyping it can't
+                // accidentally fork it into a separate new shift.
+                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+                  <div>
+                    <p className="text-xs text-slate-400 uppercase tracking-wide">Editing</p>
+                    <p className="text-sm font-semibold text-slate-800">{shiftLabel}</p>
+                  </div>
+                  <button type="button" onClick={() => setShiftChoice('pending')} className="text-xs font-medium text-ecana-maroon hover:underline">
+                    ← Choose a different shift
+                  </button>
+                </div>
+              ) : (
+                // Adding a new shift.
+                <>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs text-slate-400 uppercase tracking-wide">New shift</span>
+                    <button type="button" onClick={() => setShiftChoice('pending')} className="text-xs font-medium text-ecana-maroon hover:underline">
+                      ← Back to shift list
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={shiftLabel}
+                    onChange={(e) => { setShiftLabel(e.target.value); setShiftKey(slugify(e.target.value)); }}
+                    placeholder="e.g. Shift 2, Afternoon Shift"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Free text — doesn&apos;t need to match the station&apos;s current shift setup, since old records may predate it.
+                  </p>
+                </>
               )}
-              <input
-                type="text"
-                value={shiftLabel}
-                onChange={(e) => { setShiftLabel(e.target.value); setShiftKey(slugify(e.target.value)); }}
-                placeholder="Full Day (leave as-is unless entering a specific shift)"
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ecana-maroon"
-              />
-              <p className="text-xs text-slate-400 mt-1">
-                Free text — doesn&apos;t need to match the station&apos;s current shift setup, since old records may predate it.
-              </p>
             </div>
           )}
           {hasAnyExisting && !loadingStation && (
@@ -953,12 +1012,15 @@ export default function BackfillPage() {
             </div>
           )}
           <button
-            disabled={!stationId || !date || !station || loadingStation}
+            disabled={!stationId || !date || !station || loadingStation || (shiftsForDate.length > 0 && shiftChoice === 'pending')}
             onClick={() => setStep('dayShift')}
             className="px-6 py-2.5 bg-ecana-maroon text-white text-sm font-semibold rounded-xl hover:opacity-90 disabled:opacity-40"
           >
             Continue →
           </button>
+          {shiftsForDate.length > 0 && shiftChoice === 'pending' && (
+            <p className="text-xs text-slate-400 -mt-3">Pick a shift above to continue.</p>
+          )}
         </div>
       )}
 
