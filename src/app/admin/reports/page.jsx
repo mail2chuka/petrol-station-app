@@ -390,6 +390,16 @@ function TH({ children }) {
   return <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left bg-gray-50">{children}</th>;
 }
 
+function StatCard({ label, value, sub }) {
+  return (
+    <div className="card-modern p-4">
+      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</p>
+      <p className="text-xl font-bold text-gray-900">{value}</p>
+      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
 function ToleranceHeader() {
   return (
     <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left bg-gray-50">
@@ -1059,6 +1069,15 @@ function SummaryListView({ stationId, onSelectDay }) {
     return { sales, salesAmt, shortage, stockIn, expTol, tolerance };
   }
 
+  // Per-product totals for the stat cards. Litres never sum across products
+  // (a litre of diesel isn't a litre of petrol) so every volume figure is
+  // broken out per product; the ₦ revenue total is the one figure that's
+  // still meaningful combined, so it stays a single overall card.
+  const perProductTotals = productsPresent.map((p) => ({
+    product: p,
+    ...summarizeTotals(computedRows.filter(r => r.product === p)),
+  }));
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -1091,6 +1110,17 @@ function SummaryListView({ stationId, onSelectDay }) {
 
       {error && <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">{error}</div>}
       {loading && <div className="flex justify-center py-10"><div className="spinner" /></div>}
+
+      {!loading && computedRows.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard label="Total Sales Amount" value={fmtN(totalSalesAmt)} sub={`${from} to ${to}`} />
+          {perProductTotals.flatMap((t) => [
+            <StatCard key={`${t.product}-sales`} label={`${t.product} Sales (L)`} value={fmtNum(t.sales)} />,
+            <StatCard key={`${t.product}-stockin`} label={`${t.product} Stock In (L)`} value={fmtNum(t.stockIn)} />,
+            <StatCard key={`${t.product}-shortage`} label={`${t.product} Shortage (L)`} value={t.shortage > 0 ? fmtNum(t.shortage) : '—'} />,
+          ])}
+        </div>
+      )}
 
       {!loading && computedRows.length > 0 && (
         <div className="card-modern overflow-hidden">
