@@ -640,7 +640,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                   Click a row to see full details. Row colour indicates linked tank.
                   {canManage && ' Use the controls below to activate or remove pumps for this day.'}
                 </p>
-                <div className="overflow-x-auto">
+                <div className="overflow-auto max-h-[60vh]">
                   <table className="w-full">
                     <thead><tr><TH>Pump</TH><TH>Fuel</TH><TH>Tank</TH><TH>Supervisor</TH><TH>Price / L</TH>{isInProgress && onRemovePump && <TH>Action</TH>}</tr></thead>
                     <tbody className="divide-y divide-gray-100">
@@ -772,7 +772,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                 ? <p className="text-sm text-gray-400 py-4 text-center">No meter readings recorded{supervisorFuel ? ` for ${supervisorFuel}` : ''} for this day.</p>
                 : <>
                   <p className="text-xs text-gray-400 mb-3">Click a row to see full details. Row colour indicates linked tank.</p>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-auto max-h-[60vh]">
                     <table className="w-full">
                       <thead><tr><TH>Attendant</TH><TH>Supervisor</TH><TH>Opening</TH><TH>Closing</TH><TH>RTT</TH><TH>Net Sold (L)</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
@@ -819,7 +819,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                 ? <p className="text-sm text-gray-400 py-4 text-center">No tank readings recorded for this day.</p>
                 : <>
                     <p className="text-xs text-gray-400 mb-3">Click a row to see full details and edit readings.</p>
-                    <div className="overflow-x-auto">
+                    <div className="overflow-auto max-h-[60vh]">
                       <table className="w-full">
                         <thead>
                         <tr>
@@ -879,7 +879,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
             {/* ── Supervisor Summary ── */}
             {supervisorSummaries.length > 0 && (
               <Card title="Supervisor Summary">
-                <div className="overflow-x-auto">
+                <div className="overflow-auto max-h-[60vh]">
                   <table className="w-full">
                     <thead><tr><TH>Supervisor</TH><TH>Liters (L)</TH><TH>Expected (₦)</TH><TH>Cash (₦)</TH><TH>POS (₦)</TH><TH>Total (₦)</TH></tr></thead>
                     <tbody className="divide-y divide-gray-100">
@@ -920,7 +920,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                 ? <p className="text-sm text-gray-400 py-4 text-center">No collections recorded for this day.</p>
                 : <>
                   <p className="text-xs text-gray-400 mb-3">Click a row to see full POS breakdown.</p>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-auto max-h-[60vh]">
                     <table className="w-full">
                       <thead><tr><TH>Time</TH><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Cash</TH><TH>POS</TH><TH>Total</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
@@ -950,7 +950,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                 ? <p className="text-sm text-gray-400 py-4 text-center">No bank deposits recorded for this day.</p>
                 : <>
                   <p className="text-xs text-gray-400 mb-3">Click a row to see full details.</p>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-auto max-h-[60vh]">
                     <table className="w-full">
                       <thead><tr><TH>Amount</TH><TH>Bank</TH><TH>Deposited By</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
@@ -1094,7 +1094,7 @@ function SummaryListView({ stationId, onSelectDay }) {
 
       {!loading && computedRows.length > 0 && (
         <div className="card-modern overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[60vh]">
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50">

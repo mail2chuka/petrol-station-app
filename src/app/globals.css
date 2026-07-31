@@ -479,7 +479,15 @@
 
 /* ── Global table headers ────────────────────────────────────────────────────
    Outside all @layer blocks so this wins the cascade over every Tailwind
-   utility class without needing !important. */
+   utility class without needing !important.
+   This only actually freezes the header when the table sits inside its own
+   bounded, independently-scrolling box (e.g. `overflow-auto max-h-[60vh]`)
+   — that's the app's established "frozen header" pattern (see
+   supervisor/report, auditor/summary, admin/staff-report, manager/summary-book).
+   A table that instead relies on the whole page scrolling has no such
+   ancestor, so top:0 sticks it to the very top of the viewport — directly
+   behind the shared Navbar (also `sticky top-0`, higher z-index) — which is
+   why every report table needs the bounded-box wrapper, not a page-level fix. */
 thead th {
   position: sticky;
   top: 0;
