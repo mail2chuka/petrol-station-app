@@ -1114,11 +1114,25 @@ function SummaryListView({ stationId, onSelectDay }) {
       {!loading && computedRows.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard label="Total Sales Amount" value={fmtN(totalSalesAmt)} sub={`${from} to ${to}`} />
-          {perProductTotals.flatMap((t) => [
-            <StatCard key={`${t.product}-sales`} label={`${t.product} Sales (L)`} value={fmtNum(t.sales)} />,
-            <StatCard key={`${t.product}-stockin`} label={`${t.product} Stock In (L)`} value={fmtNum(t.stockIn)} />,
-            <StatCard key={`${t.product}-shortage`} label={`${t.product} Shortage (L)`} value={t.shortage > 0 ? fmtNum(t.shortage) : '—'} />,
-          ])}
+          {perProductTotals.flatMap((t) => {
+            const toleranceDiff = t.tolerance - t.expTol;
+            const tolPercent = t.sales > 0 ? ((t.expTol / t.sales) * 100) : 0;
+            return [
+              <StatCard key={`${t.product}-sales`} label={`${t.product} Sales (L)`} value={fmtNum(t.sales)} />,
+              <StatCard key={`${t.product}-stockin`} label={`${t.product} Stock In (L)`} value={fmtNum(t.stockIn)} />,
+              <StatCard
+                key={`${t.product}-tolerance`}
+                label={`${t.product} Tolerance (L)`}
+                value={fmtNum(t.tolerance)}
+                sub={t.sales > 0 ? (
+                  <span className={toleranceDiff >= 0 ? 'text-green-600' : 'text-amber-600'}>
+                    {toleranceDiff >= 0 ? '+' : ''}{fmtNum(toleranceDiff)} ({tolPercent.toFixed(1)}%)
+                  </span>
+                ) : undefined}
+              />,
+              <StatCard key={`${t.product}-shortage`} label={`${t.product} Shortage (L)`} value={t.shortage > 0 ? fmtNum(t.shortage) : '—'} />,
+            ];
+          })}
         </div>
       )}
 

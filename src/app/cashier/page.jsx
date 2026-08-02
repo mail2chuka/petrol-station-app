@@ -28,17 +28,22 @@ export default function CashierDashboard() {
     if (!stationId) return;
     setLoading(true);
     try {
-      const [shiftRes, paymentsRes, depositsRes] = await Promise.all([
-        fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
-        fetch(`/api/payments?stationId=${stationId}&date=${today()}`),
-        fetch(`/api/cash-deposits?stationId=${stationId}&date=${today()}`),
+      const shiftRes = await fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`);
+      const shiftData = await shiftRes.json();
+      const shift = (shiftData.dayShifts || [])[0] || null;
+      setActiveDayShift(shift);
+
+      // Payments are scoped to the active shift (not just today's date) so a
+      // pump reused across shifts doesn't show a prior shift's collection as
+      // "already collected" for the current shift, and the totals below don't
+      // double up an earlier ended shift's collections into today's figures.
+      const [paymentsData, depositsData] = await Promise.all([
+        shift
+          ? fetch(`/api/payments?stationId=${stationId}&dayShiftId=${shift._id}`).then(r => r.json())
+          : Promise.resolve({ paymentRecords: [] }),
+        fetch(`/api/cash-deposits?stationId=${stationId}&date=${today()}`).then(r => r.json()),
       ]);
 
-      const [shiftData, paymentsData, depositsData] = await Promise.all([
-        shiftRes.json(), paymentsRes.json(), depositsRes.json(),
-      ]);
-
-      setActiveDayShift((shiftData.dayShifts || [])[0] || null);
       setPayments(paymentsData.paymentRecords || []);
       setDeposits(depositsData.cashDeposits || []);
     } catch (err) {
