@@ -9,7 +9,6 @@ import { requireAuth } from '@/lib/auth';
 import { beginDaySchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
-import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 import { computeShiftMeta } from '@/lib/shifts';
 
 // POST /api/day-shifts/begin - Begin a new day
@@ -47,8 +46,6 @@ export async function POST(request) {
       await session.abortTransaction();
       return NextResponse.json({ error: 'Station not found' }, { status: 404 });
     }
-
-    await autoCloseExpiredInProgressShifts({ stationId: validatedData.stationId, session });
 
     const availableProducts = station.availableProducts?.length
       ? station.availableProducts

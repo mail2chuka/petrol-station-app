@@ -3,7 +3,6 @@ import connectDB from '@/lib/db';
 import DayShift from '@/models/DayShift';
 import { requireAuth, requireStationAccess } from '@/lib/auth';
 import { DAY_STATUS } from '@/lib/constants';
-import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
 // GET /api/day-shifts - Get day shifts
 export async function GET(request) {
@@ -40,9 +39,6 @@ export async function GET(request) {
         $lte: new Date(date + 'T23:59:59.999Z'),
       };
     }
-
-    // Ensure previous-day open shifts are automatically ended after midnight.
-    await autoCloseExpiredInProgressShifts({ stationId: query.stationId });
 
     const dayShifts = await DayShift.find(query)
       .sort({ date: -1 })

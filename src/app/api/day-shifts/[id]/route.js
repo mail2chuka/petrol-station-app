@@ -9,7 +9,6 @@ import SalesEntry from '@/models/SalesEntry';
 import PaymentRecord from '@/models/PaymentRecord';
 import StockMovement from '@/models/StockMovement';
 import { requireAuth, requireStationAccess } from '@/lib/auth';
-import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 
@@ -31,11 +30,7 @@ export async function GET(request, { params }) {
     // Check access
     await requireStationAccess(dayShift.stationId.toString());
 
-    await autoCloseExpiredInProgressShifts({ stationId: dayShift.stationId });
-
-    const refreshedDayShift = await DayShift.findById(params.id);
-
-    return NextResponse.json({ dayShift: refreshedDayShift });
+    return NextResponse.json({ dayShift });
   } catch (error) {
     console.error('Error fetching day shift:', error);
     return NextResponse.json(

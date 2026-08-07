@@ -8,7 +8,6 @@ import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
-import { autoCloseExpiredInProgressShifts } from '@/lib/dayShiftLifecycle';
 
 const approvalSchema = z.object({
   status: z.enum(['approved', 'rejected']),
@@ -43,8 +42,6 @@ export async function PATCH(request, { params }) {
         { status: 404 }
       );
     }
-
-    await autoCloseExpiredInProgressShifts({ stationId: station._id, session });
 
     const activeDay = await DayShift.findOne({
       stationId: station._id,
