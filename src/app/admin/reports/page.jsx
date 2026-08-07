@@ -1200,40 +1200,6 @@ function SummaryListView({ stationId, onSelectDay }) {
                 })}
               </tbody>
               <tfoot>
-                {showShiftColumn && shiftsPresent.map((s) => {
-                  const shiftRows = computedRows.filter(r => (r.shiftLabel || 'Full Day') === s);
-                  const t = summarizeTotals(shiftRows);
-                  // Liters of different products can't be meaningfully added together
-                  // (a litre of diesel isn't a litre of petrol) — only show the volume
-                  // columns when this shift's rows are all the same product.
-                  const singleProduct = new Set(shiftRows.map(r => r.product)).size <= 1;
-                  const toleranceDiff = t.tolerance - t.expTol;
-                  const tolPercent = t.sales > 0 ? ((t.expTol / t.sales) * 100) : 0;
-                  return (
-                    <tr key={`shift-${s}`} className="bg-blue-50/60 border-t border-t-blue-100">
-                      <td className="px-4 py-3 text-sm font-bold text-blue-700 uppercase tracking-wide" colSpan={labelColSpan}>Total — {s}</td>
-                      <td className="px-4 py-3 text-sm text-gray-400">—</td>
-                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{singleProduct && t.stockIn > 0 ? fmtNum(t.stockIn) : '—'}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-gray-700">
-                        {singleProduct ? (
-                          <>
-                            <span>{fmtNum(t.tolerance)}</span>
-                            {t.sales > 0 && (
-                              <span className={`block text-xs font-medium ${toleranceDiff >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                                {toleranceDiff >= 0 ? '+' : ''}{fmtNum(toleranceDiff)} ({tolPercent.toFixed(1)}%)
-                              </span>
-                            )}
-                          </>
-                        ) : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{singleProduct ? fmtNum(t.sales) : '—'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-400">—</td>
-                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{fmtN(t.salesAmt)}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-amber-700">{singleProduct && t.shortage > 0 ? fmtNum(t.shortage) : '—'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-400">—</td>
-                    </tr>
-                  );
-                })}
                 {productsPresent.length > 1 && productsPresent.map((p) => {
                   const t = summarizeTotals(computedRows.filter(r => r.product === p));
                   const toleranceDiff = t.tolerance - t.expTol;
@@ -1259,12 +1225,11 @@ function SummaryListView({ stationId, onSelectDay }) {
                     </tr>
                   );
                 })}
-                {(() => {
-                  // Same rule as the shift subtotal rows: only show summed litres
-                  // when the grand total is genuinely one product; always show the
-                  // ₦ revenue total, since currency is meaningful to add regardless
-                  // of the fuel mix.
-                  const singleProduct = productsPresent.length <= 1;
+                {productsPresent.length <= 1 && (() => {
+                  // Totals never combine different products — when more than one
+                  // product is present, the per-product subtotal rows above are
+                  // the totals, and no combined row is shown here.
+                  const singleProduct = true;
                   const totalTolerance = computedRows.reduce((sum, r) => {
                     const tolerance = (r.sales ?? 0) - (r.openingStock - r.closingStock + (r.stockIn ?? 0));
                     return sum + tolerance;
@@ -1274,7 +1239,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                   return (
                     <tr className="bg-gray-100 border-t-2 border-t-gray-300">
                       <td className="px-4 py-3 text-sm font-bold text-gray-800 uppercase tracking-wide" colSpan={labelColSpan}>
-                        {productsPresent.length > 1 ? 'Grand Total (₦ Revenue)' : showShiftColumn ? 'Grand Total' : 'Totals'}
+                        Totals
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-400">—</td>
                       <td className="px-4 py-3 text-sm font-bold text-gray-800">{singleProduct && totalStockIn > 0 ? fmtNum(totalStockIn) : '—'}</td>
