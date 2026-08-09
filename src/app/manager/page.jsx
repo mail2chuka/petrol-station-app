@@ -79,22 +79,32 @@ function ManagerDashboardContent() {
 
     try {
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
-      const [stationRes, dayShiftRes] = await Promise.all([
+      const [stationRes, dayShiftRes, activeShiftRes] = await Promise.all([
         fetch(`/api/stations`),
         fetch(`/api/day-shifts?stationId=${activeStationId}&date=${today}`),
+        fetch(`/api/day-shifts?stationId=${activeStationId}&status=in_progress`),
       ]);
 
       const stationData = await stationRes.json();
       const dayShiftData = await dayShiftRes.json();
+      const activeShiftData = await activeShiftRes.json();
 
       if (stationData.stations?.length > 0) {
         const found = stationData.stations.find((s) => s._id === activeStationId) || null;
         setStation(found);
       }
 
+      // The status lookup is the source of truth for "is a shift open right
+      // now" — it still finds a shift begun yesterday and still running past
+      // midnight, which the date-scoped "today" query above would otherwise
+      // drop entirely (DayShift.date never changes after Begin Day).
       const shiftsToday = dayShiftData.dayShifts || [];
-      setTodayShifts(shiftsToday);
-      setActiveDayShift(shiftsToday.find((d) => d.status === 'in_progress') || null);
+      const activeShift = (activeShiftData.dayShifts || [])[0] || null;
+      const mergedShifts = activeShift && !shiftsToday.some((d) => d._id === activeShift._id)
+        ? [...shiftsToday, activeShift]
+        : shiftsToday;
+      setTodayShifts(mergedShifts);
+      setActiveDayShift(activeShift);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {

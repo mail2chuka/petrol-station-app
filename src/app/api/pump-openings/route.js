@@ -72,9 +72,12 @@ export async function POST(request) {
     const startDate = new Date(validatedData.date + 'T00:00:00.000Z');
     const endDate = new Date(validatedData.date + 'T23:59:59.999Z');
 
+    // Status, not date, is what proves a shift is active right now — a
+    // shift begun yesterday and still running past midnight keeps its
+    // original DayShift.date, so a date-scoped check here would wrongly
+    // reject it (mirrors the "already active" check in begin/route.js).
     const activeDay = await DayShift.findOne({
       stationId: validatedData.stationId,
-      date: { $gte: startDate, $lte: endDate },
       status: DAY_STATUS.IN_PROGRESS,
     });
 

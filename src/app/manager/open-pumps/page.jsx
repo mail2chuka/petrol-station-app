@@ -36,23 +36,36 @@ function OpenPumpsContent() {
     [activeDay]
   );
 
+  // A shift begun yesterday and still running past midnight keeps
+  // DayShift.date pinned to the day it started — use that, not wall-clock
+  // "today", so the pump-openings lookup stays matched to the same shift.
+  function shiftDateIso(day) {
+    return day ? new Date(day.date).toISOString().split('T')[0] : todayIso();
+  }
+
   async function fetchData() {
     setLoading(true);
     setError('');
     try {
-      const [stationsRes, openingsRes, shiftsRes] = await Promise.all([
+      // Status, not date, is the source of truth for "is a shift active right
+      // now" — a date-scoped query would miss a shift begun yesterday that's
+      // still running past midnight (see manager dashboard for the same fix).
+      const [stationsRes, shiftsRes] = await Promise.all([
         fetch('/api/stations'),
-        fetch(`/api/pump-openings?stationId=${stationId}&date=${todayIso()}`),
-        fetch(`/api/day-shifts?stationId=${stationId}&date=${todayIso()}`),
+        fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
       ]);
       const stationsData = await stationsRes.json();
-      const openingsData = await openingsRes.json();
       const shiftsData = await shiftsRes.json();
 
       const currentStation = (stationsData.stations || []).find((s) => s._id === stationId) || null;
       setStation(currentStation);
+
+      const activeDayShift = (shiftsData.dayShifts || [])[0] || null;
+      setActiveDay(activeDayShift);
+
+      const openingsRes = await fetch(`/api/pump-openings?stationId=${stationId}&date=${shiftDateIso(activeDayShift)}`);
+      const openingsData = await openingsRes.json();
       setOpening((openingsData.openings || [])[0] || null);
-      setActiveDay((shiftsData.dayShifts || []).find((s) => s.status === 'in_progress') || null);
     } catch (e) {
       setError('Failed to load open pumps');
     } finally {
@@ -75,7 +88,7 @@ function OpenPumpsContent() {
     const res = await fetch('/api/pump-openings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stationId, date: todayIso(), pumpIds: selected }),
+      body: JSON.stringify({ stationId, date: shiftDateIso(activeDay), pumpIds: selected }),
     });
 
     const data = await res.json();
