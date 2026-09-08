@@ -95,7 +95,7 @@ export async function POST(request) {
       dayShiftId: dayShift._id,
       dispenserId: validatedData.dispenserId,
     }).session(session);
-    if (pumpSales.length === 0) {
+    if (!pumpSales.some(sale => (Number(sale.liters) || 0) > 0)) {
       await session.abortTransaction();
       return NextResponse.json(
         { error: 'No supervisor sale has been recorded for this pump. Only a supervisor can enter litres sold.' },
@@ -154,6 +154,21 @@ export async function POST(request) {
     // settles a shortfall on a later day. Records remain append-only for audit.
     const allSales = await SalesEntry.find({ dayShiftId: dayShift._id }).session(session);
     const expectedTotal = allSales.reduce((sum, sale) => sum + (Number(sale.expectedAmount) || 0), 0);
+    const salesByPump = {};
+    for (const sale of allSales) {
+      const item = salesByPump[sale.dispenserId] || { liters: 0, expected: 0 };
+      item.liters += Number(sale.liters) || 0;
+      item.expected += Number(sale.expectedAmount) || 0;
+      salesByPump[sale.dispenserId] = item;
+    }
+    const paymentsByPump = {};
+    for (const payment of allPayments) {
+      paymentsByPump[payment.dispenserId] = (paymentsByPump[payment.dispenserId] || 0) + (Number(payment.totalReceived) || 0);
+    }
+    paymentsByPump[validatedData.dispenserId] = (paymentsByPump[validatedData.dispenserId] || 0) + totalReceived;
+    const collectionOutstanding = Object.entries(salesByPump).reduce((sum, [dispenserId, sale]) => (
+      sale.liters > 0 ? sum + Math.max(0, sale.expected - (paymentsByPump[dispenserId] || 0)) : sum
+    ), 0);
     const priorCash = allPayments.reduce((sum, payment) => sum + (Number(payment.cashReceived) || 0), 0);
     const priorPos = allPayments.reduce((sum, payment) => sum + (Number(payment.posReceived) || 0), 0);
     const actualAmount = priorCash + priorPos + validatedData.cashReceived + posReceived;
@@ -161,7 +176,7 @@ export async function POST(request) {
     dayShift.expectedAmount = expectedTotal;
     dayShift.actualAmount = actualAmount;
     dayShift.discrepancy = actualAmount - expectedTotal;
-    dayShift.collectionOutstanding = Math.max(0, expectedTotal - actualAmount);
+    dayShift.collectionOutstanding = collectionOutstanding;
     dayShift.collectionStatus = dayShift.collectionOutstanding > 0 ? 'pending' : 'settled';
     await dayShift.save({ session });
 

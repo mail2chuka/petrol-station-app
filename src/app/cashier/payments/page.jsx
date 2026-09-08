@@ -348,7 +348,7 @@ export default function RecordPaymentsPage() {
     </div>
   );
 
-  const saleDisps = dispensers.filter(d => (salesByDispenser[d.dispenserId]?.expectedAmount || 0) > 0);
+  const saleDisps = dispensers.filter(d => (salesByDispenser[d.dispenserId]?.liters || 0) > 0);
   const unsoldDisps = dispensers.filter(d => !saleDisps.some(saleDisp => saleDisp.dispenserId === d.dispenserId));
   const collectionRows = saleDisps.map(disp => {
     const records = collectedMap[disp.dispenserId] || [];

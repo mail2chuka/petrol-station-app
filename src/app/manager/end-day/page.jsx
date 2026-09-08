@@ -279,15 +279,17 @@ function EndDayPageContent() {
   // Reconcile only pumps for which a supervisor has recorded a sale. An
   // activated but unsold pump is explicitly not a collection requirement.
   const expectedByDispenser = {};
+  const litersByDispenser = {};
   for (const sale of salesEntries) {
     expectedByDispenser[sale.dispenserId] = (expectedByDispenser[sale.dispenserId] || 0) + (Number(sale.expectedAmount) || 0);
+    litersByDispenser[sale.dispenserId] = (litersByDispenser[sale.dispenserId] || 0) + (Number(sale.liters) || 0);
   }
   const collectedByDispenser = {};
   for (const payment of paymentRecords) {
     collectedByDispenser[payment.dispenserId] = (collectedByDispenser[payment.dispenserId] || 0) + (Number(payment.totalReceived) || 0);
   }
   const collectionRequiredPumps = activeDayShift.dispenserAssignments
-    .filter(pump => expectedByDispenser[pump.dispenserId] > 0)
+    .filter(pump => litersByDispenser[pump.dispenserId] > 0)
     .map(pump => {
       const expected = expectedByDispenser[pump.dispenserId];
       const collected = collectedByDispenser[pump.dispenserId] || 0;

@@ -150,9 +150,11 @@ export async function POST(request, { params }) {
         salesByDispenser[did] = {
           label: `${sale.dispenserName || did} / ${sale.supervisorName || 'unknown supervisor'}`,
           expectedTotal: 0,
+          litersTotal: 0,
         };
       }
       salesByDispenser[did].expectedTotal += sale.expectedAmount || 0;
+      salesByDispenser[did].litersTotal += sale.liters || 0;
     }
 
     const paymentsByDispenser = {};
@@ -166,6 +168,9 @@ export async function POST(request, { params }) {
     // Amount mismatches are allowed — they are captured in the day summary for reporting.
     const missingPayments = [];
     for (const [did, info] of Object.entries(salesByDispenser)) {
+      // Legacy imports may contain a zero-litre placeholder row for an
+      // activated but unsold pump. It is not a sale and needs no collection.
+      if (info.litersTotal <= 0) continue;
       const collected = paymentsByDispenser[did] ?? 0;
       if (collected === 0) {
         missingPayments.push(info.label);
@@ -197,6 +202,13 @@ export async function POST(request, { params }) {
     // actualAmount = total cash + POS collected by cashier (SalesEntry.totalAmount is never populated)
     const actualAmount = totalPayments.cash + totalPayments.pos;
     const discrepancy = actualAmount - expectedAmount;
+    // Debt belongs to the individual selling pump/supervisor. An overpayment
+    // on one pump must not hide a shortfall on another pump.
+    const collectionOutstanding = Object.entries(salesByDispenser).reduce((sum, [did, info]) => {
+      if (info.litersTotal <= 0) return sum;
+      const collected = paymentsByDispenser[did] || 0;
+      return sum + Math.max(0, info.expectedTotal - collected);
+    }, 0);
 
     // Update station.currentStock from manager-measured closing tank entries
     // currentStock is a Map — use .get()/.set()
@@ -247,7 +259,7 @@ export async function POST(request, { params }) {
     dayShift.expectedAmount = expectedAmount;
     dayShift.actualAmount = actualAmount;
     dayShift.discrepancy = discrepancy;
-    dayShift.collectionOutstanding = Math.max(0, expectedAmount - actualAmount);
+    dayShift.collectionOutstanding = collectionOutstanding;
     dayShift.collectionStatus = dayShift.collectionOutstanding > 0 ? 'pending' : 'settled';
 
     // If this isn't the last planned shift, either continue into the next

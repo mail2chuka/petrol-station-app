@@ -73,7 +73,7 @@ export default function CashierDashboard() {
   const dispensers = activeDayShift?.dispenserAssignments || [];
   const salesByDispenser = {};
   for (const sale of salesEntries) {
-    salesByDispenser[sale.dispenserId] = (salesByDispenser[sale.dispenserId] || 0) + (Number(sale.expectedAmount) || 0);
+    salesByDispenser[sale.dispenserId] = (salesByDispenser[sale.dispenserId] || 0) + (Number(sale.liters) || 0);
   }
   const sellingDispensers = dispensers.filter(d => salesByDispenser[d.dispenserId] > 0);
   const unsoldDispensers = dispensers.filter(d => !sellingDispensers.some(selling => selling.dispenserId === d.dispenserId));
