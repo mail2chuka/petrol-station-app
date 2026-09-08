@@ -1009,7 +1009,7 @@ function SummaryListView({ stationId, onSelectDay }) {
       const data = await res.json();
       if (res.ok) setRows(data.rows || []);
       else setError(data.error || 'Failed to load summary');
-    } catch {
+    } catch {l
       setError('Network error.');
     } finally {
       setLoading(false);

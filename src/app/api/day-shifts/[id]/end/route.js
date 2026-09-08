@@ -162,7 +162,7 @@ export async function POST(request, { params }) {
       paymentsByDispenser[did] += p.totalReceived || 0;
     }
 
-    // Check: every pump with sales must have at least one cashier payment collection.
+    // Check: every pump with sales must have a positive cashier collection.
     // Amount mismatches are allowed — they are captured in the day summary for reporting.
     const missingPayments = [];
     for (const [did, info] of Object.entries(salesByDispenser)) {
@@ -175,7 +175,7 @@ export async function POST(request, { params }) {
     if (missingPayments.length > 0) {
       await session.abortTransaction();
       return NextResponse.json(
-        { error: `Cashier has not recorded payment collection from: ${missingPayments.join(', ')}. The day cannot be ended until all supervisor payments are collected.` },
+        { error: `Collection not recorded for: ${missingPayments.join(', ')}. The day cannot be ended until every pump with recorded sales has an initial collection.` },
         { status: 400 }
       );
     }
@@ -247,6 +247,8 @@ export async function POST(request, { params }) {
     dayShift.expectedAmount = expectedAmount;
     dayShift.actualAmount = actualAmount;
     dayShift.discrepancy = discrepancy;
+    dayShift.collectionOutstanding = Math.max(0, expectedAmount - actualAmount);
+    dayShift.collectionStatus = dayShift.collectionOutstanding > 0 ? 'pending' : 'settled';
 
     // If this isn't the last planned shift, either continue into the next
     // shift (carrying forward closing data as its opening) or recalibrate

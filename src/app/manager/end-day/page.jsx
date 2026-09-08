@@ -276,6 +276,27 @@ function EndDayPageContent() {
   const totalCash = paymentRecords.reduce((sum, p) => sum + p.cashReceived, 0);
   const totalPos = paymentRecords.reduce((sum, p) => sum + p.posReceived, 0);
 
+  // Reconcile only pumps for which a supervisor has recorded a sale. An
+  // activated but unsold pump is explicitly not a collection requirement.
+  const expectedByDispenser = {};
+  for (const sale of salesEntries) {
+    expectedByDispenser[sale.dispenserId] = (expectedByDispenser[sale.dispenserId] || 0) + (Number(sale.expectedAmount) || 0);
+  }
+  const collectedByDispenser = {};
+  for (const payment of paymentRecords) {
+    collectedByDispenser[payment.dispenserId] = (collectedByDispenser[payment.dispenserId] || 0) + (Number(payment.totalReceived) || 0);
+  }
+  const collectionRequiredPumps = activeDayShift.dispenserAssignments
+    .filter(pump => expectedByDispenser[pump.dispenserId] > 0)
+    .map(pump => {
+      const expected = expectedByDispenser[pump.dispenserId];
+      const collected = collectedByDispenser[pump.dispenserId] || 0;
+      return { ...pump, expected, collected, outstanding: Math.max(0, expected - collected) };
+    });
+  const pendingCollectionPumps = collectionRequiredPumps.filter(pump => pump.collected <= 0);
+  const shortfallCollectionPumps = collectionRequiredPumps.filter(pump => pump.collected > 0 && pump.outstanding > 0.01);
+  const unsoldPumpCount = activeDayShift.dispenserAssignments.length - collectionRequiredPumps.length;
+
   // Pump table: match meter readings to dispenser assignments
   const readingsByPumpId = {};
   for (const r of meterReadings) readingsByPumpId[r.pumpId] = r;
@@ -301,6 +322,44 @@ function EndDayPageContent() {
           {error}
         </div>
       )}
+
+      <Card title="Cashier Collection Reconciliation">
+        {collectionRequiredPumps.length === 0 ? (
+          <p className="text-sm text-gray-600">No supervisor sales have been recorded for this shift. No pump collection is required.</p>
+        ) : (
+          <>
+            <p className="text-sm text-gray-600 mb-4">
+              Only pumps with supervisor-recorded sales require a collection. A pump needs an initial positive collection to close; a shortfall can be settled later and remains tagged to this shift.
+            </p>
+            {pendingCollectionPumps.length > 0 && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                <span className="font-semibold">Collection not recorded:</span> {pendingCollectionPumps.map(pump => pump.dispenserName).join(', ')}. Ask the cashier to record an initial collection before ending this shift.
+              </div>
+            )}
+            <div className="space-y-2">
+              {collectionRequiredPumps.map(pump => {
+                const noCollection = pump.collected <= 0;
+                const hasShortfall = !noCollection && pump.outstanding > 0.01;
+                return (
+                  <div key={pump.dispenserId} className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2.5 ${noCollection ? 'border-red-200 bg-red-50/50' : hasShortfall ? 'border-amber-200 bg-amber-50/50' : 'border-green-200 bg-green-50/50'}`}>
+                    <div>
+                      <p className="font-medium text-gray-800 text-sm">{pump.dispenserName}</p>
+                      <p className="text-xs text-gray-500">{pump.supervisorName || 'Supervisor sale'} · Expected ₦{fmt(pump.expected)} · Collected ₦{fmt(pump.collected)}</p>
+                    </div>
+                    <span className={`text-xs font-semibold rounded-full px-2.5 py-1 ${noCollection ? 'bg-red-100 text-red-700' : hasShortfall ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                      {noCollection ? 'Collection not recorded' : hasShortfall ? `Pending ₦${fmt(pump.outstanding)}` : 'Fully collected'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {shortfallCollectionPumps.length > 0 && (
+              <p className="mt-4 text-xs font-medium text-amber-700">{shortfallCollectionPumps.length} pump{shortfallCollectionPumps.length === 1 ? '' : 's'} ha{shortfallCollectionPumps.length === 1 ? 's' : 've'} a pending balance. The shift may close, and the cashier can record the settlement later.</p>
+            )}
+            {unsoldPumpCount > 0 && <p className="mt-3 text-xs text-gray-500">{unsoldPumpCount} activated pump{unsoldPumpCount === 1 ? '' : 's'} ha{unsoldPumpCount === 1 ? 's' : 've'} no recorded sales — no collection is needed.</p>}
+          </>
+        )}
+      </Card>
 
       {/* Section 1: Supervisor Meter Readings — read-only report */}
       <Card title="Supervisor Meter Readings">

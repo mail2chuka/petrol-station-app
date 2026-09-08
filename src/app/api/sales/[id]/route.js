@@ -13,9 +13,9 @@ export async function PATCH(request, { params }) {
     const currentUser = await requireAuth();
     await connectDB();
 
-    if (![ROLES.SUPERVISOR, ROLES.ADMIN].includes(currentUser.role)) {
+    if (currentUser.role !== ROLES.SUPERVISOR) {
       return NextResponse.json(
-        { error: 'Only supervisors or admins can edit sales entries' },
+        { error: 'Only supervisors can enter or correct litres sold' },
         { status: 403 }
       );
     }
@@ -40,7 +40,7 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Sales entry not found' }, { status: 404 });
     }
 
-    if (currentUser.role !== ROLES.ADMIN && entry.supervisorId.toString() !== currentUser.id) {
+    if (entry.supervisorId.toString() !== currentUser.id) {
       await session.abortTransaction();
       return NextResponse.json(
         { error: 'You can only edit your own sales entries' },
@@ -49,15 +49,13 @@ export async function PATCH(request, { params }) {
     }
 
     // Supervisors cannot edit entries from a closed day — only admins can
-    if (currentUser.role !== ROLES.ADMIN) {
-      const dayShift = await DayShift.findById(entry.dayShiftId).session(session);
-      if (dayShift && dayShift.status !== DAY_STATUS.IN_PROGRESS) {
-        await session.abortTransaction();
-        return NextResponse.json(
-          { error: 'This day is closed. Only an admin can correct entries from a closed day.' },
-          { status: 403 }
-        );
-      }
+    const dayShift = await DayShift.findById(entry.dayShiftId).session(session);
+    if (dayShift && dayShift.status !== DAY_STATUS.IN_PROGRESS) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: 'This shift is closed. Litres sold cannot be changed after close.' },
+        { status: 403 }
+      );
     }
 
     const totalAmount = cashAmount + posAmount;

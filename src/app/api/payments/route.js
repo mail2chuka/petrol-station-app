@@ -40,10 +40,12 @@ export async function POST(request) {
       );
     }
 
-    if (dayShift.status !== DAY_STATUS.IN_PROGRESS) {
+    // A cashier may add a settlement to an ended shift, but may never record
+    // a collection against a shift that was not opened.
+    if (![DAY_STATUS.IN_PROGRESS, DAY_STATUS.ENDED].includes(dayShift.status)) {
       await session.abortTransaction();
       return NextResponse.json(
-        { error: 'Day is not in progress' },
+        { error: 'Collections can only be recorded for an in-progress or ended shift' },
         { status: 400 }
       );
     }
@@ -77,6 +79,37 @@ export async function POST(request) {
     const posReceived = posEntries.reduce((s, e) => s + e.amount, 0);
     const totalReceived = validatedData.cashReceived + posReceived;
 
+    // Do not let a zero-value row be used to satisfy the end-of-shift
+    // collection safeguard. The UI already enforces this; the API must too.
+    if (totalReceived <= 0) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: 'Enter a cash or POS amount greater than zero.' },
+        { status: 400 }
+      );
+    }
+
+    // Cashiers reconcile the litres/value entered by a supervisor. A payment
+    // therefore cannot be attached to an unsold pump or used to enter sales.
+    const pumpSales = await SalesEntry.find({
+      dayShiftId: dayShift._id,
+      dispenserId: validatedData.dispenserId,
+    }).session(session);
+    if (pumpSales.length === 0) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: 'No supervisor sale has been recorded for this pump. Only a supervisor can enter litres sold.' },
+        { status: 400 }
+      );
+    }
+
+    const expectedForPump = pumpSales.reduce((sum, sale) => sum + (Number(sale.expectedAmount) || 0), 0);
+    const allPayments = await PaymentRecord.find({ dayShiftId: dayShift._id }).session(session);
+    const alreadyCollectedForPump = allPayments
+      .filter(payment => payment.dispenserId === validatedData.dispenserId)
+      .reduce((sum, payment) => sum + (Number(payment.totalReceived) || 0), 0);
+    const outstandingAfter = Math.max(0, expectedForPump - alreadyCollectedForPump - totalReceived);
+
     // If supervisor not yet assigned to this pump (no meter reading submitted yet),
     // fall back to the SalesEntry to get who actually sold on this pump today.
     let supervisorId = assignment.supervisorId;
@@ -107,10 +140,30 @@ export async function POST(request) {
       posEntries,
       posReceived,
       totalReceived,
+      expectedAmount: expectedForPump,
+      outstandingAfter,
+      collectionType: dayShift.status === DAY_STATUS.ENDED
+        ? 'post_close_settlement'
+        : alreadyCollectedForPump > 0 ? 'supplemental' : 'initial',
       recordedBy: currentUser.id,
       recordedByName: currentUser.name,
       notes: body.notes || '',
     }], { session, ordered: true });
+
+    // Keep the closed shift's reconciliation summary current when a cashier
+    // settles a shortfall on a later day. Records remain append-only for audit.
+    const allSales = await SalesEntry.find({ dayShiftId: dayShift._id }).session(session);
+    const expectedTotal = allSales.reduce((sum, sale) => sum + (Number(sale.expectedAmount) || 0), 0);
+    const priorCash = allPayments.reduce((sum, payment) => sum + (Number(payment.cashReceived) || 0), 0);
+    const priorPos = allPayments.reduce((sum, payment) => sum + (Number(payment.posReceived) || 0), 0);
+    const actualAmount = priorCash + priorPos + validatedData.cashReceived + posReceived;
+    dayShift.totalPayments = { cash: priorCash + validatedData.cashReceived, pos: priorPos + posReceived };
+    dayShift.expectedAmount = expectedTotal;
+    dayShift.actualAmount = actualAmount;
+    dayShift.discrepancy = actualAmount - expectedTotal;
+    dayShift.collectionOutstanding = Math.max(0, expectedTotal - actualAmount);
+    dayShift.collectionStatus = dayShift.collectionOutstanding > 0 ? 'pending' : 'settled';
+    await dayShift.save({ session });
 
     await session.commitTransaction();
 
@@ -132,6 +185,9 @@ export async function POST(request) {
         cashReceived: validatedData.cashReceived,
         posReceived,
         totalReceived,
+        expectedForPump,
+        outstandingAfter,
+        collectionType: paymentRecord[0].collectionType,
       },
     });
 

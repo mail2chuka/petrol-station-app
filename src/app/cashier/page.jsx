@@ -19,6 +19,7 @@ export default function CashierDashboard() {
   const { data: session } = useSession();
   const [activeDayShift, setActiveDayShift] = useState(null);
   const [payments, setPayments] = useState([]);
+  const [salesEntries, setSalesEntries] = useState([]);
   const [deposits, setDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,14 +38,18 @@ export default function CashierDashboard() {
       // pump reused across shifts doesn't show a prior shift's collection as
       // "already collected" for the current shift, and the totals below don't
       // double up an earlier ended shift's collections into today's figures.
-      const [paymentsData, depositsData] = await Promise.all([
+      const [paymentsData, depositsData, salesData] = await Promise.all([
         shift
           ? fetch(`/api/payments?stationId=${stationId}&dayShiftId=${shift._id}`).then(r => r.json())
           : Promise.resolve({ paymentRecords: [] }),
         fetch(`/api/cash-deposits?stationId=${stationId}&date=${today()}`).then(r => r.json()),
+        shift
+          ? fetch(`/api/sales?stationId=${stationId}&dayShiftId=${shift._id}`).then(r => r.json())
+          : Promise.resolve({ salesEntries: [] }),
       ]);
 
       setPayments(paymentsData.paymentRecords || []);
+      setSalesEntries(salesData.salesEntries || []);
       setDeposits(depositsData.cashDeposits || []);
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -66,8 +71,14 @@ export default function CashierDashboard() {
   }
 
   const dispensers = activeDayShift?.dispenserAssignments || [];
-  const uncollectedDisps = dispensers.filter(d => !collectedMap[d.dispenserId]?.length);
-  const allCollected = dispensers.length > 0 && uncollectedDisps.length === 0;
+  const salesByDispenser = {};
+  for (const sale of salesEntries) {
+    salesByDispenser[sale.dispenserId] = (salesByDispenser[sale.dispenserId] || 0) + (Number(sale.expectedAmount) || 0);
+  }
+  const sellingDispensers = dispensers.filter(d => salesByDispenser[d.dispenserId] > 0);
+  const unsoldDispensers = dispensers.filter(d => !sellingDispensers.some(selling => selling.dispenserId === d.dispenserId));
+  const uncollectedDisps = sellingDispensers.filter(d => (collectedMap[d.dispenserId] || []).reduce((sum, record) => sum + (Number(record.totalReceived) || 0), 0) <= 0);
+  const allCollected = sellingDispensers.length > 0 && uncollectedDisps.length === 0;
 
   const totalCash = payments.reduce((s, p) => s + (p.cashReceived || 0), 0);
   const totalPos = payments.reduce((s, p) => s + (p.posReceived || 0), 0);
@@ -103,7 +114,7 @@ export default function CashierDashboard() {
               <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" />
               <div>
                 <p className="font-semibold">All Pumps Collected — Day can be closed</p>
-                <p className="text-sm mt-0.5">All {dispensers.length} pump{dispensers.length !== 1 ? 's' : ''} have been collected from today.</p>
+                <p className="text-sm mt-0.5">Every pump with supervisor-recorded sales has an initial collection.</p>
               </div>
             </div>
           )}
@@ -128,9 +139,9 @@ export default function CashierDashboard() {
           </div>
 
           {activeDayShift && dispensers.length > 0 && (
-            <Card title="Pump Collection Status">
+            <Card title="Sales Pump Collection Status">
               <div className="divide-y divide-gray-100">
-                {dispensers.map(disp => {
+                {sellingDispensers.map(disp => {
                   const records = collectedMap[disp.dispenserId] || [];
                   const done = records.length > 0;
                   const dispTotal = records.reduce((s, p) => s + (p.totalReceived || 0), 0);
@@ -166,6 +177,11 @@ export default function CashierDashboard() {
                   );
                 })}
               </div>
+              {unsoldDispensers.length > 0 && (
+                <p className="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-500">
+                  No sales / no collection needed: {unsoldDispensers.map(disp => disp.dispenserName).join(', ')}.
+                </p>
+              )}
               {uncollectedDisps.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-gray-100">
                   <Link

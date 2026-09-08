@@ -64,6 +64,24 @@ const paymentRecordSchema = new mongoose.Schema(
     totalReceived: {
       type: Number,
       required: true,
+      min: 0,
+    },
+    // Snapshot after this collection was recorded. The current source of
+    // truth remains the sum of all records for the pump and shift.
+    expectedAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    outstandingAfter: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    collectionType: {
+      type: String,
+      enum: ['initial', 'supplemental', 'post_close_settlement'],
+      default: 'initial',
     },
     recordedBy: {
       type: mongoose.Schema.Types.ObjectId,

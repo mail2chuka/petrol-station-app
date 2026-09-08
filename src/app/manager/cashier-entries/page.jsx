@@ -384,7 +384,7 @@ function AccountantEntriesContent() {
                         <div>
                           <p className="font-semibold text-gray-800">{record.supervisorName}</p>
                           <p className="text-xs text-gray-500 mt-0.5">
-                            Recorded by {record.recordedByName}
+                            {record.dispenserName} · Recorded by {record.recordedByName}
                             {record.notes && <> · <em>{record.notes}</em></>}
                           </p>
                         </div>
@@ -407,6 +407,16 @@ function AccountantEntriesContent() {
                           <p className="font-bold text-gray-800">₦{fmt(record.totalReceived)}</p>
                         </div>
                       </div>
+
+                      {Number(record.outstandingAfter) > 0.01 && (
+                        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                          Pending balance after this collection: ₦{fmt(record.outstandingAfter)}
+                        </p>
+                      )}
+
+                      {record.collectionType === 'post_close_settlement' && (
+                        <p className="mb-3 text-xs font-medium text-blue-700">Recorded as a post-close settlement.</p>
+                      )}
 
                       {record.managerReviewNote && (
                         <p className="text-xs text-gray-500 italic mb-3 border-l-2 border-gray-200 pl-2">

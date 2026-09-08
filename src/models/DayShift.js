@@ -152,6 +152,21 @@ const dayShiftSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Collection reconciliation is intentionally separate from whether the
+    // shift can close. A shift may close after each selling pump has made an
+    // initial collection, while a remaining balance stays visible to the
+    // cashier and manager until it is settled.
+    collectionOutstanding: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    collectionStatus: {
+      type: String,
+      enum: ['pending', 'settled'],
+      default: 'settled',
+      index: true,
+    },
   },
   {
     timestamps: true,

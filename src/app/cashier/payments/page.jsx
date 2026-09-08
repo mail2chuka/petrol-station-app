@@ -265,6 +265,7 @@ function CollectionForm({ dispenser, salesEntry, meterReading, pricePerLiter, ac
 export default function RecordPaymentsPage() {
   const { data: session } = useSession();
   const [activeDayShift, setActiveDayShift] = useState(null);
+  const [shiftOptions, setShiftOptions] = useState([]);
   const [dispensers, setDispensers] = useState([]);
   const [salesByDispenser, setSalesByDispenser] = useState({});
   const [metersByDispenser, setMetersByDispenser] = useState({});
@@ -275,24 +276,37 @@ export default function RecordPaymentsPage() {
 
   const stationId = session?.user?.stationId;
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (requestedShiftId = null) => {
     if (!stationId) return;
     setLoading(true);
     setGlobalError('');
     try {
-      const [shiftRes, paymentsRes, metersRes] = await Promise.all([
-        fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
-        fetch(`/api/payments?stationId=${stationId}&date=${today()}`),
-        fetch(`/api/meter-readings?stationId=${stationId}&date=${today()}`),
-      ]);
-
-      const [shiftData, paymentsData, metersData] = await Promise.all([
-        shiftRes.json(), paymentsRes.json(), metersRes.json(),
-      ]);
-
-      const shift = (shiftData.dayShifts || [])[0] || null;
+      const shiftRes = await fetch(`/api/day-shifts?stationId=${stationId}`);
+      const shiftData = await shiftRes.json();
+      const shifts = shiftData.dayShifts || [];
+      setShiftOptions(shifts);
+      const shift = requestedShiftId
+        ? shifts.find(item => item._id === requestedShiftId)
+        : shifts.find(item => item.status === 'in_progress') || shifts.find(item => item.collectionStatus === 'pending') || shifts[0] || null;
       setActiveDayShift(shift);
       setDispensers(shift?.dispenserAssignments || []);
+
+      if (!shift) {
+        setMetersByDispenser({});
+        setCollectedMap({});
+        setSalesByDispenser({});
+        return;
+      }
+
+      const shiftDate = new Date(shift.date).toISOString().split('T')[0];
+      const [paymentsRes, metersRes, salesRes] = await Promise.all([
+        fetch(`/api/payments?stationId=${stationId}&dayShiftId=${shift._id}`),
+        fetch(`/api/meter-readings?stationId=${stationId}&date=${shiftDate}`),
+        fetch(`/api/sales?stationId=${stationId}&dayShiftId=${shift._id}`),
+      ]);
+      const [paymentsData, metersData, salesData] = await Promise.all([
+        paymentsRes.json(), metersRes.json(), salesRes.json(),
+      ]);
 
       // Map meter readings by pumpId (= dispenserId) for live expected estimates
       const metersMap = {};
@@ -310,15 +324,14 @@ export default function RecordPaymentsPage() {
       }
       setCollectedMap(map);
 
-      if (shift) {
-        const salesRes = await fetch(`/api/sales?stationId=${stationId}&dayShiftId=${shift._id}`);
-        const salesData = await salesRes.json();
-        const salesMap = {};
-        for (const s of (salesData.salesEntries || [])) {
-          salesMap[s.dispenserId] = s;
-        }
-        setSalesByDispenser(salesMap);
+      const salesMap = {};
+      for (const sale of (salesData.salesEntries || [])) {
+        const current = salesMap[sale.dispenserId] || { ...sale, liters: 0, expectedAmount: 0 };
+        current.liters += Number(sale.liters) || 0;
+        current.expectedAmount += Number(sale.expectedAmount) || 0;
+        salesMap[sale.dispenserId] = current;
       }
+      setSalesByDispenser(salesMap);
     } catch {
       setGlobalError('Failed to load data. Please refresh.');
     } finally {
@@ -326,7 +339,7 @@ export default function RecordPaymentsPage() {
     }
   }, [stationId]);
 
-  useEffect(() => { if (stationId) loadData(); }, [session]);
+  useEffect(() => { if (stationId) loadData(); }, [session, stationId, loadData]);
 
   if (loading) return (
     <div>
@@ -335,9 +348,18 @@ export default function RecordPaymentsPage() {
     </div>
   );
 
-  const collectedDisps = dispensers.filter(d => collectedMap[d.dispenserId]?.length > 0);
-  const uncollectedDisps = dispensers.filter(d => !collectedMap[d.dispenserId]?.length);
-  const allCollected = dispensers.length > 0 && uncollectedDisps.length === 0;
+  const saleDisps = dispensers.filter(d => (salesByDispenser[d.dispenserId]?.expectedAmount || 0) > 0);
+  const unsoldDisps = dispensers.filter(d => !saleDisps.some(saleDisp => saleDisp.dispenserId === d.dispenserId));
+  const collectionRows = saleDisps.map(disp => {
+    const records = collectedMap[disp.dispenserId] || [];
+    const collected = records.reduce((sum, record) => sum + (Number(record.totalReceived) || 0), 0);
+    const expected = Number(salesByDispenser[disp.dispenserId]?.expectedAmount) || 0;
+    return { disp, records, expected, collected, outstanding: Math.max(0, expected - collected) };
+  });
+  const noInitialCollection = collectionRows.filter(row => row.collected <= 0);
+  const pendingRows = collectionRows.filter(row => row.outstanding > 0.01);
+  const settledRows = collectionRows.filter(row => row.outstanding <= 0.01 && row.collected > 0);
+  const allCollected = saleDisps.length > 0 && noInitialCollection.length === 0;
 
   const totalCash = Object.values(collectedMap).flat().reduce((s, p) => s + (p.cashReceived || 0), 0);
   const totalPos = Object.values(collectedMap).flat().reduce((s, p) => s + (p.posReceived || 0), 0);
@@ -352,6 +374,24 @@ export default function RecordPaymentsPage() {
         <button onClick={loadData} className="text-xs text-gray-500 hover:text-ecana-maroon border border-gray-200 rounded-lg px-3 py-1.5 transition-colors">Refresh</button>
       </div>
 
+      {shiftOptions.length > 0 && (
+        <div className="card-modern p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <label className="text-sm font-medium text-gray-700" htmlFor="collection-shift">Shift to reconcile</label>
+          <select
+            id="collection-shift"
+            value={activeDayShift?._id || ''}
+            onChange={event => { setExpandedId(null); loadData(event.target.value); }}
+            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-xl focus:outline-none focus:border-ecana-maroon"
+          >
+            {shiftOptions.map(shift => (
+              <option key={shift._id} value={shift._id}>
+                {new Date(shift.date).toLocaleDateString('en-NG')} · {shift.shiftLabel || 'Full Day'} · {shift.status === 'ended' ? (shift.collectionStatus === 'pending' ? 'Closed — balance pending' : 'Closed') : 'Open'}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {globalError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{globalError}</div>}
 
       {!activeDayShift && (
@@ -365,7 +405,7 @@ export default function RecordPaymentsPage() {
         <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-4 rounded-xl flex items-center gap-3">
           <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" />
           <div>
-            <p className="font-semibold">All Pumps Collected</p>
+            <p className="font-semibold">Initial collections recorded</p>
             <p className="text-sm mt-0.5">Cash: ₦{fmt(totalCash)} · POS: ₦{fmt(totalPos)} · Total: ₦{fmt(totalCash + totalPos)}</p>
           </div>
         </div>
@@ -374,9 +414,9 @@ export default function RecordPaymentsPage() {
       {activeDayShift && dispensers.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'Pumps', val: dispensers.length, color: '' },
-            { label: 'Collected', val: collectedDisps.length, color: 'text-green-700' },
-            { label: 'Pending', val: uncollectedDisps.length, color: uncollectedDisps.length > 0 ? 'text-amber-600' : '' },
+            { label: 'Pumps with Sales', val: saleDisps.length, color: '' },
+            { label: 'Settled', val: settledRows.length, color: 'text-green-700' },
+            { label: 'Pending Balance', val: pendingRows.length, color: pendingRows.length > 0 ? 'text-amber-600' : '' },
             { label: 'Total Today', val: `₦${fmt(totalCash + totalPos)}`, color: 'text-ecana-maroon', small: true },
           ].map(({ label, val, color, small }) => (
             <div key={label} className="card-modern p-4 text-center">
@@ -387,14 +427,20 @@ export default function RecordPaymentsPage() {
         </div>
       )}
 
-      {/* Uncollected pumps */}
-      {activeDayShift && uncollectedDisps.length > 0 && (
+      {activeDayShift && unsoldDisps.length > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <span className="font-semibold">No sales / no collection needed:</span> {unsoldDisps.map(disp => disp.dispenserName).join(', ')}.
+        </div>
+      )}
+
+      {/* Pumps with sales but no initial collection */}
+      {activeDayShift && noInitialCollection.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-amber-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-500" /> Pending ({uncollectedDisps.length})
+            <span className="w-2 h-2 rounded-full bg-amber-500" /> Collection Not Recorded ({noInitialCollection.length})
           </h2>
           <div className="space-y-3">
-            {uncollectedDisps.map(disp => {
+            {noInitialCollection.map(({ disp }) => {
               const isOpen = expandedId === disp.dispenserId;
               const salesEntry = salesByDispenser[disp.dispenserId];
               return (
@@ -424,7 +470,7 @@ export default function RecordPaymentsPage() {
                       meterReading={metersByDispenser[disp.dispenserId] || null}
                       pricePerLiter={activeDayShift?.pricesAtStart?.[disp.fuelType]}
                       activeDayShift={activeDayShift}
-                      onSubmitted={() => { setExpandedId(null); loadData(); }}
+                      onSubmitted={() => { setExpandedId(null); loadData(activeDayShift._id); }}
                     />
                   )}
                 </div>
@@ -435,19 +481,18 @@ export default function RecordPaymentsPage() {
       )}
 
       {/* Collected pumps */}
-      {collectedDisps.length > 0 && (
+      {collectionRows.filter(row => row.collected > 0).length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500" /> Collected ({collectedDisps.length})
+            <span className="w-2 h-2 rounded-full bg-green-500" /> Collection Records ({collectionRows.filter(row => row.collected > 0).length})
           </h2>
           <div className="space-y-3">
-            {collectedDisps.map(disp => {
-              const records = collectedMap[disp.dispenserId] || [];
+            {collectionRows.filter(row => row.collected > 0).map(({ disp, records, expected, collected, outstanding }) => {
               const dispCash = records.reduce((s, p) => s + (p.cashReceived || 0), 0);
               const dispPos = records.reduce((s, p) => s + (p.posReceived || 0), 0);
-              const dispTotal = dispCash + dispPos;
+              const dispTotal = collected;
               const salesEntry = salesByDispenser[disp.dispenserId];
-              const isMatch = !salesEntry || Math.abs(dispTotal - salesEntry.expectedAmount) < 0.01;
+              const isMatch = outstanding <= 0.01;
               const isOpen = expandedId === `extra-${disp.dispenserId}`;
 
               return (
@@ -504,13 +549,13 @@ export default function RecordPaymentsPage() {
                             meterReading={metersByDispenser[disp.dispenserId] || null}
                             pricePerLiter={activeDayShift?.pricesAtStart?.[disp.fuelType]}
                             activeDayShift={activeDayShift}
-                            onSubmitted={() => { setExpandedId(null); loadData(); }}
+                            onSubmitted={() => { setExpandedId(null); loadData(activeDayShift._id); }}
                           />
                           <button onClick={() => setExpandedId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
                         </div>
                       ) : (
                         <button onClick={() => setExpandedId(`extra-${disp.dispenserId}`)} className="text-xs text-gray-400 hover:text-ecana-maroon transition-colors">
-                          + Add another collection
+                          {activeDayShift.status === 'ended' ? '+ Record settlement' : '+ Add another collection'}
                         </button>
                       )}
                     </div>
