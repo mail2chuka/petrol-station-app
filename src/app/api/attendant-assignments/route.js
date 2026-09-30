@@ -3,7 +3,7 @@ import connectDB from '@/lib/db';
 import AttendantAssignment from '@/models/AttendantAssignment';
 import Attendant from '@/models/Attendant';
 import DayShift from '@/models/DayShift';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireStationAccess } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
 
 // GET /api/attendant-assignments?stationId=&date=YYYY-MM-DD
@@ -17,6 +17,7 @@ export async function GET(request) {
     const date = searchParams.get('date');
 
     if (!stationId) return NextResponse.json({ error: 'stationId is required' }, { status: 400 });
+    await requireStationAccess(stationId);
 
     const query = { stationId };
     if (date) query.date = date;

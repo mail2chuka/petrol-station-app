@@ -269,6 +269,7 @@ export default function RecordPaymentsPage() {
   const [dispensers, setDispensers] = useState([]);
   const [salesByDispenser, setSalesByDispenser] = useState({});
   const [metersByDispenser, setMetersByDispenser] = useState({});
+  const [attendantByDispenser, setAttendantByDispenser] = useState({});
   const [collectedMap, setCollectedMap] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -293,20 +294,40 @@ export default function RecordPaymentsPage() {
 
       if (!shift) {
         setMetersByDispenser({});
+        setAttendantByDispenser({});
         setCollectedMap({});
         setSalesByDispenser({});
         return;
       }
 
       const shiftDate = new Date(shift.date).toISOString().split('T')[0];
-      const [paymentsRes, metersRes, salesRes] = await Promise.all([
+      const [paymentsRes, metersRes, salesRes, assignmentsRes] = await Promise.all([
         fetch(`/api/payments?stationId=${stationId}&dayShiftId=${shift._id}`),
         fetch(`/api/meter-readings?stationId=${stationId}&date=${shiftDate}`),
         fetch(`/api/sales?stationId=${stationId}&dayShiftId=${shift._id}`),
+        fetch(`/api/attendant-assignments?stationId=${stationId}&date=${shiftDate}`),
       ]);
-      const [paymentsData, metersData, salesData] = await Promise.all([
-        paymentsRes.json(), metersRes.json(), salesRes.json(),
+      if (!paymentsRes.ok || !metersRes.ok || !salesRes.ok || !assignmentsRes.ok) {
+        throw new Error('Failed to load collection data');
+      }
+      const [paymentsData, metersData, salesData, assignmentsData] = await Promise.all([
+        paymentsRes.json(), metersRes.json(), salesRes.json(), assignmentsRes.json(),
       ]);
+
+      // Older assignments have no shift ID and belong to the first shift of
+      // that day. A shift-specific assignment takes precedence if both exist.
+      const firstShift = (shift.shiftOrder || 1) === 1;
+      const assignments = assignmentsData.assignments || [];
+      const attendantMap = {};
+      if (firstShift) {
+        for (const assignment of assignments.filter(a => !a.dayShiftId)) {
+          attendantMap[assignment.dispenserId] = assignment.attendantName;
+        }
+      }
+      for (const assignment of assignments.filter(a => String(a.dayShiftId) === String(shift._id))) {
+        attendantMap[assignment.dispenserId] = assignment.attendantName;
+      }
+      setAttendantByDispenser(attendantMap);
 
       // Map meter readings by pumpId (= dispenserId) for live expected estimates
       const metersMap = {};
@@ -448,6 +469,7 @@ export default function RecordPaymentsPage() {
                   <div className="flex items-center justify-between p-4">
                     <div>
                       <p className="font-semibold text-gray-800">{disp.dispenserName}</p>
+                      <p className="text-sm text-gray-700">Attendant: {attendantByDispenser[disp.dispenserId] || 'Not assigned'}</p>
                       <p className="text-xs text-gray-500">{disp.fuelType} · {disp.supervisorName}</p>
                       {(() => {
                         if (salesEntry) return <p className="text-xs text-gray-500">Expected: ₦{fmt(salesEntry.expectedAmount)}</p>;
@@ -502,6 +524,7 @@ export default function RecordPaymentsPage() {
                       <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-0.5 ${isMatch ? 'bg-green-500' : 'bg-amber-500'}`} />
                       <div>
                         <p className="font-semibold text-gray-800">{disp.dispenserName}</p>
+                        <p className="text-sm text-gray-700">Attendant: {attendantByDispenser[disp.dispenserId] || 'Not assigned'}</p>
                         <p className="text-xs text-gray-500">{disp.fuelType} · {disp.supervisorName}</p>
                         {!isMatch && salesEntry && (
                           <p className="text-xs text-amber-700 font-medium">
