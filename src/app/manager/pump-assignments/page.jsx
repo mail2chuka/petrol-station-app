@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
@@ -200,6 +200,7 @@ function PumpAssignmentsPageContent() {
   const [pumps, setPumps] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [activeShift, setActiveShift] = useState(null);
+  const initialShiftDateSelected = useRef(false);
   const [attendants, setAttendants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -223,7 +224,13 @@ function PumpAssignmentsPageContent() {
       const [stData, asgData, attData, shiftData] = await Promise.all([
         stationRes.json(), assignRes.json(), attendantRes.json(), shiftRes.json(),
       ]);
-      setActiveShift((shiftData.dayShifts || [])[0] || null);
+      const openShift = (shiftData.dayShifts || [])[0] || null;
+      setActiveShift(openShift);
+      if (!initialShiftDateSelected.current) {
+        initialShiftDateSelected.current = true;
+        const shiftDate = openShift && new Date(openShift.date).toISOString().slice(0, 10);
+        if (shiftDate && date === todayStr() && shiftDate !== date) setDate(shiftDate);
+      }
       if (stationRes.ok) {
         const dispensers = stData.station?.dispensers || [];
         const activeDisp = dispensers.filter(d => d.isActive !== false);

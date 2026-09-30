@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import Card from '@/components/Card';
 import Button from '@/components/Button';
@@ -140,6 +140,9 @@ function TankCard({ tank, openingEntry, closingEntry, prevDayClosing, canEdit, s
         </div>
 
         {/* Closing dipstick row */}
+        {openingDipstick == null && canEdit && (
+          <p className="text-xs text-amber-700">Record the opening dipstick before entering closing stock for this tank.</p>
+        )}
         {openingDipstick != null && (
           <div className="space-y-2">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Closing Dipstick</p>
@@ -209,6 +212,7 @@ export default function TankStockPage() {
   const [loading, setLoading] = useState(false);
   const [markedDates, setMarkedDates] = useState({});
   const [activeShift, setActiveShift] = useState(null);
+  const initialShiftDateSelected = useRef(false);
 
   const stationId = session?.user?.stationId;
 
@@ -254,6 +258,11 @@ export default function TankStockPage() {
       const shiftData = await shiftRes.json();
       const openShift = (shiftData.dayShifts || [])[0] || null;
       setActiveShift(openShift);
+      if (!initialShiftDateSelected.current) {
+        initialShiftDateSelected.current = true;
+        const shiftDate = openShift && new Date(openShift.date).toISOString().slice(0, 10);
+        if (shiftDate && dateStr === today() && shiftDate !== dateStr) setDate(shiftDate);
+      }
 
       const activeTanks = (stationData.station?.tanks || []).filter(t => t.isActive !== false);
       setTanks(activeTanks);
@@ -311,6 +320,11 @@ export default function TankStockPage() {
           No shift is open. Closed-shift dipstick corrections go through Historical Data Entry.
         </p>
       )}
+      {activeShift && !isOpenShiftDate && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          The open shift belongs to {new Date(activeShift.date).toISOString().slice(0, 10)}. Select that operating date to enter its closing stock.
+        </p>
+      )}
 
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         {/* Calendar */}
@@ -336,7 +350,7 @@ export default function TankStockPage() {
           ) : (
             tanks.map(tank => (
               <TankCard
-                key={tank._id}
+                key={`${date}:${tank._id}`}
                 tank={tank}
                 openingEntry={existingEntries[`${tank._id}-opening`] || null}
                 closingEntry={existingEntries[`${tank._id}-closing`] || null}

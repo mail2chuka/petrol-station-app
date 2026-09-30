@@ -32,29 +32,31 @@ export default function SupervisorDashboard() {
   }, [session]);
 
   const fetchData = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
     try {
-      const [shiftRes, readingsRes, stockRes, salesRes] = await Promise.all([
-        fetch(`/api/day-shifts?stationId=${session.user.stationId}&status=in_progress`),
-        fetch(`/api/meter-readings?stationId=${session.user.stationId}&date=${today}`),
-        fetch(`/api/tank-stock?stationId=${session.user.stationId}&date=${today}`),
-        fetch(`/api/sales?supervisorId=${session.user.id}`),
-      ]);
+      const shiftRes = await fetch(`/api/day-shifts?stationId=${session.user.stationId}&status=in_progress`);
       const shiftData = await shiftRes.json();
+      const openShift = (shiftData.dayShifts || [])[0] || null;
+      const operatingDate = openShift ? new Date(openShift.date).toISOString().slice(0, 10) : today;
+      setActiveDayShift(openShift);
+
+      const [readingsRes, stockRes, salesRes] = await Promise.all([
+        fetch(`/api/meter-readings?stationId=${session.user.stationId}&date=${operatingDate}`),
+        fetch(`/api/tank-stock?stationId=${session.user.stationId}&date=${operatingDate}`),
+        fetch(`/api/sales?supervisorId=${session.user.id}&date=${operatingDate}`),
+      ]);
       const readingsData = await readingsRes.json();
       const stockData = await stockRes.json();
       const salesData = await salesRes.json();
 
-      if (shiftData.dayShifts?.length > 0) {
-        setActiveDayShift(shiftData.dayShifts[0]);
-      }
-
-      setTodayReadings(readingsData.readings || []);
-      setTodayStock(stockData.entries || []);
-
-      const todaysSales = (salesData.salesEntries || []).filter(s =>
-        new Date(s.date).toISOString().split('T')[0] === today
+      const belongsToShift = (entry) => !openShift || (
+        entry.dayShiftId
+          ? String(entry.dayShiftId) === String(openShift._id)
+          : (openShift.shiftOrder || 1) === 1
       );
+      setTodayReadings((readingsData.readings || []).filter(belongsToShift));
+      setTodayStock((stockData.entries || []).filter(belongsToShift));
+      const todaysSales = (salesData.salesEntries || []).filter(belongsToShift);
       setTodaySales(todaysSales);
     } catch (err) {
       console.error('Error fetching supervisor data:', err);
@@ -76,8 +78,8 @@ export default function SupervisorDashboard() {
     );
   }
 
-  const today = new Date().toLocaleDateString('en-NG', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  const today = new Date(activeDayShift?.date || Date.now()).toLocaleDateString('en-NG', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Africa/Lagos',
   });
 
   const totalLitersToday = todaySales.reduce((sum, s) => sum + (Number(s.liters) || 0), 0);
@@ -90,7 +92,7 @@ export default function SupervisorDashboard() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Supervisor Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-1">{today}</p>
+          <p className="text-sm text-slate-500 mt-1">{activeDayShift ? 'Open shift operating date: ' : ''}{today}</p>
         </div>
         <div className="text-right">
           <p className="text-xs text-slate-400">Signed in as</p>
@@ -111,10 +113,10 @@ export default function SupervisorDashboard() {
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard title="Liters Today" value={formatLiters(totalLitersToday)} color="blue" />
-        <StatCard title="Cash Today" value={formatCurrency(totalCashToday)} color="emerald" />
-        <StatCard title="POS Today" value={formatCurrency(totalPosToday)} color="blue" />
-        <StatCard title="Total Today" value={formatCurrency(totalAmountToday)} color="maroon" />
+        <StatCard title={activeDayShift ? 'Liters This Shift' : 'Liters Today'} value={formatLiters(totalLitersToday)} color="blue" />
+        <StatCard title={activeDayShift ? 'Cash This Shift' : 'Cash Today'} value={formatCurrency(totalCashToday)} color="emerald" />
+        <StatCard title={activeDayShift ? 'POS This Shift' : 'POS Today'} value={formatCurrency(totalPosToday)} color="blue" />
+        <StatCard title={activeDayShift ? 'Total This Shift' : 'Total Today'} value={formatCurrency(totalAmountToday)} color="maroon" />
       </div>
 
       <Card title="Quick Actions">

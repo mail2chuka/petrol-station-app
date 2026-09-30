@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import Card from '@/components/Card';
 import Input from '@/components/Input';
@@ -306,6 +306,7 @@ export default function MeterReadingsPage() {
   const [previousClosings, setPreviousClosings] = useState({});
   const [loading, setLoading] = useState(false);
   const [date, setDate] = useState(today());
+  const initialShiftDateSelected = useRef(false);
   const [markedDates, setMarkedDates] = useState({});
   const [tankStockEntries, setTankStockEntries] = useState([]);
   const [pumpTankMap, setPumpTankMap] = useState({});  // dispenserId → { tankId, tankLabel }
@@ -343,12 +344,22 @@ export default function MeterReadingsPage() {
 
       const activeShift = (shiftsData.dayShifts || [])[0] || null;
       setActiveDayShift(activeShift);
+      const activeShiftDate = activeShift && new Date(activeShift.date).toISOString().slice(0, 10);
+      if (!initialShiftDateSelected.current) {
+        initialShiftDateSelected.current = true;
+        if (activeShiftDate && dateStr === today() && activeShiftDate !== dateStr) setDate(activeShiftDate);
+      }
 
       const readingsMap = {};
-      for (const r of (readingsData.readings || [])) readingsMap[r.pumpId] = r;
+      const belongsToActiveShift = (entry) => !activeShiftDate || activeShiftDate !== dateStr || (
+        entry.dayShiftId
+          ? String(entry.dayShiftId) === String(activeShift._id)
+          : (activeShift.shiftOrder || 1) === 1
+      );
+      for (const r of (readingsData.readings || []).filter(belongsToActiveShift)) readingsMap[r.pumpId] = r;
       setExistingReadings(readingsMap);
 
-      setTankStockEntries(tankData.entries || []);
+      setTankStockEntries((tankData.entries || []).filter(belongsToActiveShift));
 
       const prevRes = await fetch(
         `/api/meter-readings?stationId=${stationId}&lastClosingBefore=${dateStr}`
@@ -361,7 +372,7 @@ export default function MeterReadingsPage() {
       setPreviousClosings(prevMap);
 
       // Build pump list from active shift OR from readings (for past dates)
-      const shiftDispensers = activeShift?.dispenserAssignments || [];
+      const shiftDispensers = activeShiftDate === dateStr ? activeShift?.dispenserAssignments || [] : [];
       const readingEntries = Object.values(readingsMap);
 
       // Build pump→tank map and assign color indices per tank
@@ -394,17 +405,15 @@ export default function MeterReadingsPage() {
     if (!stationId) return;
     fetchMonthMarks(date.slice(0, 7));
     fetchData(date);
-  }, [session]);
+  }, [stationId, date, fetchMonthMarks, fetchData]);
 
   const handleDateChange = (newDate) => {
     setDate(newDate);
-    fetchData(newDate);
-    if (newDate.slice(0, 7) !== date.slice(0, 7)) fetchMonthMarks(newDate.slice(0, 7));
   };
 
   const [openingAll, setOpeningAll] = useState(false);
 
-  const canEdit = !!activeDayShift;
+  const canEdit = !!activeDayShift && new Date(activeDayShift.date).toISOString().slice(0, 10) === date;
   const isToday = date === today();
 
   const openedCount = pumps.filter(p => existingReadings[p.id]?.opening != null).length;
@@ -439,8 +448,8 @@ export default function MeterReadingsPage() {
       </div>
 
       {/* Active shift status banner */}
-      {isToday && (
-        activeDayShift ? (
+      {(canEdit || isToday || activeDayShift) && (
+        canEdit ? (
           <div className="flex items-center justify-between gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-800">
             <div className="flex items-center gap-3">
               <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
@@ -458,7 +467,9 @@ export default function MeterReadingsPage() {
           </div>
         ) : (
           <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-            No active day shift — wait for the manager to begin the day before opening pumps.
+            {activeDayShift
+              ? `The open shift belongs to ${new Date(activeDayShift.date).toISOString().slice(0, 10)}. Select that operating date to enter its readings.`
+              : 'No active day shift — wait for the manager to begin the day before opening pumps.'}
           </div>
         )
       )}
@@ -494,7 +505,7 @@ export default function MeterReadingsPage() {
                 const tankColor = colorIdx !== undefined ? TANK_COLORS[colorIdx] : null;
                 return (
                   <PumpCard
-                    key={pump.id}
+                    key={`${date}:${pump.id}`}
                     pump={pump}
                     existing={existingReadings[pump.id] || null}
                     prevClosing={previousClosings[pump.id] ?? null}

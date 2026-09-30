@@ -206,16 +206,16 @@ export async function POST(request) {
     const isEarliestShift = !!(earliestShiftForDate && String(activeShift._id) === String(earliestShiftForDate._id));
     const shiftIdMatch = isEarliestShift ? { $in: [activeShift._id, null] } : activeShift._id;
 
-    // Readings can only be submitted for the date of the current active shift.
-    // This prevents supervisors from editing past-day readings while today's shift runs.
+    // Readings belong to the open shift's operating date, even if it remains
+    // open into the next calendar day.
     const shiftDateStr = new Date(activeShift.date).toISOString().split('T')[0];
     if (date !== shiftDateStr) {
-      return NextResponse.json({ error: 'Meter readings can only be submitted for today\'s active shift. Past readings can only be corrected by an admin.' }, { status: 403 });
+      return NextResponse.json({ error: 'Select the open shift\'s operating date to submit meter readings.' }, { status: 409 });
     }
 
     const shiftDispenser = activeShift.dispenserAssignments?.find(d => d.dispenserId === pumpId);
     if (!shiftDispenser) {
-      return NextResponse.json({ error: 'This pump is not active for today\'s shift.' }, { status: 409 });
+      return NextResponse.json({ error: 'This pump is not active for the open shift.' }, { status: 409 });
     }
 
     const pumpLabel = bodyPumpLabel || shiftDispenser.dispenserName || pumpId;

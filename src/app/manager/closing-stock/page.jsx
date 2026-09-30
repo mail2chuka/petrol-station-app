@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
@@ -8,7 +8,7 @@ import Loading from '@/components/Loading';
 import DateCalendar from '@/components/DateCalendar';
 
 function todayStr() {
-  return new Date().toISOString().split('T')[0];
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
 }
 
 function fmt(n) {
@@ -31,6 +31,7 @@ function ClosingStockPageContent() {
   const [loadingMonth, setLoadingMonth] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const initialShiftDateSelected = useRef(false);
 
   const fetchMonthMarks = useCallback(async (monthStr) => {
     if (!activeStationId) return;
@@ -56,8 +57,7 @@ function ClosingStockPageContent() {
 
   useEffect(() => {
     if (activeStationId) {
-      const m = new Date().toISOString().slice(0, 7);
-      fetchMonthMarks(m);
+      fetchMonthMarks(date.slice(0, 7));
       fetchData();
     }
   }, [activeStationId, date]);
@@ -66,14 +66,22 @@ function ClosingStockPageContent() {
     setLoading(true);
     setError('');
     try {
-      const [stationRes, tsRes] = await Promise.all([
+      const [stationRes, tsRes, shiftRes] = await Promise.all([
         fetch(`/api/stations/${activeStationId}`),
         fetch(`/api/tank-stock?stationId=${activeStationId}&date=${date}`),
+        fetch(`/api/day-shifts?stationId=${activeStationId}&status=in_progress`),
       ]);
-      const [stationData, tsData] = await Promise.all([
+      const [stationData, tsData, shiftData] = await Promise.all([
         stationRes.json(),
         tsRes.json(),
+        shiftRes.json(),
       ]);
+      if (!initialShiftDateSelected.current) {
+        initialShiftDateSelected.current = true;
+        const openShift = (shiftData.dayShifts || [])[0];
+        const shiftDate = openShift && new Date(openShift.date).toISOString().slice(0, 10);
+        if (shiftDate && date === todayStr() && shiftDate !== date) setDate(shiftDate);
+      }
 
       if (!stationRes.ok) {
         setError(stationData.error || 'Failed to load station');
