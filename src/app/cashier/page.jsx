@@ -21,6 +21,7 @@ export default function CashierDashboard() {
   const [activeDayShift, setActiveDayShift] = useState(null);
   const [payments, setPayments] = useState([]);
   const [salesEntries, setSalesEntries] = useState([]);
+  const [dailySalesEntries, setDailySalesEntries] = useState([]);
   const [deposits, setDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,7 +39,7 @@ export default function CashierDashboard() {
       // pump reused across shifts doesn't show a prior shift's collection as
       // "already collected" for the current shift, and the totals below don't
       // double up an earlier ended shift's collections into today's figures.
-      const [paymentsRes, depositsRes, salesRes] = await Promise.all([
+      const [paymentsRes, depositsRes, salesRes, dailySalesRes] = await Promise.all([
         shift
           ? fetch(`/api/payments?stationId=${stationId}&dayShiftId=${shift._id}`)
           : Promise.resolve(null),
@@ -46,20 +47,23 @@ export default function CashierDashboard() {
         shift
           ? fetch(`/api/sales?stationId=${stationId}&dayShiftId=${shift._id}`)
           : Promise.resolve(null),
+        fetch(`/api/sales?stationId=${stationId}&date=${today()}`, { cache: 'no-store' }),
       ]);
 
-      if (!depositsRes.ok || (paymentsRes && !paymentsRes.ok) || (salesRes && !salesRes.ok)) {
+      if (!depositsRes.ok || !dailySalesRes.ok || (paymentsRes && !paymentsRes.ok) || (salesRes && !salesRes.ok)) {
         throw new Error('Failed to load cashier dashboard data');
       }
-      const [paymentsData, depositsData, salesData] = await Promise.all([
+      const [paymentsData, depositsData, salesData, dailySalesData] = await Promise.all([
         paymentsRes ? paymentsRes.json() : { paymentRecords: [] },
         depositsRes.json(),
         salesRes ? salesRes.json() : { salesEntries: [] },
+        dailySalesRes.json(),
       ]);
 
       setActiveDayShift(shift);
       setPayments(paymentsData.paymentRecords || []);
       setSalesEntries(salesData.salesEntries || []);
+      setDailySalesEntries(dailySalesData.salesEntries || []);
       setDeposits(depositsData.cashDeposits || []);
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -104,15 +108,12 @@ export default function CashierDashboard() {
   const totalCollected = totalCash + totalPos;
   const totalDeposited = deposits.reduce((s, d) => s + (d.amount || 0), 0);
 
-  const productTypes = [...new Set([
-    ...dispensers.map(d => d.fuelType),
-    ...salesEntries.map(s => s.fuelType),
-  ].filter(Boolean))].sort((a, b) => {
+  const productTypes = [...new Set(dailySalesEntries.map(s => s.fuelType).filter(Boolean))].sort((a, b) => {
     const order = Object.values(FUEL_TYPES);
     return order.indexOf(a) - order.indexOf(b);
   });
   const productTotals = Object.fromEntries(productTypes.map(type => [type, { liters: 0, expectedAmount: 0 }]));
-  for (const sale of salesEntries) {
+  for (const sale of dailySalesEntries) {
     if (!productTotals[sale.fuelType]) continue;
     productTotals[sale.fuelType].liters += Number(sale.liters) || 0;
     productTotals[sale.fuelType].expectedAmount += Number(sale.expectedAmount) || 0;
@@ -171,21 +172,17 @@ export default function CashierDashboard() {
             </div>
           </div>
 
-          {activeDayShift && (
-            <Card title="Fuel Sold This Shift" subtitle="Supervisor entries for the active shift at your station. Updates automatically.">
-              {productTypes.length === 0 ? (
-                <p className="text-sm text-gray-500">No fuel products are assigned to this shift.</p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {productTypes.map(type => (
-                    <div key={type} className="rounded-xl border border-gray-200 p-4">
-                      <p className="text-sm font-semibold text-gray-800">{FUEL_TYPE_LABELS[type] || type}</p>
-                      <p className="mt-2 text-xl font-bold tabular-nums text-gray-900">{fmt(productTotals[type].liters)} L</p>
-                      <p className="mt-1 text-sm tabular-nums text-gray-600">Expected: ₦{fmt(productTotals[type].expectedAmount)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+          {productTypes.length > 0 && (
+            <Card title="Fuel Sold Today" subtitle="Supervisor entries recorded for today at your station. Updates automatically.">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {productTypes.map(type => (
+                  <div key={type} className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-sm font-semibold text-gray-800">{FUEL_TYPE_LABELS[type] || type}</p>
+                    <p className="mt-2 text-xl font-bold tabular-nums text-gray-900">{fmt(productTotals[type].liters)} L</p>
+                    <p className="mt-1 text-sm tabular-nums text-gray-600">Expected: ₦{fmt(productTotals[type].expectedAmount)}</p>
+                  </div>
+                ))}
+              </div>
             </Card>
           )}
 
