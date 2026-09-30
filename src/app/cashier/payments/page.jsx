@@ -81,7 +81,7 @@ function PosEntryRow({ entry, index, onChange, onRemove }) {
 }
 
 // Collection form for a single pump
-function CollectionForm({ dispenser, salesEntry, meterReading, pricePerLiter, activeDayShift, onSubmitted }) {
+function CollectionForm({ dispenser, attendantName, salesEntry, meterReading, pricePerLiter, activeDayShift, onSubmitted }) {
   const [cash, setCash] = useState('');
   const [posEntries, setPosEntries] = useState([emptyPosEntry()]);
   const [notes, setNotes] = useState('');
@@ -159,6 +159,10 @@ function CollectionForm({ dispenser, salesEntry, meterReading, pricePerLiter, ac
 
   return (
     <div className="border-t border-amber-100 p-4 bg-amber-50/30 space-y-4">
+      <p className="text-sm text-gray-800">
+        Collecting from <span className="font-semibold">{dispenser.dispenserName}</span>
+        {' · '}Attendant: <span className="font-semibold">{attendantName || 'Not assigned'}</span>
+      </p>
       {expected !== null && (
         <div className="p-3 bg-white rounded-xl border border-amber-200 text-sm">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
@@ -468,8 +472,10 @@ export default function RecordPaymentsPage() {
                 <div key={disp.dispenserId} className="bg-white border-2 border-amber-200 rounded-2xl overflow-hidden">
                   <div className="flex items-center justify-between p-4">
                     <div>
-                      <p className="font-semibold text-gray-800">{disp.dispenserName}</p>
-                      <p className="text-sm text-gray-700">Attendant: {attendantByDispenser[disp.dispenserId] || 'Not assigned'}</p>
+                      <p className="font-semibold text-gray-800">
+                        {disp.dispenserName}
+                        <span className="ml-2 text-sm font-medium text-gray-700">· Attendant: {attendantByDispenser[disp.dispenserId] || 'Not assigned'}</span>
+                      </p>
                       <p className="text-xs text-gray-500">{disp.fuelType} · {disp.supervisorName}</p>
                       {(() => {
                         if (salesEntry) return <p className="text-xs text-gray-500">Expected: ₦{fmt(salesEntry.expectedAmount)}</p>;
@@ -488,6 +494,7 @@ export default function RecordPaymentsPage() {
                   {isOpen && (
                     <CollectionForm
                       dispenser={disp}
+                      attendantName={attendantByDispenser[disp.dispenserId]}
                       salesEntry={salesByDispenser[disp.dispenserId] || null}
                       meterReading={metersByDispenser[disp.dispenserId] || null}
                       pricePerLiter={activeDayShift?.pricesAtStart?.[disp.fuelType]}
@@ -523,8 +530,10 @@ export default function RecordPaymentsPage() {
                     <div className="flex items-center gap-3">
                       <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-0.5 ${isMatch ? 'bg-green-500' : 'bg-amber-500'}`} />
                       <div>
-                        <p className="font-semibold text-gray-800">{disp.dispenserName}</p>
-                        <p className="text-sm text-gray-700">Attendant: {attendantByDispenser[disp.dispenserId] || 'Not assigned'}</p>
+                        <p className="font-semibold text-gray-800">
+                          {disp.dispenserName}
+                          <span className="ml-2 text-sm font-medium text-gray-700">· Attendant: {attendantByDispenser[disp.dispenserId] || 'Not assigned'}</span>
+                        </p>
                         <p className="text-xs text-gray-500">{disp.fuelType} · {disp.supervisorName}</p>
                         {!isMatch && salesEntry && (
                           <p className="text-xs text-amber-700 font-medium">
@@ -568,6 +577,7 @@ export default function RecordPaymentsPage() {
                         <div className="space-y-2">
                           <CollectionForm
                             dispenser={disp}
+                            attendantName={attendantByDispenser[disp.dispenserId]}
                             salesEntry={salesByDispenser[disp.dispenserId] || null}
                             meterReading={metersByDispenser[disp.dispenserId] || null}
                             pricePerLiter={activeDayShift?.pricesAtStart?.[disp.fuelType]}
