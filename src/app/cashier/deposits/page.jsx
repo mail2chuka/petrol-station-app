@@ -236,7 +236,7 @@ export default function CashDepositsPage() {
   const [loadingDeposits, setLoadingDeposits] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [success, setSuccess] = useState('');
-  const [openShiftForDate, setOpenShiftForDate] = useState(false);
+  const [hasShiftForDate, setHasShiftForDate] = useState(false);
 
   const fetchSummary = useCallback(async () => {
     if (!stationId) return;
@@ -258,19 +258,19 @@ export default function CashDepositsPage() {
     finally { setLoadingDeposits(false); }
   }, [stationId]);
 
-  const fetchOpenShift = useCallback(async (date) => {
+  const fetchShift = useCallback(async (date) => {
     if (!stationId) return;
-    setOpenShiftForDate(false);
+    setHasShiftForDate(false);
     try {
-      const res = await fetch(`/api/day-shifts?stationId=${stationId}&date=${date}&status=in_progress`);
+      const res = await fetch(`/api/day-shifts?stationId=${stationId}&date=${date}`);
       const data = await res.json();
-      if (res.ok) setOpenShiftForDate((data.dayShifts || []).length > 0);
+      if (res.ok) setHasShiftForDate((data.dayShifts || []).length > 0);
     } catch {}
   }, [stationId]);
 
   useEffect(() => {
-    if (stationId) { fetchDeposits(selectedDate); fetchOpenShift(selectedDate); }
-  }, [stationId, selectedDate, fetchDeposits, fetchOpenShift]);
+    if (stationId) { fetchDeposits(selectedDate); fetchShift(selectedDate); }
+  }, [stationId, selectedDate, fetchDeposits, fetchShift]);
 
   useEffect(() => { if (stationId) fetchSummary(); }, [stationId, fetchSummary]);
 
@@ -366,10 +366,10 @@ export default function CashDepositsPage() {
               {success && <p className="text-sm text-green-700 bg-green-50 border border-green-200 px-3 py-2 rounded-xl">{success}</p>}
 
               {/* Add deposit button / form */}
-              {!openShiftForDate && (
-                <p className="text-sm text-gray-500">This operating day has no open shift. Closed-shift entries go through Historical Data Entry.</p>
+              {!hasShiftForDate && (
+                <p className="text-sm text-gray-500">No shift was recorded for this operating day.</p>
               )}
-              {!showForm && openShiftForDate && (
+              {!showForm && hasShiftForDate && (
                 <button onClick={() => { setShowForm(true); setSuccess(''); }}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-ecana-maroon/40 text-ecana-maroon font-medium text-sm hover:bg-ecana-maroon/5 transition-colors">
                   <span className="text-lg leading-none">+</span>
@@ -377,7 +377,7 @@ export default function CashDepositsPage() {
                 </button>
               )}
 
-              {showForm && openShiftForDate && (
+              {showForm && hasShiftForDate && (
                 <>
                   <DepositForm stationId={stationId} forDate={selectedDate} onSubmitted={handleDeposited} />
                   <button onClick={() => setShowForm(false)} className="w-full py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>

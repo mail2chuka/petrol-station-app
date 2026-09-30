@@ -43,10 +43,10 @@ export async function POST(request) {
 
     // A cashier may add a settlement to an ended shift, but may never record
     // a collection against a shift that was not opened.
-    if (dayShift.status !== DAY_STATUS.IN_PROGRESS) {
+    if (![DAY_STATUS.IN_PROGRESS, DAY_STATUS.ENDED].includes(dayShift.status)) {
       await session.abortTransaction();
       return NextResponse.json(
-        { error: 'This shift is closed. Use Historical Data Entry for later entries or corrections.' },
+        { error: 'Collections require a shift that has been opened.' },
         { status: 409 }
       );
     }
@@ -109,7 +109,22 @@ export async function POST(request) {
     const alreadyCollectedForPump = allPayments
       .filter(payment => payment.dispenserId === validatedData.dispenserId)
       .reduce((sum, payment) => sum + (Number(payment.totalReceived) || 0), 0);
-    const outstandingAfter = Math.max(0, expectedForPump - alreadyCollectedForPump - totalReceived);
+    const remainingForPump = Math.round(Math.max(0, expectedForPump - alreadyCollectedForPump) * 100) / 100;
+    if (dayShift.status === DAY_STATUS.ENDED && (alreadyCollectedForPump <= 0 || remainingForPump <= 0.01)) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: 'Closed shifts only accept completion of a previously recorded short collection for this pump.' },
+        { status: 409 }
+      );
+    }
+    if (dayShift.status === DAY_STATUS.ENDED && totalReceived > remainingForPump + 0.01) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: `This collection exceeds the remaining balance of ${remainingForPump.toFixed(2)} for this pump.` },
+        { status: 400 }
+      );
+    }
+    const outstandingAfter = Math.round(Math.max(0, remainingForPump - totalReceived) * 100) / 100;
 
     // If supervisor not yet assigned to this pump (no meter reading submitted yet),
     // fall back to the SalesEntry to get who actually sold on this pump today.
@@ -143,13 +158,15 @@ export async function POST(request) {
       totalReceived,
       expectedAmount: expectedForPump,
       outstandingAfter,
-      collectionType: alreadyCollectedForPump > 0 ? 'supplemental' : 'initial',
+      collectionType: dayShift.status === DAY_STATUS.ENDED
+        ? 'post_close_settlement'
+        : alreadyCollectedForPump > 0 ? 'supplemental' : 'initial',
       recordedBy: currentUser.id,
       recordedByName: currentUser.name,
       notes: body.notes || '',
     }], { session, ordered: true });
 
-    // Keep the open shift's reconciliation summary current after collection.
+    // Reconcile both open shifts and later settlements of closed shifts.
     const allSales = await SalesEntry.find({ dayShiftId: dayShift._id }).session(session);
     Object.assign(dayShift, calculateShiftSummary(allSales, [...allPayments, paymentRecord[0]]));
     await dayShift.save({ session });

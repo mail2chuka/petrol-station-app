@@ -2,17 +2,17 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import connectDB from '@/lib/db';
 import CashDeposit from '@/models/CashDeposit';
+import DayShift from '@/models/DayShift';
 import User from '@/models/User';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/audit';
 import { ROLES } from '@/lib/constants';
-import { findOpenShiftForEntry, CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 import { notifyAdminDepositSubmitted } from '@/lib/notifications';
 
 const createCashDepositSchema = z.object({
   stationId: z.string().min(1),
-  date: z.string().min(1),
-  forDate: z.string().min(1), // the operating day this cash belongs to
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  forDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // the operating day this cash belongs to
   amount: z.number().positive(),
   bankName: z.string().min(1),
   bankBranch: z.string().optional(),
@@ -109,12 +109,18 @@ export async function POST(request) {
       );
     }
 
-    const openShift = await findOpenShiftForEntry({
+    const operatingDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+    if (payload.forDate > operatingDate) {
+      return NextResponse.json({ error: 'A deposit cannot be assigned to a future operating day.' }, { status: 400 });
+    }
+    const shiftStart = new Date(`${payload.forDate}T00:00:00.000Z`);
+    const shiftEnd = new Date(`${payload.forDate}T23:59:59.999Z`);
+    const shiftExists = await DayShift.exists({
       stationId: payload.stationId,
-      date: payload.forDate,
+      date: { $gte: shiftStart, $lte: shiftEnd },
     });
-    if (!openShift) {
-      return NextResponse.json({ error: CLOSED_SHIFT_ENTRY_ERROR }, { status: 409 });
+    if (!shiftExists) {
+      return NextResponse.json({ error: 'No shift exists for this operating day.' }, { status: 409 });
     }
 
     const stationUser = await User.findById(currentUser.id).select('stationName');

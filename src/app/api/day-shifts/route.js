@@ -14,6 +14,8 @@ export async function GET(request) {
     const stationId = searchParams.get('stationId');
     const status = searchParams.get('status');
     const date = searchParams.get('date');
+    const collectionEligible = searchParams.get('collectionEligible') === 'true';
+    const selectedShiftId = searchParams.get('selectedShiftId');
 
     let query = {};
 
@@ -25,7 +27,15 @@ export async function GET(request) {
       query.stationId = currentUser.stationId;
     }
 
-    if (status) {
+    if (collectionEligible) {
+      query.$or = [
+        { status: DAY_STATUS.IN_PROGRESS },
+        { status: DAY_STATUS.ENDED, collectionStatus: 'pending' },
+      ];
+      if (selectedShiftId && /^[a-f\d]{24}$/i.test(selectedShiftId)) {
+        query.$or.push({ _id: selectedShiftId, status: DAY_STATUS.ENDED });
+      }
+    } else if (status) {
       query.status = status;
     }
 
@@ -41,8 +51,8 @@ export async function GET(request) {
     }
 
     const dayShifts = await DayShift.find(query)
-      .sort({ date: -1 })
-      .limit(searchParams.get('month') ? 31 : 50);
+      .sort({ date: -1, shiftOrder: -1 })
+      .limit(collectionEligible ? 0 : searchParams.get('month') ? 31 : 50);
 
     return NextResponse.json({ dayShifts });
   } catch (error) {

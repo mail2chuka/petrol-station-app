@@ -34,3 +34,16 @@ test('shift totals stay per product and debts stay per selling pump', () => {
   assert.equal(settled.collectionOutstanding, 0);
   assert.equal(settled.collectionStatus, 'settled');
 });
+
+test('a later cashier collection clears a closed shift to the cent', () => {
+  const sales = [{ dispenserId: 'P1', fuelType: 'PMS', liters: 1, expectedAmount: 100.3 }];
+  const initial = [{ dispenserId: 'P1', cashReceived: 90.2, posReceived: 0, totalReceived: 90.2 }];
+  assert.equal(calculateShiftSummary(sales, initial).collectionOutstanding, 10.1);
+
+  const completed = calculateShiftSummary(sales, [
+    ...initial,
+    { dispenserId: 'P1', cashReceived: 10.1, posReceived: 0, totalReceived: 10.1 },
+  ]);
+  assert.equal(completed.collectionOutstanding, 0);
+  assert.equal(completed.collectionStatus, 'settled');
+});

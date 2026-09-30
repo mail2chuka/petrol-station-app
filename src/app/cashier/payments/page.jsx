@@ -27,10 +27,6 @@ function fmt(n) {
     : '0.00';
 }
 
-function today() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
-}
-
 // Live estimate of the amount the supervisor should hand over, derived from the
 // pump meter when the formal sale hasn't been recorded yet:
 //   (closing − opening − rtt) × price per litre
@@ -81,7 +77,7 @@ function PosEntryRow({ entry, index, onChange, onRemove }) {
 }
 
 // Collection form for a single pump
-function CollectionForm({ dispenser, attendantName, salesEntry, meterReading, pricePerLiter, activeDayShift, onSubmitted }) {
+function CollectionForm({ dispenser, attendantName, salesEntry, meterReading, pricePerLiter, activeDayShift, previouslyCollected = 0, onSubmitted }) {
   const [cash, setCash] = useState('');
   const [posEntries, setPosEntries] = useState([emptyPosEntry()]);
   const [notes, setNotes] = useState('');
@@ -97,7 +93,8 @@ function CollectionForm({ dispenser, attendantName, salesEntry, meterReading, pr
   const liters = salesEntry?.liters ?? est?.dispensed ?? null;
   const expected = salesEntry?.expectedAmount ?? est?.amount ?? null;
   const isEstimate = !salesEntry && expected !== null;
-  const isMatch = expected !== null && Math.abs(grandTotal - expected) < 0.01;
+  const remaining = expected === null ? null : Math.round(Math.max(0, expected - previouslyCollected) * 100) / 100;
+  const isMatch = remaining !== null && Math.abs(grandTotal - remaining) < 0.01;
 
   const updatePosEntry = (index, field, value) => {
     setPosEntries(prev => prev.map((e, i) => i === index ? { ...e, [field]: value } : e));
@@ -125,6 +122,10 @@ function CollectionForm({ dispenser, attendantName, salesEntry, meterReading, pr
     const invalidPos = posEntries.filter(e => parseFloat(e.amount) > 0 && !e.bank);
     if (invalidPos.length > 0) {
       setError('Select a bank for each POS entry that has an amount.');
+      return;
+    }
+    if (activeDayShift.status === 'ended' && remaining !== null && grandTotal > remaining + 0.01) {
+      setError(`This exceeds the remaining balance of ₦${fmt(remaining)} for this pump.`);
       return;
     }
 
@@ -186,6 +187,12 @@ function CollectionForm({ dispenser, attendantName, salesEntry, meterReading, pr
               <p className="text-xs text-gray-400">{isEstimate ? 'Est. Expected' : 'Expected'}</p>
               <p className="font-bold text-ecana-maroon">₦{fmt(expected)}</p>
             </div>
+            {previouslyCollected > 0 && (
+              <>
+                <div><p className="text-xs text-gray-400">Already collected</p><p className="font-semibold text-gray-800">₦{fmt(previouslyCollected)}</p></div>
+                <div><p className="text-xs text-gray-400">Remaining</p><p className="font-bold text-amber-700">₦{fmt(remaining)}</p></div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -237,10 +244,10 @@ function CollectionForm({ dispenser, attendantName, salesEntry, meterReading, pr
           <div className="flex justify-between font-bold text-gray-900 pt-1.5 border-t border-gray-200">
             <span>Grand Total</span><span>₦{fmt(grandTotal)}</span>
           </div>
-          {expected !== null && (
+          {remaining !== null && (
             <div className={`flex justify-between text-sm font-semibold ${isMatch ? 'text-green-600' : 'text-amber-700'}`}>
-              <span>{isMatch ? '✓ Matches expected sales' : `Difference: ₦${fmt(Math.abs(grandTotal - expected))}`}</span>
-              <span>Expected: ₦{fmt(expected)}</span>
+              <span>{isMatch ? '✓ Clears remaining balance' : `Difference: ₦${fmt(Math.abs(grandTotal - remaining))}`}</span>
+              <span>Remaining: ₦{fmt(remaining)}</span>
             </div>
           )}
         </div>
@@ -286,13 +293,14 @@ export default function RecordPaymentsPage() {
     setLoading(true);
     setGlobalError('');
     try {
-      const shiftRes = await fetch(`/api/day-shifts?stationId=${stationId}`);
+      const shiftRes = await fetch(`/api/day-shifts?stationId=${stationId}&collectionEligible=true${requestedShiftId ? `&selectedShiftId=${encodeURIComponent(requestedShiftId)}` : ''}`);
       const shiftData = await shiftRes.json();
-      const shifts = (shiftData.dayShifts || []).filter(item => item.status === 'in_progress');
+      if (!shiftRes.ok) throw new Error('Failed to load shifts');
+      const shifts = shiftData.dayShifts || [];
       setShiftOptions(shifts);
       const shift = requestedShiftId
-        ? shifts.find(item => item._id === requestedShiftId)
-        : shifts[0] || null;
+        ? shifts.find(item => item._id === requestedShiftId) || shifts.find(item => item.status === 'in_progress') || shifts[0] || null
+        : shifts.find(item => item.status === 'in_progress') || shifts[0] || null;
       setActiveDayShift(shift);
       setDispensers(shift?.dispenserAssignments || []);
 
@@ -396,7 +404,7 @@ export default function RecordPaymentsPage() {
           <h1 className="text-2xl font-bold text-slate-900">Record Collections</h1>
           <p className="text-sm text-slate-500 mt-1">Collect cash and POS for each pump — add one POS row per bank used.</p>
         </div>
-        <button onClick={loadData} className="text-xs text-gray-500 hover:text-ecana-maroon border border-gray-200 rounded-lg px-3 py-1.5 transition-colors">Refresh</button>
+        <button onClick={() => loadData(activeDayShift?._id)} className="text-xs text-gray-500 hover:text-ecana-maroon border border-gray-200 rounded-lg px-3 py-1.5 transition-colors">Refresh</button>
       </div>
 
       {shiftOptions.length > 0 && (
@@ -421,8 +429,8 @@ export default function RecordPaymentsPage() {
 
       {!activeDayShift && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-4 rounded-xl">
-          <p className="font-semibold">No Open Shift</p>
-          <p className="text-sm mt-1">Collections can be recorded here while a shift is open. Closed-shift entries go through Historical Data Entry.</p>
+          <p className="font-semibold">No collections pending</p>
+          <p className="text-sm mt-1">Open shifts and closed shifts with an outstanding collection will appear here.</p>
         </div>
       )}
 
@@ -442,7 +450,7 @@ export default function RecordPaymentsPage() {
             { label: 'Pumps with Sales', val: saleDisps.length, color: '' },
             { label: 'Settled', val: settledRows.length, color: 'text-green-700' },
             { label: 'Pending Balance', val: pendingRows.length, color: pendingRows.length > 0 ? 'text-amber-600' : '' },
-            { label: 'Total Today', val: `₦${fmt(totalCash + totalPos)}`, color: 'text-ecana-maroon', small: true },
+            { label: 'Total for Shift', val: `₦${fmt(totalCash + totalPos)}`, color: 'text-ecana-maroon', small: true },
           ].map(({ label, val, color, small }) => (
             <div key={label} className="card-modern p-4 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</p>
@@ -484,14 +492,18 @@ export default function RecordPaymentsPage() {
                         return <p className="text-xs text-gray-400">No sales recorded yet</p>;
                       })()}
                     </div>
-                    <button
-                      onClick={() => setExpandedId(isOpen ? null : disp.dispenserId)}
-                      className={`text-sm font-medium px-4 py-1.5 rounded-lg transition-colors ${isOpen ? 'bg-gray-100 text-gray-600' : 'bg-ecana-maroon text-white hover:bg-ecana-maroon/90'}`}
-                    >
-                      {isOpen ? 'Cancel' : 'Collect →'}
-                    </button>
+                    {activeDayShift.status === 'ended' ? (
+                      <span className="text-xs text-amber-700">Use Historical Data Entry for a missing initial collection.</span>
+                    ) : (
+                      <button
+                        onClick={() => setExpandedId(isOpen ? null : disp.dispenserId)}
+                        className={`text-sm font-medium px-4 py-1.5 rounded-lg transition-colors ${isOpen ? 'bg-gray-100 text-gray-600' : 'bg-ecana-maroon text-white hover:bg-ecana-maroon/90'}`}
+                      >
+                        {isOpen ? 'Cancel' : 'Collect →'}
+                      </button>
+                    )}
                   </div>
-                  {isOpen && (
+                  {isOpen && activeDayShift.status === 'in_progress' && (
                     <CollectionForm
                       dispenser={disp}
                       attendantName={attendantByDispenser[disp.dispenserId]}
@@ -537,7 +549,7 @@ export default function RecordPaymentsPage() {
                         <p className="text-xs text-gray-500">{disp.fuelType} · {disp.supervisorName}</p>
                         {!isMatch && salesEntry && (
                           <p className="text-xs text-amber-700 font-medium">
-                            Diff: ₦{fmt(Math.abs(dispTotal - salesEntry.expectedAmount))} (Expected: ₦{fmt(salesEntry.expectedAmount)})
+                            Remaining: ₦{fmt(outstanding)} (Expected: ₦{fmt(salesEntry.expectedAmount)})
                           </p>
                         )}
                       </div>
@@ -571,7 +583,7 @@ export default function RecordPaymentsPage() {
                     ))}
                   </div>
 
-                  {activeDayShift && (
+                  {activeDayShift && outstanding > 0.01 && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
                       {isOpen ? (
                         <div className="space-y-2">
@@ -582,13 +594,14 @@ export default function RecordPaymentsPage() {
                             meterReading={metersByDispenser[disp.dispenserId] || null}
                             pricePerLiter={activeDayShift?.pricesAtStart?.[disp.fuelType]}
                             activeDayShift={activeDayShift}
+                            previouslyCollected={collected}
                             onSubmitted={() => { setExpandedId(null); loadData(activeDayShift._id); }}
                           />
                           <button onClick={() => setExpandedId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
                         </div>
                       ) : (
                         <button onClick={() => setExpandedId(`extra-${disp.dispenserId}`)} className="text-xs text-gray-400 hover:text-ecana-maroon transition-colors">
-                          + Add another collection
+                          {activeDayShift.status === 'ended' ? '+ Settle remaining balance' : '+ Add another collection'}
                         </button>
                       )}
                     </div>
@@ -603,13 +616,13 @@ export default function RecordPaymentsPage() {
       {activeDayShift && dispensers.length === 0 && (
         <Card>
           <p className="text-sm text-amber-700 text-center py-4">
-            No pumps activated for today&apos;s shift. Ask the manager to begin the day.
+            No pumps were activated for this shift.
           </p>
         </Card>
       )}
 
       {(totalCash > 0 || totalPos > 0) && (
-        <Card title="Today's Collection Summary">
+        <Card title="Selected Shift Collection Summary">
           <div className="space-y-2">
             <div className="flex justify-between text-sm text-gray-600"><span>Total Cash</span><span className="font-semibold">₦{fmt(totalCash)}</span></div>
             <div className="flex justify-between text-sm text-gray-600"><span>Total POS</span><span className="font-semibold">₦{fmt(totalPos)}</span></div>

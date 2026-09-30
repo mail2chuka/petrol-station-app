@@ -26,9 +26,10 @@ export function calculateShiftSummary(sales, payments) {
 
   const expectedAmount = Object.values(totalSales).reduce((sum, product) => sum + product.amount, 0);
   const actualAmount = cash + pos;
-  const collectionOutstanding = Object.values(byPump).reduce((sum, pump) => (
+  const unroundedOutstanding = Object.values(byPump).reduce((sum, pump) => (
     pump.liters > 0 ? sum + Math.max(0, pump.expected - pump.collected) : sum
   ), 0);
+  const collectionOutstanding = Math.round(unroundedOutstanding * 100) / 100;
 
   return {
     totalSales,
