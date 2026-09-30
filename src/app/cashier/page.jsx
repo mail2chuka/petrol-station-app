@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import Card from '@/components/Card';
+import { FUEL_TYPES, FUEL_TYPE_LABELS } from '@/lib/constants';
 
 function today() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
@@ -27,27 +28,36 @@ export default function CashierDashboard() {
 
   const loadData = useCallback(async () => {
     if (!stationId) return;
-    setLoading(true);
     try {
       const shiftRes = await fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`);
+      if (!shiftRes.ok) throw new Error('Failed to load active shift');
       const shiftData = await shiftRes.json();
       const shift = (shiftData.dayShifts || [])[0] || null;
-      setActiveDayShift(shift);
 
       // Payments are scoped to the active shift (not just today's date) so a
       // pump reused across shifts doesn't show a prior shift's collection as
       // "already collected" for the current shift, and the totals below don't
       // double up an earlier ended shift's collections into today's figures.
-      const [paymentsData, depositsData, salesData] = await Promise.all([
+      const [paymentsRes, depositsRes, salesRes] = await Promise.all([
         shift
-          ? fetch(`/api/payments?stationId=${stationId}&dayShiftId=${shift._id}`).then(r => r.json())
-          : Promise.resolve({ paymentRecords: [] }),
-        fetch(`/api/cash-deposits?stationId=${stationId}&date=${today()}`).then(r => r.json()),
+          ? fetch(`/api/payments?stationId=${stationId}&dayShiftId=${shift._id}`)
+          : Promise.resolve(null),
+        fetch(`/api/cash-deposits?stationId=${stationId}&date=${today()}`),
         shift
-          ? fetch(`/api/sales?stationId=${stationId}&dayShiftId=${shift._id}`).then(r => r.json())
-          : Promise.resolve({ salesEntries: [] }),
+          ? fetch(`/api/sales?stationId=${stationId}&dayShiftId=${shift._id}`)
+          : Promise.resolve(null),
       ]);
 
+      if (!depositsRes.ok || (paymentsRes && !paymentsRes.ok) || (salesRes && !salesRes.ok)) {
+        throw new Error('Failed to load cashier dashboard data');
+      }
+      const [paymentsData, depositsData, salesData] = await Promise.all([
+        paymentsRes ? paymentsRes.json() : { paymentRecords: [] },
+        depositsRes.json(),
+        salesRes ? salesRes.json() : { salesEntries: [] },
+      ]);
+
+      setActiveDayShift(shift);
       setPayments(paymentsData.paymentRecords || []);
       setSalesEntries(salesData.salesEntries || []);
       setDeposits(depositsData.cashDeposits || []);
@@ -60,7 +70,16 @@ export default function CashierDashboard() {
 
   useEffect(() => {
     if (stationId) loadData();
-  }, [session]);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') loadData();
+    }, 30000);
+    const onFocus = () => loadData();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [stationId, loadData]);
 
   // Track collection per pump (dispenserId), not per supervisor
   const collectedMap = {};
@@ -84,6 +103,20 @@ export default function CashierDashboard() {
   const totalPos = payments.reduce((s, p) => s + (p.posReceived || 0), 0);
   const totalCollected = totalCash + totalPos;
   const totalDeposited = deposits.reduce((s, d) => s + (d.amount || 0), 0);
+
+  const productTypes = [...new Set([
+    ...dispensers.map(d => d.fuelType),
+    ...salesEntries.map(s => s.fuelType),
+  ].filter(Boolean))].sort((a, b) => {
+    const order = Object.values(FUEL_TYPES);
+    return order.indexOf(a) - order.indexOf(b);
+  });
+  const productTotals = Object.fromEntries(productTypes.map(type => [type, { liters: 0, expectedAmount: 0 }]));
+  for (const sale of salesEntries) {
+    if (!productTotals[sale.fuelType]) continue;
+    productTotals[sale.fuelType].liters += Number(sale.liters) || 0;
+    productTotals[sale.fuelType].expectedAmount += Number(sale.expectedAmount) || 0;
+  }
 
   const todayLabel = new Date(today() + 'T12:00:00').toLocaleDateString('en-NG', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -137,6 +170,24 @@ export default function CashierDashboard() {
               <p className="text-lg sm:text-xl font-bold text-green-700 break-words tabular-nums leading-tight">₦{fmt(totalDeposited)}</p>
             </div>
           </div>
+
+          {activeDayShift && (
+            <Card title="Fuel Sold This Shift" subtitle="Supervisor entries for the active shift at your station. Updates automatically.">
+              {productTypes.length === 0 ? (
+                <p className="text-sm text-gray-500">No fuel products are assigned to this shift.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {productTypes.map(type => (
+                    <div key={type} className="rounded-xl border border-gray-200 p-4">
+                      <p className="text-sm font-semibold text-gray-800">{FUEL_TYPE_LABELS[type] || type}</p>
+                      <p className="mt-2 text-xl font-bold tabular-nums text-gray-900">{fmt(productTotals[type].liters)} L</p>
+                      <p className="mt-1 text-sm tabular-nums text-gray-600">Expected: ₦{fmt(productTotals[type].expectedAmount)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
 
           {activeDayShift && dispensers.length > 0 && (
             <Card title="Sales Pump Collection Status">

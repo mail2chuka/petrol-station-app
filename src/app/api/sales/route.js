@@ -186,7 +186,9 @@ export async function GET(request) {
 
     const salesEntries = await SalesEntry.find(query)
       .sort({ createdAt: -1 })
-      .limit(100);
+      // A shift summary must include every supervisor entry, even when a
+      // station has more than 100 entries across its pumps.
+      .limit(dayShiftId ? 0 : 100);
 
     return NextResponse.json({ salesEntries });
   } catch (error) {
