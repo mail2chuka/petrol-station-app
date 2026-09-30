@@ -5,6 +5,7 @@ import AttendantAssignment from '@/models/AttendantAssignment';
 import Attendant from '@/models/Attendant';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { findOpenShiftForEntry, CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 
 // GET /api/pump-reassignments?stationId=&from=&to=&attendantId=&dispenserId=
 export async function GET(request) {
@@ -56,8 +57,16 @@ export async function POST(request) {
       return NextResponse.json({ error: 'date, dispenserId, toAttendantId, and reason are required' }, { status: 400 });
     }
 
+    const openShift = await findOpenShiftForEntry({ stationId, date });
+    if (!openShift) {
+      return NextResponse.json({ error: CLOSED_SHIFT_ENTRY_ERROR }, { status: 409 });
+    }
+    const shiftIdMatch = (openShift.shiftOrder || 1) === 1
+      ? { $in: [openShift._id, null] }
+      : openShift._id;
+
     // Get current assignment to record the "from" attendant
-    const currentAssignment = await AttendantAssignment.findOne({ stationId, date, dispenserId }).lean();
+    const currentAssignment = await AttendantAssignment.findOne({ stationId, date, dispenserId, dayShiftId: shiftIdMatch }).lean();
 
     const toAttendant = await Attendant.findById(toAttendantId).lean();
     if (!toAttendant) return NextResponse.json({ error: 'New attendant not found' }, { status: 404 });
@@ -83,8 +92,9 @@ export async function POST(request) {
 
     // Update the active assignment
     await AttendantAssignment.findOneAndUpdate(
-      { stationId, date, dispenserId },
+      { stationId, date, dispenserId, dayShiftId: shiftIdMatch },
       {
+        dayShiftId: openShift._id,
         attendantId: toAttendant._id,
         attendantStaffNumber: toAttendant.staffNumber,
         attendantName: toAttendant.name,

@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import MeterReading from '@/models/MeterReading';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { findOpenShiftForEntry, CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 
 // PATCH /api/meter-readings/[id] - Admin correction of opening/closing/RTT values
 export async function PATCH(request, { params }) {
@@ -21,6 +22,14 @@ export async function PATCH(request, { params }) {
     if (!reading) {
       return NextResponse.json({ error: 'Meter reading not found' }, { status: 404 });
     }
+
+    const openShift = await findOpenShiftForEntry({
+      stationId: reading.stationId,
+      date: new Date(reading.date).toISOString().slice(0, 10),
+      dayShiftId: reading.dayShiftId,
+      legacyRecord: true,
+    });
+    if (!openShift) return NextResponse.json({ error: CLOSED_SHIFT_ENTRY_ERROR }, { status: 409 });
 
     if (body.opening !== undefined) reading.opening = parseFloat(body.opening);
     if (body.closing !== undefined) reading.closing = parseFloat(body.closing);

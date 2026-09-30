@@ -331,7 +331,7 @@ function DetailModal({ item, onClose, onSaved }) {
     );
   }
 
-  const canEdit = editableTypes.includes(item.type);
+  const canEdit = editableTypes.includes(item.type) && item.shiftStatus === 'in_progress' && item.type !== 'tankReading';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
@@ -411,7 +411,7 @@ function ToleranceHeader() {
 }
 
 // ── Day Detail View (4-section) ───────────────────────────────────────────────
-function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReopen, onAddPump, onRemovePump, stationDispensers = [] }) {
+function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onAddPump, onRemovePump, stationDispensers = [] }) {
   const [activeSection, setActiveSection] = useState('supervisor');
   const [cashierSubTab, setCashierSubTab] = useState('collections');
   const [supervisorFuel, setSupervisorFuel] = useState('');
@@ -462,6 +462,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
   const allShifts = [...(report.shifts || [])].sort((a, b) => (a.shiftOrder || 1) - (b.shiftOrder || 1));
   const showShiftTabs = allShifts.length > 1;
   const selectedShift = allShifts.find(sh => sh._id === selectedShiftId) || report.dayShift;
+  const showDetail = (item) => setDetailItem({ ...item, shiftStatus: selectedShift.status });
 
   // A doc with no dayShiftId predates multi-shift support for this date. It
   // can only belong to the earliest shift — the one that existed before a
@@ -613,16 +614,10 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
               {selectedShift.endTime && <Row label="End Time" value={fmtDate(selectedShift.endTime)} />}
               {selectedShift.endedByName && <Row label="Ended By" value={selectedShift.endedByName} />}
             </dl>
-            {selectedShift.status === 'ended' && onReopen && (
-              <div className="mt-4 pt-3 border-t border-gray-100">
-                <button
-                  onClick={() => onReopen(selectedShift._id)}
-                  className="text-xs font-medium px-3 py-1.5 rounded-lg border border-ecana-maroon text-ecana-maroon hover:bg-ecana-maroon hover:text-white transition-colors"
-                >
-                  Re-open day
-                </button>
-                <p className="text-xs text-gray-400 mt-1.5">Returns the day to In Progress so entries can be corrected or pumps added. You must end the day again afterwards.</p>
-              </div>
+            {selectedShift.status === 'ended' && (
+              <p className="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
+                Closed shift corrections are made in Historical Data Entry.
+              </p>
             )}
           </Card>
 
@@ -662,7 +657,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                             : selectedShift.pricesAtStart?.[d.fuelType];
                           const rowColor = d.tankId ? tcMap[d.tankId] || '' : '';
                           return (
-                            <ClickRow key={i} className={rowColor} onClick={() => setDetailItem({ type: 'assignment', data: { ...d, priceAtStart: price } })}>
+                            <ClickRow key={i} className={rowColor} onClick={() => showDetail({ type: 'assignment', data: { ...d, priceAtStart: price } })}>
                               <TD className="font-medium">{d.dispenserName}</TD>
                               <TD>{d.fuelType}</TD>
                               <TD>{d.tankLabel || '—'}</TD>
@@ -791,7 +786,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                           const rowColor = tankId ? tankColorMap[tankId] || '' : '';
                           const netSold = r.closing != null ? fmtNum(Math.max(0, r.closing - r.opening - (r.rtt || 0))) : '—';
                           return (
-                            <ClickRow key={r._id || i} className={rowColor} onClick={() => setDetailItem({ type: 'reading', data: r })}>
+                            <ClickRow key={r._id || i} className={rowColor} onClick={() => showDetail({ type: 'reading', data: r })}>
                               <TD className="font-medium">{attendantAssignments[r.pumpId] || r.pumpLabel || r.pumpId}</TD>
                               <TD>{r.supervisorName}</TD>
                               <TD>{r.opening}</TD>
@@ -849,7 +844,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                           const rowColor = tankColorMap[tankId] || '';
                           const enteredBy = tank.closing?.supervisorName || tank.opening?.supervisorName || '—';
                           return (
-                            <ClickRow key={tankId} className={rowColor} onClick={() => setDetailItem({
+                            <ClickRow key={tankId} className={rowColor} onClick={() => showDetail({
                               type: 'tankReading',
                               data: {
                                 ...tank,
@@ -935,7 +930,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                       <thead><tr><TH>Time</TH><TH>Pump</TH><TH>Fuel</TH><TH>Supervisor</TH><TH>Cash</TH><TH>POS</TH><TH>Total</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
                         {shiftPaymentRecords.map((p, i) => (
-                          <ClickRow key={p._id || i} onClick={() => setDetailItem({ type: 'payment', data: p })}>
+                          <ClickRow key={p._id || i} onClick={() => showDetail({ type: 'payment', data: p })}>
                             <TD>{new Date(p.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</TD>
                             <TD className="font-medium">{p.dispenserName || '—'}</TD>
                             <TD>{p.fuelType || '—'}</TD>
@@ -965,7 +960,7 @@ function DayDetail({ report, deposits, detailDate, setDetailItem, loading, onReo
                       <thead><tr><TH>Amount</TH><TH>Bank</TH><TH>Deposited By</TH><TH>Status</TH></tr></thead>
                       <tbody className="divide-y divide-gray-100">
                         {depositsForDate.map((dep, i) => (
-                          <ClickRow key={dep._id || i} onClick={() => setDetailItem({ type: 'deposit', data: dep })}>
+                          <ClickRow key={dep._id || i} onClick={() => showDetail({ type: 'deposit', data: dep })}>
                             <TD className="font-semibold">{fmtN(dep.amount)}</TD>
                             <TD>{dep.bankName}</TD>
                             <TD>{dep.initiatedByCashierName}</TD>
@@ -1361,22 +1356,6 @@ function AdminReportsPageContent() {
     setDetailItem(null);
   };
 
-  const reopenDay = useCallback(async (dayShiftId) => {
-    if (!dayShiftId) return;
-    if (!window.confirm('Re-open this ended day? It will return to In Progress so entries can be corrected or pumps added. You must end the day again afterwards.')) return;
-    setDetailError('');
-    try {
-      const res = await fetch(`/api/day-shifts/${dayShiftId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'reopen' }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setDetailError(data.error || 'Failed to re-open day'); return; }
-      fetchReport(detailDate);
-    } catch { setDetailError('Network error.'); }
-  }, [detailDate, fetchReport]);
-
   const addPumpToDay = useCallback(async (dayShiftId, pumpId) => {
     if (!dayShiftId || !pumpId) return;
     setDetailError('');
@@ -1483,7 +1462,6 @@ function AdminReportsPageContent() {
             detailDate={detailDate}
             setDetailItem={setDetailItem}
             loading={detailLoading}
-            onReopen={reopenDay}
             onAddPump={addPumpToDay}
             onRemovePump={removePumpFromDay}
             stationDispensers={(stations.find(s => s._id === selectedStation)?.dispensers) || []}

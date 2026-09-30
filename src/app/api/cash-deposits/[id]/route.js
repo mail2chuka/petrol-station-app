@@ -4,6 +4,7 @@ import CashDeposit from '@/models/CashDeposit';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/audit';
 import { ROLES } from '@/lib/constants';
+import { findOpenShiftForEntry, CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 
 // PATCH /api/cash-deposits/[id] — admin edits deposit amount
 export async function PATCH(request, { params }) {
@@ -27,6 +28,12 @@ export async function PATCH(request, { params }) {
     if (!cashDeposit) {
       return NextResponse.json({ error: 'Cash deposit not found' }, { status: 404 });
     }
+
+    const openShift = await findOpenShiftForEntry({
+      stationId: cashDeposit.stationId,
+      date: new Date(cashDeposit.forDate).toISOString().slice(0, 10),
+    });
+    if (!openShift) return NextResponse.json({ error: CLOSED_SHIFT_ENTRY_ERROR }, { status: 409 });
 
     const previousAmount = cashDeposit.amount;
     cashDeposit.amount = amount;

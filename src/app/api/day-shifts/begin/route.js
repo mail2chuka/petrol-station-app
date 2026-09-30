@@ -29,6 +29,10 @@ export async function POST(request) {
 
     const body = await request.json();
     const validatedData = beginDaySchema.parse(body);
+    const todayOperatingDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+    if (validatedData.date !== todayOperatingDate) {
+      return NextResponse.json({ error: 'A live shift can only be opened for the current operating day. Use Historical Data Entry for past dates.' }, { status: 409 });
+    }
 
     // Managers can only manage their own station
     if (currentUser.role === ROLES.MANAGER && currentUser.stationId !== validatedData.stationId) {

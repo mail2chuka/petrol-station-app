@@ -6,6 +6,7 @@ import MeterReading from '@/models/MeterReading';
 import Station from '@/models/Station';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { findOpenShiftForEntry, CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 
 const updateSchema = z.object({
   action: z.enum(['add', 'remove']),
@@ -23,7 +24,8 @@ export async function PATCH(request, { params }) {
     }
 
     const payload = updateSchema.parse(await request.json());
-    const opening = await PumpOpening.findById(params.id);
+    const { id } = await params;
+    const opening = await PumpOpening.findById(id);
 
     if (!opening) {
       return NextResponse.json({ error: 'Pump opening record not found' }, { status: 404 });
@@ -31,6 +33,14 @@ export async function PATCH(request, { params }) {
 
     if (currentUser.role === ROLES.MANAGER && currentUser.stationId !== opening.stationId.toString()) {
       return NextResponse.json({ error: 'Managers can only manage their own station' }, { status: 403 });
+    }
+
+    const openShift = await findOpenShiftForEntry({
+      stationId: opening.stationId,
+      date: new Date(opening.date).toISOString().slice(0, 10),
+    });
+    if (!openShift) {
+      return NextResponse.json({ error: CLOSED_SHIFT_ENTRY_ERROR }, { status: 409 });
     }
 
     const station = await Station.findById(opening.stationId);

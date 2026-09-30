@@ -7,7 +7,6 @@ import PumpOpening from '@/models/PumpOpening';
 import MeterReading from '@/models/MeterReading';
 import SalesEntry from '@/models/SalesEntry';
 import PaymentRecord from '@/models/PaymentRecord';
-import StockMovement from '@/models/StockMovement';
 import { requireAuth, requireStationAccess } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
@@ -193,44 +192,8 @@ export async function PATCH(request, { params }) {
 
     // ── RE-OPEN DAY ───────────────────────────────────────────────────────────
     if (action === 'reopen') {
-      if (currentUser.role !== ROLES.ADMIN) {
-        await session.abortTransaction();
-        return NextResponse.json({ error: 'Only an admin can re-open a day' }, { status: 403 });
-      }
-      if (dayShift.status !== DAY_STATUS.ENDED) {
-        await session.abortTransaction();
-        return NextResponse.json({ error: 'Only an ended day can be re-opened' }, { status: 400 });
-      }
-      // Guard: don't re-open a past day while another day is currently in progress.
-      const otherActive = await DayShift.findOne({
-        stationId, status: DAY_STATUS.IN_PROGRESS, _id: { $ne: dayShift._id },
-      }).session(session);
-      if (otherActive) {
-        await session.abortTransaction();
-        return NextResponse.json({ error: 'Another day is currently in progress. End it before re-opening a past day.' }, { status: 400 });
-      }
-
-      // Drop the end-of-day closing StockMovements this shift created, so re-ending
-      // the day won't create duplicate stock-movement records.
-      const removed = await StockMovement.deleteMany(
-        { stationId, referenceId: dayShift._id, movementType: 'sale' },
-        { session }
-      );
-
-      dayShift.status = DAY_STATUS.IN_PROGRESS;
-      dayShift.endedBy = null;
-      dayShift.endedByName = null;
-      dayShift.endTime = null;
-      await dayShift.save({ session });
-
-      await session.commitTransaction();
-      await createAuditLog({
-        userId: currentUser.id, userName: currentUser.name, userRole: currentUser.role,
-        action: AUDIT_ACTIONS.REOPEN_DAY, resource: AUDIT_RESOURCES.DAY_SHIFT,
-        resourceId: dayShift._id.toString(), stationId, stationName: dayShift.stationName,
-        details: { date: dateStr, removedClosingMovements: removed.deletedCount },
-      });
-      return NextResponse.json({ dayShift });
+      await session.abortTransaction();
+      return NextResponse.json({ error: 'Closed shifts stay closed. Use Historical Data Entry for corrections.' }, { status: 409 });
     }
 
     await session.abortTransaction();

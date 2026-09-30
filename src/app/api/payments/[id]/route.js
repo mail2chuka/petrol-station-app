@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import PaymentRecord from '@/models/PaymentRecord';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { findOpenShiftForEntry, CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 
 // PATCH /api/payments/[id] - Admin correction of cash/POS amounts
 export async function PATCH(request, { params }) {
@@ -21,6 +22,13 @@ export async function PATCH(request, { params }) {
     if (!record) {
       return NextResponse.json({ error: 'Payment record not found' }, { status: 404 });
     }
+
+    const openShift = await findOpenShiftForEntry({
+      stationId: record.stationId,
+      date: new Date(record.date).toISOString().slice(0, 10),
+      dayShiftId: record.dayShiftId,
+    });
+    if (!openShift) return NextResponse.json({ error: CLOSED_SHIFT_ENTRY_ERROR }, { status: 409 });
 
     if (body.cashReceived !== undefined) record.cashReceived = parseFloat(body.cashReceived) || 0;
     if (body.posReceived !== undefined) record.posReceived = parseFloat(body.posReceived) || 0;

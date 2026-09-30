@@ -22,6 +22,7 @@ function OffloadPageContent() {
 
   const [station, setStation] = useState(null);
   const [trucks, setTrucks] = useState([]);
+  const [activeShift, setActiveShift] = useState(null);
   const [tankLevels, setTankLevels] = useState({}); // tankId -> last closing dipstick
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -45,14 +46,17 @@ function OffloadPageContent() {
     if (!activeStationId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [stRes, truckRes, levelRes] = await Promise.all([
+      const [stRes, truckRes, levelRes, shiftRes] = await Promise.all([
         fetch(`/api/stations/${activeStationId}`),
         fetch('/api/trucks'),
         fetch(`/api/tank-stock?stationId=${activeStationId}&lastPerTank=true`),
+        fetch(`/api/day-shifts?stationId=${activeStationId}&status=in_progress`),
       ]);
       const stData = await stRes.json();
       const truckData = await truckRes.json();
       const levelData = await levelRes.json();
+      const shiftData = await shiftRes.json();
+      setActiveShift((shiftData.dayShifts || [])[0] || null);
 
       const st = stData.station;
       setStation(st || null);
@@ -177,6 +181,12 @@ function OffloadPageContent() {
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-4 text-sm">{error}</div>}
 
+      {!activeShift && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl mb-4 text-sm">
+          Open a shift before recording a delivery. Closed-shift entries go through Historical Data Entry.
+        </div>
+      )}
+
       {result && (
         <div className={`px-4 py-4 rounded-xl mb-4 text-sm border ${result.shortage > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : result.excess > 0 ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-green-50 border-green-200 text-green-800'}`}>
           <p className="font-semibold">Offload recorded.</p>
@@ -264,7 +274,7 @@ function OffloadPageContent() {
           </div>
         )}
 
-        <Button type="submit" variant="success" disabled={submitting || activeTrucks.length === 0} className="w-full">
+        <Button type="submit" variant="success" disabled={submitting || !activeShift || activeTrucks.length === 0} className="w-full">
           {submitting ? 'Recording...' : 'Record Offload'}
         </Button>
       </form>

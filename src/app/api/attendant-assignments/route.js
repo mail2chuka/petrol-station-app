@@ -5,6 +5,7 @@ import Attendant from '@/models/Attendant';
 import DayShift from '@/models/DayShift';
 import { requireAuth, requireStationAccess } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { findOpenShiftForEntry, CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 
 // GET /api/attendant-assignments?stationId=&date=YYYY-MM-DD
 export async function GET(request) {
@@ -46,23 +47,25 @@ export async function POST(request) {
       return NextResponse.json({ error: 'date, dispenserId, and attendantId are required' }, { status: 400 });
     }
 
+    const openShift = await findOpenShiftForEntry({ stationId, date, dayShiftId });
+    if (!openShift) {
+      return NextResponse.json({ error: CLOSED_SHIFT_ENTRY_ERROR }, { status: 409 });
+    }
+
     const attendant = await Attendant.findById(attendantId).lean();
     if (!attendant) return NextResponse.json({ error: 'Attendant not found' }, { status: 404 });
 
     // A doc with no dayShiftId predates multi-shift support for this date —
     // it can only belong to the earliest shift, never a later one added on
     // top of an already-recorded date.
-    let shiftIdMatch = { $in: [dayShiftId || null, null] };
-    if (dayShiftId) {
-      const shiftsForDate = await DayShift.find({ stationId, date }).lean();
-      const earliestShiftForDate = shiftsForDate.length
-        ? [...shiftsForDate].sort((a, b) =>
-            (a.shiftOrder || 1) - (b.shiftOrder || 1) || String(a._id).localeCompare(String(b._id))
-          )[0]
-        : null;
-      const isEarliestShift = !!(earliestShiftForDate && String(dayShiftId) === String(earliestShiftForDate._id));
-      shiftIdMatch = isEarliestShift ? { $in: [dayShiftId, null] } : dayShiftId;
-    }
+    const shiftsForDate = await DayShift.find({ stationId, date }).lean();
+    const earliestShiftForDate = shiftsForDate.length
+      ? [...shiftsForDate].sort((a, b) =>
+          (a.shiftOrder || 1) - (b.shiftOrder || 1) || String(a._id).localeCompare(String(b._id))
+        )[0]
+      : null;
+    const isEarliestShift = !!(earliestShiftForDate && String(openShift._id) === String(earliestShiftForDate._id));
+    const shiftIdMatch = isEarliestShift ? { $in: [openShift._id, null] } : openShift._id;
 
     const assignment = await AttendantAssignment.findOneAndUpdate(
       // Match either this shift's own doc or — only for the earliest shift on
@@ -72,7 +75,7 @@ export async function POST(request) {
       {
         stationId,
         date,
-        dayShiftId: dayShiftId || null,
+        dayShiftId: openShift._id,
         dispenserId,
         dispenserName: dispenserName || '',
         fuelType: fuelType || '',

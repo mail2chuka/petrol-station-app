@@ -288,11 +288,11 @@ export default function RecordPaymentsPage() {
     try {
       const shiftRes = await fetch(`/api/day-shifts?stationId=${stationId}`);
       const shiftData = await shiftRes.json();
-      const shifts = shiftData.dayShifts || [];
+      const shifts = (shiftData.dayShifts || []).filter(item => item.status === 'in_progress');
       setShiftOptions(shifts);
       const shift = requestedShiftId
         ? shifts.find(item => item._id === requestedShiftId)
-        : shifts.find(item => item.status === 'in_progress') || shifts.find(item => item.collectionStatus === 'pending') || shifts[0] || null;
+        : shifts[0] || null;
       setActiveDayShift(shift);
       setDispensers(shift?.dispenserAssignments || []);
 
@@ -421,8 +421,8 @@ export default function RecordPaymentsPage() {
 
       {!activeDayShift && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-4 rounded-xl">
-          <p className="font-semibold">No Active Day Shift</p>
-          <p className="text-sm mt-1">The manager has not started today&apos;s day yet.</p>
+          <p className="font-semibold">No Open Shift</p>
+          <p className="text-sm mt-1">Collections can be recorded here while a shift is open. Closed-shift entries go through Historical Data Entry.</p>
         </div>
       )}
 
@@ -588,7 +588,7 @@ export default function RecordPaymentsPage() {
                         </div>
                       ) : (
                         <button onClick={() => setExpandedId(`extra-${disp.dispenserId}`)} className="text-xs text-gray-400 hover:text-ecana-maroon transition-colors">
-                          {activeDayShift.status === 'ended' ? '+ Record settlement' : '+ Add another collection'}
+                          + Add another collection
                         </button>
                       )}
                     </div>

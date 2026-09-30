@@ -16,7 +16,7 @@ function fmtTime(dt) {
 }
 
 // Single card showing both opening and closing dipstick for a tank
-function TankCard({ tank, openingEntry, closingEntry, prevDayClosing, canEdit, stationId, date, onSaved }) {
+function TankCard({ tank, openingEntry, closingEntry, prevDayClosing, canEdit, stationId, date, dayShiftId, onSaved }) {
   const [stage, setStage] = useState('idle'); // 'idle' | 'opening_form' | 'closing_form'
   const [openingVal, setOpeningVal] = useState('');
   const [closingVal, setClosingVal] = useState('');
@@ -40,6 +40,7 @@ function TankCard({ tank, openingEntry, closingEntry, prevDayClosing, canEdit, s
           stationId,
           tankId: tank._id,
           date,
+          dayShiftId,
           period,
           stockValue: parseFloat(value),
           notes: noteVal || '',
@@ -207,6 +208,7 @@ export default function TankStockPage() {
   const [date, setDate] = useState(today());
   const [loading, setLoading] = useState(false);
   const [markedDates, setMarkedDates] = useState({});
+  const [activeShift, setActiveShift] = useState(null);
 
   const stationId = session?.user?.stationId;
 
@@ -240,20 +242,28 @@ export default function TankStockPage() {
       prevDate.setDate(prevDate.getDate() - 1);
       const prevDateStr = prevDate.toISOString().split('T')[0];
 
-      const [stationRes, stockRes, prevRes] = await Promise.all([
+      const [stationRes, stockRes, prevRes, shiftRes] = await Promise.all([
         fetch(`/api/stations/${stationId}`),
         fetch(`/api/tank-stock?stationId=${stationId}&date=${dateStr}`),
         fetch(`/api/tank-stock?stationId=${stationId}&date=${prevDateStr}`),
+        fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
       ]);
       const stationData = await stationRes.json();
       const stockData = await stockRes.json();
       const prevData = await prevRes.json();
+      const shiftData = await shiftRes.json();
+      const openShift = (shiftData.dayShifts || [])[0] || null;
+      setActiveShift(openShift);
 
       const activeTanks = (stationData.station?.tanks || []).filter(t => t.isActive !== false);
       setTanks(activeTanks);
 
       const map = {};
+      const isOpenShiftDate = openShift && new Date(openShift.date).toISOString().slice(0, 10) === dateStr;
       for (const entry of (stockData.entries || [])) {
+        if (isOpenShiftDate && (entry.dayShiftId
+          ? String(entry.dayShiftId) !== String(openShift._id)
+          : (openShift.shiftOrder || 1) > 1)) continue;
         map[`${entry.tankId}-${entry.period}`] = entry;
       }
       setExistingEntries(map);
@@ -274,15 +284,13 @@ export default function TankStockPage() {
     if (!stationId) return;
     fetchMonthMarks(date.slice(0, 7));
     fetchData(date);
-  }, [session]);
+  }, [stationId, date, fetchMonthMarks, fetchData]);
 
   const handleDateChange = (newDate) => {
     setDate(newDate);
-    fetchData(newDate);
-    if (newDate.slice(0, 7) !== date.slice(0, 7)) fetchMonthMarks(newDate.slice(0, 7));
   };
 
-  const isToday = date === today();
+  const isOpenShiftDate = activeShift && new Date(activeShift.date).toISOString().slice(0, 10) === date;
 
   return (
     <div className="space-y-6">
@@ -293,10 +301,15 @@ export default function TankStockPage() {
         </p>
       </div>
 
-      {isToday && (
+      {isOpenShiftDate && (
         <div className="px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
           Enter the physical dipstick reading (in litres) for each tank — opening at start of shift, closing at end of shift.
         </div>
+      )}
+      {!activeShift && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          No shift is open. Closed-shift dipstick corrections go through Historical Data Entry.
+        </p>
       )}
 
       <div className="flex flex-col lg:flex-row gap-6 items-start">
@@ -328,9 +341,10 @@ export default function TankStockPage() {
                 openingEntry={existingEntries[`${tank._id}-opening`] || null}
                 closingEntry={existingEntries[`${tank._id}-closing`] || null}
                 prevDayClosing={prevClosings[tank._id] ?? null}
-                canEdit={isToday}
+                canEdit={!!isOpenShiftDate}
                 stationId={stationId}
                 date={date}
+                dayShiftId={activeShift?._id}
                 onSaved={() => fetchData(date)}
               />
             ))

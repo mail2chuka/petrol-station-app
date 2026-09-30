@@ -12,6 +12,7 @@ import CashDeposit from '@/models/CashDeposit';
 import { requireAuth } from '@/lib/auth';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
+import { recalculateShiftSummary } from '@/lib/recalculateShiftSummary';
 
 const BACKFILL_PIN = '@ghty^&AHATY';
 
@@ -122,12 +123,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'type, stationId, and date are required.' }, { status: 400 });
     }
 
-    // Backfill is for historical days only — never the present or a future day.
-    // Today's live operations run through the normal begin/close flow.
-    const todayStart = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z');
-    if (new Date(date + 'T00:00:00.000Z') >= todayStart) {
+    // Closed shifts, including ones closed earlier today, are edited here.
+    // Open shifts continue through the live role pages.
+    const todayOperatingDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+    if (date > todayOperatingDate) {
       return NextResponse.json(
-        { error: 'Cannot backfill the current or a future day. Backfill is for past dates only.' },
+        { error: 'Cannot enter a future operating date.' },
         { status: 400 }
       );
     }
@@ -194,6 +195,10 @@ export async function POST(request) {
       });
       const existing = existingForDate.find((s) => (s.shiftKey || 'default') === shiftKey) || null;
 
+      if (existing?.status === DAY_STATUS.IN_PROGRESS || (!existing && date === todayOperatingDate)) {
+        return NextResponse.json({ error: 'Historical Data Entry is for closed shifts. Use the live role pages while a shift is open.' }, { status: 409 });
+      }
+
       if (existing) {
         // Day already has this shift: keep its _id, startTime, endTime, status and
         // started/ended-by. Only update the other data — do not re-stamp times.
@@ -249,6 +254,9 @@ export async function POST(request) {
     if (!shift) {
       return NextResponse.json({ error: 'No day shift found for this date/shift. Create the day shift first.' }, { status: 409 });
     }
+    if (shift.status !== DAY_STATUS.ENDED) {
+      return NextResponse.json({ error: 'This shift is still open. Use the live role pages until it closes.' }, { status: 409 });
+    }
     // A doc with no dayShiftId predates multi-shift support for this date —
     // it can only belong to the earliest shift, never a later one added on
     // top of an already-recorded date. See the matching comment in GET above.
@@ -300,6 +308,8 @@ export async function POST(request) {
         });
         pruned.tankStockEntries = tse.deletedCount;
       }
+
+      if (Array.isArray(keepDispenserIds)) await recalculateShiftSummary(shift._id);
 
       return NextResponse.json({ pruned }, { status: 200 });
     }
@@ -576,6 +586,7 @@ export async function POST(request) {
         enteredBy: currentUser.id,
         enteredByName: currentUser.name,
       });
+      await recalculateShiftSummary(shift._id);
       return NextResponse.json({ saleEntry }, { status: 200 });
     }
 
@@ -622,6 +633,8 @@ export async function POST(request) {
         { stationId: stationObjId, dayShiftId: shift._id, dispenserId },
         { $set: { cashAmount: cashVal, posAmount: posVal, totalAmount: total } }
       );
+
+      await recalculateShiftSummary(shift._id);
 
       return NextResponse.json({ payment }, { status: 200 });
     }

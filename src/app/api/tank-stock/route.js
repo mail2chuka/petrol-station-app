@@ -9,6 +9,7 @@ import SalesEntry from '@/models/SalesEntry';
 import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { findOpenShiftForEntry, CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 import { reconcile, expectedTolerance, isOverTolerance, resolveTolerancePercent } from '@/lib/reconciliation';
 
 const createSchema = z.object({
@@ -252,23 +253,21 @@ export async function POST(request) {
     const startDate = new Date(payload.date + 'T00:00:00.000Z');
     const endDate = new Date(payload.date + 'T23:59:59.999Z');
 
-    // Resolve which shift this entry belongs to. Callers that already know
-    // their active DayShift (manager/supervisor UI) pass it explicitly; older
-    // callers fall back to the date's shift the same way begin/end already do
-    // (arbitrary pick among same-date shifts — only ambiguous once a station
-    // has actually configured more than one shift).
+    // Resolve only the open shift for this operating date. Callers may pass
+    // its ID explicitly; otherwise the open shift at the station is used.
     const shiftsForDate = await DayShift.find({
       stationId: payload.stationId,
       date: { $gte: startDate, $lte: endDate },
     }).sort({ shiftOrder: 1, startTime: 1 });
-    let dayShiftId = payload.dayShiftId || null;
-    if (!dayShiftId) {
-      const fallbackShift = await DayShift.findOne({
-        stationId: payload.stationId,
-        date: { $gte: startDate, $lte: endDate },
-      }).sort({ status: 1, startTime: -1 });
-      dayShiftId = fallbackShift?._id || null;
+    const openShift = await findOpenShiftForEntry({
+      stationId: payload.stationId,
+      date: payload.date,
+      dayShiftId: payload.dayShiftId,
+    });
+    if (!openShift) {
+      return NextResponse.json({ error: CLOSED_SHIFT_ENTRY_ERROR }, { status: 409 });
     }
+    const dayShiftId = openShift._id;
 
     // A doc with no dayShiftId predates multi-shift support for this date —
     // it can only belong to the earliest shift (the one that existed before

@@ -50,12 +50,16 @@ export async function PATCH(request, { params }) {
 
     // Supervisors cannot edit entries from a closed day — only admins can
     const dayShift = await DayShift.findById(entry.dayShiftId).session(session);
-    if (dayShift && dayShift.status !== DAY_STATUS.IN_PROGRESS) {
+    if (!dayShift || dayShift.status !== DAY_STATUS.IN_PROGRESS) {
       await session.abortTransaction();
       return NextResponse.json(
-        { error: 'This shift is closed. Litres sold cannot be changed after close.' },
-        { status: 403 }
+        { error: 'This shift is closed. Use Historical Data Entry for corrections.' },
+        { status: 409 }
       );
+    }
+    if (currentUser.stationId !== dayShift.stationId.toString()) {
+      await session.abortTransaction();
+      return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
     }
 
     const totalAmount = cashAmount + posAmount;

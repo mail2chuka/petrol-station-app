@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import Card from '@/components/Card';
 
 function todayStr() {
-  return new Date().toISOString().split('T')[0];
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
 }
 
 function fmtTime(dt) {
@@ -199,6 +199,7 @@ function PumpAssignmentsPageContent() {
   const [date, setDate] = useState(todayStr());
   const [pumps, setPumps] = useState([]);
   const [assignments, setAssignments] = useState([]);
+  const [activeShift, setActiveShift] = useState(null);
   const [attendants, setAttendants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -213,14 +214,16 @@ function PumpAssignmentsPageContent() {
     setLoading(true);
     setError('');
     try {
-      const [stationRes, assignRes, attendantRes] = await Promise.all([
+      const [stationRes, assignRes, attendantRes, shiftRes] = await Promise.all([
         fetch(`/api/stations/${stationId}`),
         fetch(`/api/attendant-assignments?stationId=${stationId}&date=${date}`),
         fetch(`/api/attendants?stationId=${stationId}`),
+        fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`),
       ]);
-      const [stData, asgData, attData] = await Promise.all([
-        stationRes.json(), assignRes.json(), attendantRes.json(),
+      const [stData, asgData, attData, shiftData] = await Promise.all([
+        stationRes.json(), assignRes.json(), attendantRes.json(), shiftRes.json(),
       ]);
+      setActiveShift((shiftData.dayShifts || [])[0] || null);
       if (stationRes.ok) {
         const dispensers = stData.station?.dispensers || [];
         const activeDisp = dispensers.filter(d => d.isActive !== false);
@@ -252,9 +255,14 @@ function PumpAssignmentsPageContent() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const isToday = date === todayStr();
+  const isToday = activeShift && new Date(activeShift.date).toISOString().slice(0, 10) === date;
   const assignmentByPump = {};
-  for (const a of assignments) assignmentByPump[a.dispenserId] = a;
+  for (const a of assignments) {
+    if (isToday && (a.dayShiftId
+      ? String(a.dayShiftId) !== String(activeShift._id)
+      : (activeShift.shiftOrder || 1) > 1)) continue;
+    assignmentByPump[a.dispenserId] = a;
+  }
 
   return (
     <div className="space-y-6">
@@ -297,7 +305,7 @@ function PumpAssignmentsPageContent() {
         <>
           {!isToday && (
             <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-xl text-sm">
-              Viewing past date — assignments are read-only.
+              No shift is open for this date. Assignments are read-only; closed-shift corrections go through Historical Data Entry.
             </div>
           )}
           {loading ? (

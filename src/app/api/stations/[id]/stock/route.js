@@ -10,6 +10,7 @@ import { requireAuth } from '@/lib/auth';
 import { offloadSchema } from '@/lib/validation';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
+import { CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 
 // POST /api/stations/[id]/stock - Record a truck offload (delivery)
 // Body: { truckId, driverName?, driverPhone?, fuelType, declaredLoad, supplier?, cost?, notes?,
@@ -84,6 +85,10 @@ export async function POST(request, { params }) {
       stationId: station._id,
       status: DAY_STATUS.IN_PROGRESS,
     }).session(session);
+    if (!activeShift) {
+      await session.abortTransaction();
+      return NextResponse.json({ error: CLOSED_SHIFT_ENTRY_ERROR }, { status: 409 });
+    }
 
     if (station.currentStock instanceof Map) station.currentStock.set(fuelType, newStock);
     else station.currentStock[fuelType] = newStock;
@@ -97,8 +102,8 @@ export async function POST(request, { params }) {
     const [movement] = await StockMovement.create([{
       stationId: station._id,
       stationName: station.name,
-      date: new Date(),
-      dayShiftId: activeShift?._id || null,
+      date: activeShift.date,
+      dayShiftId: activeShift._id,
       fuelType,
       movementType: 'receipt',
       isOffload: true,
@@ -130,19 +135,20 @@ export async function POST(request, { params }) {
     // the post-offload reading, so the dashboard / lastPerTank reflect the delivery
     // immediately. On a shift day, end-day later overwrites this with the true
     // end-of-day dipstick; the day's opening (if any) is preserved.
-    const offloadDayStart = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z');
-    const offloadDayEnd = new Date(new Date().toISOString().split('T')[0] + 'T23:59:59.999Z');
+    const offloadDayStart = new Date(activeShift.date);
+    const offloadDayEnd = new Date(offloadDayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
     for (const t of offloadDistribution) {
       const tank = stationTanks.get(t.tankId);
       const openingEntry = await TankStockEntry.findOne({
         stationId: station._id, tankId: t.tankId, period: 'opening',
         date: { $gte: offloadDayStart, $lte: offloadDayEnd },
+        dayShiftId: activeShift._id,
       }).session(session);
       const openingStock = openingEntry?.openingStock ?? t.openingDip;
       const variance = t.closingDip - openingStock;
       const variancePercent = openingStock > 0 ? (variance / openingStock) * 100 : 0;
       await TankStockEntry.findOneAndUpdate(
-        { stationId: station._id, tankId: t.tankId, period: 'closing', date: { $gte: offloadDayStart, $lte: offloadDayEnd } },
+        { stationId: station._id, tankId: t.tankId, period: 'closing', date: { $gte: offloadDayStart, $lte: offloadDayEnd }, dayShiftId: activeShift._id },
         {
           $set: {
             stationId: station._id,
@@ -152,6 +158,7 @@ export async function POST(request, { params }) {
             product: data.fuelType,
             date: offloadDayStart,
             period: 'closing',
+            dayShiftId: activeShift._id,
             openingStock,
             closingStockMeasured: t.closingDip,
             supervisorId: currentUser.id,

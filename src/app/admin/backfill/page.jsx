@@ -342,9 +342,10 @@ export default function BackfillPage() {
         if (ex.paymentRecords?.length) {
           const pa = { ...initPA };
           ex.paymentRecords.forEach((p) => {
+            const previous = pa[p.dispenserId] || { cash: '', pos: '' };
             pa[p.dispenserId] = {
-              cash: p.cashReceived != null ? String(p.cashReceived) : '',
-              pos: p.posReceived != null ? String(p.posReceived) : '',
+              cash: String((Number(previous.cash) || 0) + (Number(p.cashReceived) || 0)),
+              pos: String((Number(previous.pos) || 0) + (Number(p.posReceived) || 0)),
             };
           });
           setPayments(pa);
@@ -866,7 +867,7 @@ export default function BackfillPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Historical Data Entry</h1>
-          <p className="text-sm text-slate-500 mt-1">Enter past records for any station and date.</p>
+          <p className="text-sm text-slate-500 mt-1">Enter or correct records for closed shifts, including a shift closed today.</p>
         </div>
         <button
           onClick={() => router.push('/admin')}

@@ -14,6 +14,7 @@ import { requireAuth } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { computeShiftMeta } from '@/lib/shifts';
+import { calculateShiftSummary } from '@/lib/shiftSummary.mjs';
 
 // POST /api/day-shifts/[id]/end - End the day
 export async function POST(request, { params }) {
@@ -185,30 +186,8 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Build totalSales dynamically — supports PMS, AGO, DPK, LPG etc.
-    const totalSales = {};
-    salesEntries.forEach(sale => {
-      if (!totalSales[sale.fuelType]) totalSales[sale.fuelType] = { liters: 0, amount: 0 };
-      totalSales[sale.fuelType].liters += sale.liters;
-      totalSales[sale.fuelType].amount += sale.expectedAmount;
-    });
-
-    const totalPayments = {
-      cash: paymentRecords.reduce((sum, p) => sum + p.cashReceived, 0),
-      pos: paymentRecords.reduce((sum, p) => sum + p.posReceived, 0),
-    };
-
-    const expectedAmount = Object.values(totalSales).reduce((s, v) => s + v.amount, 0);
-    // actualAmount = total cash + POS collected by cashier (SalesEntry.totalAmount is never populated)
-    const actualAmount = totalPayments.cash + totalPayments.pos;
-    const discrepancy = actualAmount - expectedAmount;
-    // Debt belongs to the individual selling pump/supervisor. An overpayment
-    // on one pump must not hide a shortfall on another pump.
-    const collectionOutstanding = Object.entries(salesByDispenser).reduce((sum, [did, info]) => {
-      if (info.litersTotal <= 0) return sum;
-      const collected = paymentsByDispenser[did] || 0;
-      return sum + Math.max(0, info.expectedTotal - collected);
-    }, 0);
+    const shiftSummary = calculateShiftSummary(salesEntries, paymentRecords);
+    const { totalSales, totalPayments, expectedAmount, actualAmount, discrepancy } = shiftSummary;
 
     // Update station.currentStock from manager-measured closing tank entries
     // currentStock is a Map — use .get()/.set()
@@ -254,13 +233,7 @@ export async function POST(request, { params }) {
     dayShift.endedBy = currentUser.id;
     dayShift.endedByName = currentUser.name;
     dayShift.endTime = new Date();
-    dayShift.totalSales = totalSales;
-    dayShift.totalPayments = totalPayments;
-    dayShift.expectedAmount = expectedAmount;
-    dayShift.actualAmount = actualAmount;
-    dayShift.discrepancy = discrepancy;
-    dayShift.collectionOutstanding = collectionOutstanding;
-    dayShift.collectionStatus = dayShift.collectionOutstanding > 0 ? 'pending' : 'settled';
+    Object.assign(dayShift, shiftSummary);
 
     // If this isn't the last planned shift, either continue into the next
     // shift (carrying forward closing data as its opening) or recalibrate

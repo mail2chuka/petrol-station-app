@@ -4,6 +4,7 @@ import connectDB from '@/lib/db';
 import TankStockEntry from '@/models/TankStockEntry';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
+import { findOpenShiftForEntry, CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 
 const patchSchema = z.object({
   entryId: z.string().min(1),
@@ -65,6 +66,16 @@ export async function PATCH(request) {
 
     if (currentUser.role === ROLES.MANAGER && currentUser.stationId !== entry.stationId.toString()) {
       return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
+    }
+
+    const openShift = await findOpenShiftForEntry({
+      stationId: entry.stationId,
+      date: new Date(entry.date).toISOString().slice(0, 10),
+      dayShiftId: entry.dayShiftId,
+      legacyRecord: true,
+    });
+    if (!openShift) {
+      return NextResponse.json({ error: CLOSED_SHIFT_ENTRY_ERROR }, { status: 409 });
     }
 
     entry.closingStockManager = payload.closingStockManager;

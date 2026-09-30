@@ -84,6 +84,9 @@ export async function POST(request) {
     if (!activeDay) {
       return NextResponse.json({ error: 'Start shift before opening pumps' }, { status: 400 });
     }
+    if (new Date(activeDay.date).toISOString().slice(0, 10) !== validatedData.date) {
+      return NextResponse.json({ error: 'Pump openings must use the open shift’s operating date.' }, { status: 409 });
+    }
 
     const validPumpIds = new Set((station.dispensers || []).map(d => d.dispenserId));
     const invalidPump = validatedData.pumpIds.find(p => !validPumpIds.has(p));

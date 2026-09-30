@@ -48,6 +48,11 @@ export async function POST(request) {
       );
     }
 
+    if (currentUser.stationId !== dayShift.stationId.toString()) {
+      await session.abortTransaction();
+      return NextResponse.json({ error: 'Access denied to this station' }, { status: 403 });
+    }
+
     const assignment = dayShift.dispenserAssignments.find(
       d => d.dispenserId === validatedData.dispenserId
     );
