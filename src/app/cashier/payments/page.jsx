@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import Card from '@/components/Card';
 import Input from '@/components/Input';
@@ -83,6 +83,7 @@ function CollectionForm({ dispenser, attendantName, salesEntry, meterReading, pr
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const requestIdRef = useRef(null);
 
   const posTotal = posEntries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
   const grandTotal = (parseFloat(cash) || 0) + posTotal;
@@ -132,12 +133,14 @@ function CollectionForm({ dispenser, attendantName, salesEntry, meterReading, pr
     setSaving(true);
     setError('');
     try {
+      if (!requestIdRef.current) requestIdRef.current = crypto.randomUUID();
       const res = await fetch('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dayShiftId: activeDayShift._id,
           dispenserId: dispenser.dispenserId,
+          requestId: requestIdRef.current,
           cashReceived: cashAmt,
           posEntries: validPos.map(e => ({
             bank: e.bank,
@@ -149,6 +152,7 @@ function CollectionForm({ dispenser, attendantName, salesEntry, meterReading, pr
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Failed to record.'); return; }
+      requestIdRef.current = null;
       setCash(''); setPosEntries([emptyPosEntry()]); setNotes('');
       onSubmitted();
     } catch {

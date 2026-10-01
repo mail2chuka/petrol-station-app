@@ -2,17 +2,23 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import PaymentRecord from '@/models/PaymentRecord';
+import AuditLog from '@/models/AuditLog';
 import DayShift from '@/models/DayShift';
 import SalesEntry from '@/models/SalesEntry';
 import { requireAuth } from '@/lib/auth';
 import { paymentRecordSchema } from '@/lib/validation';
-import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { calculateShiftSummary } from '@/lib/shiftSummary.mjs';
+import { paymentRequestFingerprint } from '@/lib/paymentRequest.mjs';
+import { fromKobo, toKobo } from '@/lib/exactFuelMath.mjs';
 
 // POST /api/payments - Create a payment record
 export async function POST(request) {
   let session = null;
+  let requestId = null;
+  let requestFingerprint = null;
+  let currentStationId = null;
 
   try {
     const currentUser = await requireAuth();
@@ -28,6 +34,26 @@ export async function POST(request) {
 
     const body = await request.json();
     const validatedData = paymentRecordSchema.parse(body);
+    currentStationId = currentUser.stationId;
+    requestId = validatedData.requestId || null;
+    const posEntries = (validatedData.posEntries || [])
+      .filter(e => e.bank && Number(e.amount) > 0)
+      .map(e => ({ bank: e.bank.trim(), amount: Number(e.amount), terminalId: e.terminalId?.trim() || null }));
+    const hasCentPrecision = (amount) => Number.isFinite(amount) &&
+      Math.abs(amount * 100 - Math.round(amount * 100)) < 0.000001;
+    if (!hasCentPrecision(validatedData.cashReceived) || posEntries.some(e => !hasCentPrecision(e.amount))) {
+      return NextResponse.json({ error: 'Collection amounts must use at most two decimal places.' }, { status: 400 });
+    }
+    requestFingerprint = paymentRequestFingerprint({ ...validatedData, posEntries });
+    if (requestId) {
+      const previous = await PaymentRecord.findOne({ stationId: currentStationId, requestId }).lean();
+      if (previous) {
+        if (previous.requestFingerprint !== requestFingerprint) {
+          return NextResponse.json({ error: 'This collection request was already used for different amounts. Refresh and try again.' }, { status: 409 });
+        }
+        return NextResponse.json({ paymentRecord: previous, replayed: true }, { status: 200 });
+      }
+    }
 
     session = await mongoose.startSession();
     session.startTransaction();
@@ -73,12 +99,8 @@ export async function POST(request) {
     }
 
     // posEntries: [{ bank, amount, terminalId? }]
-    const posEntries = (body.posEntries || [])
-      .filter(e => e.bank && Number(e.amount) > 0)
-      .map(e => ({ bank: e.bank.trim(), amount: Number(e.amount), terminalId: e.terminalId?.trim() || null }));
-
-    const posReceived = posEntries.reduce((s, e) => s + e.amount, 0);
-    const totalReceived = validatedData.cashReceived + posReceived;
+    const posReceived = Math.round(posEntries.reduce((s, e) => s + e.amount, 0) * 100) / 100;
+    const totalReceived = Math.round((validatedData.cashReceived + posReceived) * 100) / 100;
 
     // Do not let a zero-value row be used to satisfy the end-of-shift
     // collection safeguard. The UI already enforces this; the API must too.
@@ -104,27 +126,29 @@ export async function POST(request) {
       );
     }
 
-    const expectedForPump = pumpSales.reduce((sum, sale) => sum + (Number(sale.expectedAmount) || 0), 0);
+    const expectedKobo = pumpSales.reduce((sum, sale) => sum + toKobo(sale.expectedAmount), 0n);
+    const expectedForPump = fromKobo(expectedKobo);
     const allPayments = await PaymentRecord.find({ dayShiftId: dayShift._id }).session(session);
-    const alreadyCollectedForPump = allPayments
+    const collectedKobo = allPayments
       .filter(payment => payment.dispenserId === validatedData.dispenserId)
-      .reduce((sum, payment) => sum + (Number(payment.totalReceived) || 0), 0);
-    const remainingForPump = Math.round(Math.max(0, expectedForPump - alreadyCollectedForPump) * 100) / 100;
-    if (dayShift.status === DAY_STATUS.ENDED && (alreadyCollectedForPump <= 0 || remainingForPump <= 0.01)) {
+      .reduce((sum, payment) => sum + toKobo(payment.totalReceived), 0n);
+    const remainingKobo = expectedKobo > collectedKobo ? expectedKobo - collectedKobo : 0n;
+    const remainingForPump = fromKobo(remainingKobo);
+    if (dayShift.status === DAY_STATUS.ENDED && (collectedKobo <= 0n || remainingKobo <= 1n)) {
       await session.abortTransaction();
       return NextResponse.json(
         { error: 'Closed shifts only accept completion of a previously recorded short collection for this pump.' },
         { status: 409 }
       );
     }
-    if (dayShift.status === DAY_STATUS.ENDED && totalReceived > remainingForPump + 0.01) {
+    if (dayShift.status === DAY_STATUS.ENDED && toKobo(totalReceived) > remainingKobo + 1n) {
       await session.abortTransaction();
       return NextResponse.json(
         { error: `This collection exceeds the remaining balance of ${remainingForPump.toFixed(2)} for this pump.` },
         { status: 400 }
       );
     }
-    const outstandingAfter = Math.round(Math.max(0, remainingForPump - totalReceived) * 100) / 100;
+    const outstandingAfter = fromKobo(remainingKobo > toKobo(totalReceived) ? remainingKobo - toKobo(totalReceived) : 0n);
 
     // If supervisor not yet assigned to this pump (no meter reading submitted yet),
     // fall back to the SalesEntry to get who actually sold on this pump today.
@@ -160,10 +184,11 @@ export async function POST(request) {
       outstandingAfter,
       collectionType: dayShift.status === DAY_STATUS.ENDED
         ? 'post_close_settlement'
-        : alreadyCollectedForPump > 0 ? 'supplemental' : 'initial',
+        : collectedKobo > 0n ? 'supplemental' : 'initial',
       recordedBy: currentUser.id,
       recordedByName: currentUser.name,
       notes: body.notes || '',
+      ...(requestId ? { requestId, requestFingerprint } : {}),
     }], { session, ordered: true });
 
     // Reconcile both open shifts and later settlements of closed shifts.
@@ -171,9 +196,7 @@ export async function POST(request) {
     Object.assign(dayShift, calculateShiftSummary(allSales, [...allPayments, paymentRecord[0]]));
     await dayShift.save({ session });
 
-    await session.commitTransaction();
-
-    await createAuditLog({
+    await AuditLog.create([{
       userId: currentUser.id,
       userName: currentUser.name,
       userRole: currentUser.role,
@@ -195,12 +218,20 @@ export async function POST(request) {
         outstandingAfter,
         collectionType: paymentRecord[0].collectionType,
       },
-    });
+    }], { session });
+
+    await session.commitTransaction();
 
     return NextResponse.json({ paymentRecord: paymentRecord[0] }, { status: 201 });
   } catch (error) {
     if (session) {
       try { await session.abortTransaction(); } catch {}
+    }
+    if (error.code === 11000 && requestId) {
+      const previous = await PaymentRecord.findOne({ stationId: currentStationId, requestId }).lean();
+      if (previous?.requestFingerprint === requestFingerprint) {
+        return NextResponse.json({ paymentRecord: previous, replayed: true }, { status: 200 });
+      }
     }
     console.error('Error creating payment record:', error);
 

@@ -9,11 +9,13 @@ import StockMovement from '@/models/StockMovement';
 import SalesEntry from '@/models/SalesEntry';
 import PaymentRecord from '@/models/PaymentRecord';
 import CashDeposit from '@/models/CashDeposit';
+import AuditLog from '@/models/AuditLog';
 import { requireAuth } from '@/lib/auth';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { recalculateShiftSummary } from '@/lib/recalculateShiftSummary';
 import { buildHistoricalPumpAssignments } from '@/lib/historicalPumpAssignments.mjs';
+import { saleAmount } from '@/lib/exactFuelMath.mjs';
 
 const BACKFILL_PIN = '@ghty^&AHATY';
 
@@ -204,29 +206,41 @@ export async function POST(request) {
       editableData.dispenserAssignments = mapping.assignments;
 
       if (existing) {
+        const session = mapping.changed ? await mongoose.startSession() : null;
+        if (session) session.startTransaction();
+        try {
         // Day already has this shift: keep its _id, startTime, endTime, status and
         // started/ended-by. Only update the other data — do not re-stamp times.
-        const shift = await DayShift.findByIdAndUpdate(
-          existing._id,
+        const shift = await DayShift.findOneAndUpdate(
+          { _id: existing._id, ...(session ? { updatedAt: existing.updatedAt } : {}) },
           { $set: { ...editableData, shiftLabel } },
-          { new: true, runValidators: false }
+          { new: true, runValidators: false, session }
         );
+        if (!shift) throw new Error('This historical shift changed while you were editing it. Reload and review it.');
         // Keep every shift on this date in sync with how many actually exist —
         // self-corrects as the admin adds/edits shifts for a historical date.
         await DayShift.updateMany(
           { stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } },
-          { $set: { totalShiftsPlanned: existingForDate.length } }
+          { $set: { totalShiftsPlanned: existingForDate.length } },
+          { session }
         );
         if (mapping.changed) {
-          await createAuditLog({
+          await AuditLog.create([{
             userId: currentUser.id, userName: currentUser.name, userRole: currentUser.role,
             action: AUDIT_ACTIONS.UPDATE, resource: AUDIT_RESOURCES.DAY_SHIFT,
             resourceId: String(shift._id), stationId: stationObjId, stationName: station.name,
             details: { date, shiftKey, oldMapping: mapping.oldMapping, newMapping: mapping.newMapping,
               reason: String(mappingChangeReason).trim(), source: 'historical_entry' },
-          });
+          }], { session });
         }
+        if (session) await session.commitTransaction();
         return NextResponse.json({ shift, updated: true }, { status: 200 });
+        } catch (error) {
+          if (session) await session.abortTransaction();
+          throw error;
+        } finally {
+          if (session) await session.endSession();
+        }
       }
 
       // No such shift for this historical day yet — create one with day-boundary
@@ -573,7 +587,7 @@ export async function POST(request) {
         ? (shift.pricesAtStart.get(fuelType) || 0)
         : (shift.pricesAtStart?.[fuelType] || 0);
 
-      const expectedAmount = litersVal * pricePerLiter;
+      const expectedAmount = saleAmount(litersVal, pricePerLiter);
 
       // Delete all existing records for this pump+shift — findOneAndUpdate only
       // patches the first match, leaving duplicates from earlier live entries intact.

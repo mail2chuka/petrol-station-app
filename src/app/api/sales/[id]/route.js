@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import SalesEntry from '@/models/SalesEntry';
+import { saleAmount } from '@/lib/exactFuelMath.mjs';
 import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
@@ -63,7 +64,7 @@ export async function PATCH(request, { params }) {
     }
 
     const totalAmount = cashAmount + posAmount;
-    const expectedAmount = liters * (entry.pricePerLiter || 0);
+    const expectedAmount = saleAmount(liters, entry.pricePerLiter || 0);
     const discrepancy = totalAmount - expectedAmount;
 
     entry.liters = liters;

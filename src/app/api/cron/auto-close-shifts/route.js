@@ -10,6 +10,7 @@ import TankStockEntry from '@/models/TankStockEntry';
 import StockMovement from '@/models/StockMovement';
 import Notification from '@/models/Notification';
 import { DAY_STATUS } from '@/lib/constants';
+import { findShiftTankDataIssues } from '@/lib/shiftTankDataQuality.mjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -152,5 +153,39 @@ export async function GET(request) {
     }
   }
 
-  return NextResponse.json({ checked: overdue.length, results });
+  // Read-only reconciliation check for recently saved closed shifts. A pump
+  // pointing to a tank without a closing dip would otherwise disappear from
+  // the tank-level report, as happened in a historical backfill.
+  const recentlyUpdated = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const closed = await DayShift.find({ status: DAY_STATUS.ENDED,
+    date: { $lt: nigeriaTodayStart() }, updatedAt: { $gte: recentlyUpdated } }).lean();
+  const tankIssues = [];
+  for (const shift of closed) {
+    try {
+      const dateStr = new Date(shift.date).toISOString().slice(0, 10);
+      const start = new Date(`${dateStr}T00:00:00.000Z`);
+      const end = new Date(`${dateStr}T23:59:59.999Z`);
+      const filter = { stationId: shift.stationId, date: { $gte: start, $lte: end }, ...shiftFilter(shift) };
+      const [sales, readings, tankEntries] = await Promise.all([
+        SalesEntry.find({ dayShiftId: shift._id }).lean(),
+        MeterReading.find(filter).lean(),
+        TankStockEntry.find(filter).lean(),
+      ]);
+      const issues = findShiftTankDataIssues({ assignments: shift.dispenserAssignments, sales, readings, tankEntries });
+      if (!issues.length) continue;
+      tankIssues.push({ id: String(shift._id), issues });
+      const title = 'Shift tank mapping needs review';
+      if (!await Notification.exists({ relatedType: 'day_shift', relatedId: shift._id, title })) {
+        await Notification.create({
+          recipientRole: 'manager', stationId: shift.stationId, stationName: shift.stationName,
+          title, type: 'general', isAdminFlag: true, relatedType: 'day_shift', relatedId: shift._id,
+          message: `${shift.shiftLabel || 'Shift'} for ${dateStr} has pump sales or meter readings assigned to a tank without a closing dip, or an invalid meter reading. Review its historical pump-to-tank mapping and entries.`,
+        });
+      }
+    } catch (error) {
+      tankIssues.push({ id: String(shift._id), error: error.message });
+    }
+  }
+
+  return NextResponse.json({ checked: overdue.length, results, auditedClosedShifts: closed.length, tankIssues });
 }

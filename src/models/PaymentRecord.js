@@ -95,6 +95,8 @@ const paymentRecordSchema = new mongoose.Schema(
     notes: {
       type: String,
     },
+    requestId: { type: String, default: undefined },
+    requestFingerprint: { type: String, default: undefined },
     managerReviewStatus: {
       type: String,
       enum: ['pending', 'approved', 'queried'],
@@ -113,5 +115,7 @@ const paymentRecordSchema = new mongoose.Schema(
 paymentRecordSchema.index({ stationId: 1, date: -1 });
 paymentRecordSchema.index({ dayShiftId: 1, dispenserId: 1 });
 paymentRecordSchema.index({ dayShiftId: 1, supervisorId: 1 });
+paymentRecordSchema.index({ stationId: 1, requestId: 1 },
+  { unique: true, partialFilterExpression: { requestId: { $type: 'string' } } });
 
 export default mongoose.models.PaymentRecord || mongoose.model('PaymentRecord', paymentRecordSchema);

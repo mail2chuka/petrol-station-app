@@ -97,5 +97,6 @@ const salesEntrySchema = new mongoose.Schema(
 salesEntrySchema.index({ stationId: 1, date: -1 });
 salesEntrySchema.index({ supervisorId: 1, date: -1 });
 salesEntrySchema.index({ dayShiftId: 1, supervisorId: 1 });
+salesEntrySchema.index({ dayShiftId: 1, dispenserId: 1, supervisorId: 1 }, { unique: true });
 
 export default mongoose.models.SalesEntry || mongoose.model('SalesEntry', salesEntrySchema);

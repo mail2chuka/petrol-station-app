@@ -8,21 +8,17 @@
 //
 // Used by the summary-book report, its export, the tank-stock API, and the
 // historic-entry wizard so every "variance" figure agrees.
+import { fromMilliLitres, toMilliLitres } from '@/lib/exactFuelMath.mjs';
 
 export function reconcile({ opening = 0, stockIn = 0, sales = 0, closing = 0 }) {
-  const o = Number(opening) || 0;
-  const si = Number(stockIn) || 0;
-  const s = Number(sales) || 0;
-  const c = Number(closing) || 0;
-
-  const expectedClosing = o + si - s;
-  const variance = c - expectedClosing;
+  const expectedMl = toMilliLitres(opening) + toMilliLitres(stockIn) - toMilliLitres(sales);
+  const varianceMl = toMilliLitres(closing) - expectedMl;
 
   return {
-    expectedClosing,
-    variance,
-    shortage: Math.max(0, -variance),
-    overage: Math.max(0, variance),
+    expectedClosing: fromMilliLitres(expectedMl),
+    variance: fromMilliLitres(varianceMl),
+    shortage: fromMilliLitres(varianceMl < 0n ? -varianceMl : 0n),
+    overage: fromMilliLitres(varianceMl > 0n ? varianceMl : 0n),
   };
 }
 

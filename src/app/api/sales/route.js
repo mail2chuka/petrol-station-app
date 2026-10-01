@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import SalesEntry from '@/models/SalesEntry';
+import AuditLog from '@/models/AuditLog';
+import { saleAmount } from '@/lib/exactFuelMath.mjs';
 import DayShift from '@/models/DayShift';
 import PriceHistory from '@/models/PriceHistory';
 import { requireAuth } from '@/lib/auth';
 import { salesEntrySchema } from '@/lib/validation';
-import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 
 // POST /api/sales - Create a sales entry
@@ -79,7 +81,7 @@ export async function POST(request) {
       ? dayShift.pricesAtStart.get(assignment.fuelType)
       : dayShift.pricesAtStart?.[assignment.fuelType];
     const pricePerLiter = effectiveApprovedPrice?.newPrice ?? startPrice ?? 0;
-    const expectedAmount = validatedData.liters * pricePerLiter;
+    const expectedAmount = saleAmount(validatedData.liters, pricePerLiter);
 
     // Upsert: one entry per supervisor+dispenser+dayShift
     const salesEntry = await SalesEntry.findOneAndUpdate(
@@ -111,9 +113,7 @@ export async function POST(request) {
       { new: true, upsert: true, runValidators: true, session }
     );
 
-    await session.commitTransaction();
-
-    await createAuditLog({
+    await AuditLog.create([{
       userId: currentUser.id,
       userName: currentUser.name,
       userRole: currentUser.role,
@@ -128,7 +128,9 @@ export async function POST(request) {
         liters: validatedData.liters,
         expectedAmount,
       },
-    });
+    }], { session });
+
+    await session.commitTransaction();
 
     return NextResponse.json({ salesEntry }, { status: 201 });
   } catch (error) {

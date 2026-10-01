@@ -7,6 +7,7 @@ import TankStockEntry from '@/models/TankStockEntry';
 import Station from '@/models/Station';
 import { reconcile, expectedTolerance, resolveTolerancePercent } from '@/lib/reconciliation';
 import { attributeShiftPumpSales } from '@/lib/shiftTankAttribution.mjs';
+import { saleAmount } from '@/lib/exactFuelMath.mjs';
 
 function buildDateRange(from, to) {
   const start = new Date(from + 'T00:00:00.000Z');
@@ -194,7 +195,7 @@ export async function buildSummaryBookRows(stationId, from, to) {
       // Sales liters from SalesEntry are already NET (supervisor enters closing-opening-rtt).
       const salesLitres = agg.sales;
       const priceForDay = dayShift.pricesAtStart?.[fuelType] || 0;
-      const totalAmount = priceForDay * salesLitres;
+      const totalAmount = saleAmount(salesLitres, priceForDay);
       const { shortage, overage } = reconcile({
         opening: agg.openingStock,
         stockIn: agg.stockIn,

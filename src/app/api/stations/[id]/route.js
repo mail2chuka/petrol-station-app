@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import Station from '@/models/Station';
+import AuditLog from '@/models/AuditLog';
 import DayShift from '@/models/DayShift';
 import { requireAuth, requireAdmin, requireManagerOrAdmin } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
@@ -236,9 +238,7 @@ export async function PATCH(request, { params }) {
       }));
     }
 
-    await station.save();
-
-    await createAuditLog({
+    const auditEvent = {
       userId: currentUser.id,
       userName: currentUser.name,
       userRole: currentUser.role,
@@ -261,7 +261,21 @@ export async function PATCH(request, { params }) {
         previousPumpMapping: mappingChange ? previousPumpMapping : undefined,
         editReason: editReason || undefined,
       },
-    });
+    };
+    if (mappingChange || tankProductChange) {
+      const session = await mongoose.startSession();
+      try {
+        await session.withTransaction(async () => {
+          await station.save({ session });
+          await AuditLog.create([auditEvent], { session });
+        });
+      } finally {
+        await session.endSession();
+      }
+    } else {
+      await station.save();
+      await createAuditLog(auditEvent);
+    }
 
     return NextResponse.json({ station });
   } catch (error) {

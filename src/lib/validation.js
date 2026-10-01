@@ -108,6 +108,12 @@ export const paymentRecordSchema = z.object({
   dayShiftId: z.string(),
   dispenserId: z.string(),
   cashReceived: z.number().min(0, 'Cash received cannot be negative'),
+  requestId: z.string().uuid().optional(),
+  posEntries: z.array(z.object({
+    bank: z.string().trim().min(1),
+    amount: z.number().positive(),
+    terminalId: z.string().nullable().optional(),
+  })).optional(),
   // posReceived is computed from posEntries on the server
 });
 

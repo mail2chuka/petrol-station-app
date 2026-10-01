@@ -1,5 +1,7 @@
 // Attribute pump sales using the mapping saved on that shift. Station settings
 // are mutable, so they must never be used to reconstruct an older tank report.
+import { fromMilliLitres, toMilliLitres } from './exactFuelMath.mjs';
+
 export function attributeShiftPumpSales(assignments, sales, readings) {
   const tankByPump = {};
   const fuelByPump = {};
@@ -8,46 +10,56 @@ export function attributeShiftPumpSales(assignments, sales, readings) {
     if (assignment.fuelType) fuelByPump[assignment.dispenserId] = assignment.fuelType;
   }
 
-  const litersByPump = {};
+  const milliLitresByPump = {};
   const meterFallbackPumps = new Set();
   for (const sale of sales) {
-    litersByPump[sale.dispenserId] = (litersByPump[sale.dispenserId] || 0) + (Number(sale.liters) || 0);
+    milliLitresByPump[sale.dispenserId] = (milliLitresByPump[sale.dispenserId] || 0n) + toMilliLitres(sale.liters);
     if (!fuelByPump[sale.dispenserId] && sale.fuelType) fuelByPump[sale.dispenserId] = sale.fuelType;
   }
   const invalidReadings = [];
   for (const reading of readings) {
-    if (litersByPump[reading.pumpId] != null || reading.closing == null) continue;
-    const opening = Number(reading.opening);
-    const closing = Number(reading.closing);
-    const rtt = Number(reading.rtt ?? 0);
-    if (reading.opening == null || ![opening, closing, rtt].every(Number.isFinite) || closing - opening - rtt < 0) {
+    if (milliLitresByPump[reading.pumpId] != null || reading.closing == null) continue;
+    let net;
+    try {
+      if (reading.opening == null) throw new Error('Missing opening');
+      net = toMilliLitres(reading.closing) - toMilliLitres(reading.opening) - toMilliLitres(reading.rtt ?? 0);
+    } catch {
+      invalidReadings.push(reading.pumpId);
+      continue;
+    }
+    if (net < 0n) {
       invalidReadings.push(reading.pumpId);
       continue;
     }
     meterFallbackPumps.add(reading.pumpId);
-    litersByPump[reading.pumpId] = closing - opening - rtt;
+    milliLitresByPump[reading.pumpId] = net;
   }
 
-  const salesByTank = {};
-  const salesByFuelFallback = {};
-  const estimatedSalesByTank = {};
-  const estimatedSalesByFuelFallback = {};
-  for (const [pumpId, liters] of Object.entries(litersByPump)) {
+  const salesByTankMl = {};
+  const salesByFuelMl = {};
+  const estimatedByTankMl = {};
+  const estimatedByFuelMl = {};
+  for (const [pumpId, milliLitres] of Object.entries(milliLitresByPump)) {
     const tankId = tankByPump[pumpId];
     if (tankId) {
-      salesByTank[tankId] = (salesByTank[tankId] || 0) + liters;
+      salesByTankMl[tankId] = (salesByTankMl[tankId] || 0n) + milliLitres;
       if (meterFallbackPumps.has(pumpId)) {
-        estimatedSalesByTank[tankId] = (estimatedSalesByTank[tankId] || 0) + liters;
+        estimatedByTankMl[tankId] = (estimatedByTankMl[tankId] || 0n) + milliLitres;
       }
     } else {
       const fuelType = fuelByPump[pumpId];
       if (fuelType) {
-        salesByFuelFallback[fuelType] = (salesByFuelFallback[fuelType] || 0) + liters;
+        salesByFuelMl[fuelType] = (salesByFuelMl[fuelType] || 0n) + milliLitres;
         if (meterFallbackPumps.has(pumpId)) {
-          estimatedSalesByFuelFallback[fuelType] = (estimatedSalesByFuelFallback[fuelType] || 0) + liters;
+          estimatedByFuelMl[fuelType] = (estimatedByFuelMl[fuelType] || 0n) + milliLitres;
         }
       }
     }
   }
+  const asLitres = (values) => Object.fromEntries(Object.entries(values).map(([key, value]) => [key, fromMilliLitres(value)]));
+  const salesByTank = asLitres(salesByTankMl);
+  const salesByFuelFallback = asLitres(salesByFuelMl);
+  const estimatedSalesByTank = asLitres(estimatedByTankMl);
+  const estimatedSalesByFuelFallback = asLitres(estimatedByFuelMl);
   return { salesByTank, salesByFuelFallback, estimatedSalesByTank, estimatedSalesByFuelFallback, invalidReadings };
 }
