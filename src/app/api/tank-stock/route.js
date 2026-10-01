@@ -6,6 +6,7 @@ import TankStockEntry from '@/models/TankStockEntry';
 import Station from '@/models/Station';
 import StockMovement from '@/models/StockMovement';
 import SalesEntry from '@/models/SalesEntry';
+import MeterReading from '@/models/MeterReading';
 import DayShift from '@/models/DayShift';
 import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
@@ -87,9 +88,10 @@ export async function GET(request) {
       const endDate = new Date(date + 'T23:59:59.999Z');
       const stationObjId = new mongoose.Types.ObjectId(stationId);
 
-      const [station, daySales, dayStockIns, dayShifts] = await Promise.all([
+      const [station, daySales, dayReadings, dayStockIns, dayShifts] = await Promise.all([
         Station.findById(stationId).lean(),
         SalesEntry.find({ stationId: stationObjId, date: { $gte: startDate, $lte: endDate } }).lean(),
+        MeterReading.find({ stationId: stationObjId, date: { $gte: startDate, $lte: endDate } }).lean(),
         StockMovement.find({ stationId: stationObjId, movementType: 'receipt', date: { $gte: startDate, $lte: endDate } }).lean(),
         DayShift.find({ stationId: stationObjId, date: { $gte: startDate, $lte: endDate } })
           .sort({ shiftOrder: 1, startTime: 1, _id: 1 }).lean(),
@@ -100,13 +102,18 @@ export async function GET(request) {
       const shiftIdOf = (doc) => String(doc.dayShiftId || earliestShiftId || '');
       const salesByShift = {};
       for (const sale of daySales) (salesByShift[shiftIdOf(sale)] ||= []).push(sale);
+      const readingsByShift = {};
+      for (const reading of dayReadings) (readingsByShift[shiftIdOf(reading)] ||= []).push(reading);
       const salesByShiftAndTank = {};
+      const estimatedByShiftAndTank = {};
       for (const shift of dayShifts) {
-        salesByShiftAndTank[String(shift._id)] = attributeShiftPumpSales(
+        const attribution = attributeShiftPumpSales(
           shift.dispenserAssignments,
           salesByShift[String(shift._id)] || [],
-          [],
-        ).salesByTank;
+          readingsByShift[String(shift._id)] || [],
+        );
+        salesByShiftAndTank[String(shift._id)] = attribution.salesByTank;
+        estimatedByShiftAndTank[String(shift._id)] = attribution.estimatedSalesByTank;
       }
       const stockInByShiftAndTank = {};
       for (const m of dayStockIns) {
@@ -134,9 +141,13 @@ export async function GET(request) {
         const opening = group.opening?.openingStock ?? closingEntry?.openingStock ?? 0;
         const stockIn = stockInByShiftAndTank[`${shiftId}:${e.tankId}`] || 0;
         const sales = salesByShiftAndTank[shiftId]?.[e.tankId] || 0;
+        const estimatedSales = estimatedByShiftAndTank[shiftId]?.[e.tankId] || 0;
         const tolerancePercent = resolveTolerancePercent(shiftsById[shiftId], station);
         e.stockIn = stockIn;
         e.salesLitres = sales;
+        e.estimatedSalesLitres = estimatedSales;
+        e.salesSource = Object.hasOwn(estimatedByShiftAndTank[shiftId] || {}, e.tankId) ? 'includes_meter_fallback' :
+          Object.hasOwn(salesByShiftAndTank[shiftId] || {}, e.tankId) ? 'supervisor_entry' : 'missing';
         e.tolerancePercent = tolerancePercent;
         if (closingEntry) {
           const closing = closingEntry.closingStockManager ?? closingEntry.closingStockMeasured ?? 0;

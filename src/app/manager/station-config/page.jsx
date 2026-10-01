@@ -228,6 +228,7 @@ function StationConfigPageContent() {
         <p className="mt-2 text-sm text-gray-600">
           Admin sets the initial station structure. Managers can maintain tank and pump configuration for day-to-day operations.
         </p>
+        <p className="mt-2 text-sm text-amber-800">Pump-to-tank changes require the active shift to close first. Earlier shifts retain their recorded connections.</p>
       </div>
 
       {error && (

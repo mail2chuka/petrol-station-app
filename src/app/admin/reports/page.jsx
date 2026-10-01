@@ -1183,7 +1183,7 @@ function SummaryListView({ stationId, onSelectDay }) {
                           );
                         })()}
                       </td>
-                      <TD>{fmtNum(r.sales)}</TD>
+                      <TD>{fmtNum(r.sales)}{r.estimatedSalesLitres > 0 && <span className="block text-xs text-amber-700">{fmtNum(r.estimatedSalesLitres)} L from meter</span>}</TD>
                       <TD>{fmtNum(r.priceForDay)}</TD>
                       <TD>{fmtNum(r.salesAmount)}</TD>
                       <TD className={r.shortage > 0 ? 'text-amber-600 font-medium' : 'text-gray-400'}>

@@ -163,6 +163,8 @@ export default function BackfillPage() {
   const [shiftPrices, setShiftPrices] = useState({});
   const [shiftTolerance, setShiftTolerance] = useState('');
   const [selectedDispensers, setSelectedDispensers] = useState([]);
+  const [historicalTankMap, setHistoricalTankMap] = useState({});
+  const [mappingChangeReason, setMappingChangeReason] = useState('');
 
   // Pump readings
   const [pumpReadings, setPumpReadings] = useState({});
@@ -281,13 +283,15 @@ export default function BackfillPage() {
           setShiftTolerance(ds.tolerancePercent != null ? String(ds.tolerancePercent) : stationTolerance);
           setSelectedDispensers(
             (ds.dispenserAssignments || []).map((a) => a.dispenserId)
-              .filter((id) => dispensers.some((d) => d.dispenserId === id))
           );
+          setHistoricalTankMap(Object.fromEntries((ds.dispenserAssignments || []).map((a) => [a.dispenserId, a.tankId || ''])));
         } else {
           setShiftPrices(initPrices);
           setShiftTolerance(stationTolerance);
           setSelectedDispensers(dispensers.filter((d) => d.isActive !== false).map((d) => d.dispenserId));
+          setHistoricalTankMap({});
         }
+        setMappingChangeReason('');
 
         if (ex.meterReadings?.length) {
           const pr = { ...initPR };
@@ -506,12 +510,16 @@ export default function BackfillPage() {
   async function saveShift() {
     setSaving(true); setResults([]);
     try {
-      await callBackfill({
+      const saved = await callBackfill({
         type: 'dayShift',
         dispenserIds: selectedDispensers,
+        dispenserAssignments: selectedDispensers.map((dispenserId) => ({ dispenserId, tankId: historicalTankMap[dispenserId] })),
+        mappingChangeReason,
         prices: shiftPrices,
         tolerancePercent: shiftTolerance !== '' ? Number(shiftTolerance) : undefined,
       });
+      setExistingData((previous) => ({ ...previous, dayShift: saved.shift }));
+      setMappingChangeReason('');
       setResults([{ label: 'Day Shift' }]);
       setCompletedSteps((p) => [...new Set([...p, 'dayShift'])]);
       setStep('pumpReadings');
@@ -523,7 +531,7 @@ export default function BackfillPage() {
   // ── Step: Save Pump Readings ──────────────────────────────────────────────────
   async function savePumpReadings() {
     setSaving(true); setResults([]);
-    const dispensers = (station?.dispensers || []).filter((d) => selectedDispensers.includes(d.dispenserId));
+    const dispensers = pumpChoices.filter((d) => selectedDispensers.includes(d.dispenserId));
     const res = [];
     for (const d of dispensers) {
       const r = pumpReadings[d.dispenserId] || {};
@@ -668,7 +676,7 @@ export default function BackfillPage() {
   // ── Step: Save Sales ──────────────────────────────────────────────────────────
   async function saveSales() {
     setSaving(true); setResults([]);
-    const dispensers = (station?.dispensers || []).filter((d) => selectedDispensers.includes(d.dispenserId));
+    const dispensers = pumpChoices.filter((d) => selectedDispensers.includes(d.dispenserId));
     const res = [];
     for (const d of dispensers) {
       const s = sales[d.dispenserId] || {};
@@ -694,7 +702,7 @@ export default function BackfillPage() {
   // ── Step: Save Payments ───────────────────────────────────────────────────────
   async function savePayments() {
     setSaving(true); setResults([]);
-    const dispensers = (station?.dispensers || []).filter((d) => selectedDispensers.includes(d.dispenserId));
+    const dispensers = pumpChoices.filter((d) => selectedDispensers.includes(d.dispenserId));
     const res = [];
     for (const d of dispensers) {
       const p = payments[d.dispenserId] || {};
@@ -817,15 +825,23 @@ export default function BackfillPage() {
   // ── Derived values ─────────────────────────────────────────────────────────────
 
   // Per-tank net litres sold derived from pump readings
+  const pumpChoices = [...(station?.dispensers || [])];
+  for (const assignment of existingData?.dayShift?.dispenserAssignments || []) {
+    if (!pumpChoices.some((pump) => pump.dispenserId === assignment.dispenserId)) {
+      pumpChoices.push({ dispenserId: assignment.dispenserId, name: assignment.dispenserName,
+        fuelType: assignment.fuelType, isActive: false });
+    }
+  }
   const tankNetSold = {};
-  (station?.dispensers || []).forEach((d) => {
+  pumpChoices.forEach((d) => {
     const pr = pumpReadings[d.dispenserId] || {};
     if (pr.opening !== '' && pr.closing !== '') {
       const net = Math.max(
         0,
         (parseFloat(pr.closing) || 0) - (parseFloat(pr.opening) || 0) - (parseFloat(pr.rtt) || 0)
       );
-      if (d.tankId) tankNetSold[d.tankId] = (tankNetSold[d.tankId] || 0) + net;
+      const tankId = historicalTankMap[d.dispenserId];
+      if (tankId) tankNetSold[tankId] = (tankNetSold[tankId] || 0) + net;
     }
   });
 
@@ -843,15 +859,21 @@ export default function BackfillPage() {
   (station?.tanks || []).forEach((t) => { tankLabelById[String(t._id)] = t.label; });
 
   // Total cash and POS from the payments step (used in deposits step as reference)
-  const totalCashFromPayments = (station?.dispensers || [])
+  const totalCashFromPayments = pumpChoices
     .filter((d) => selectedDispensers.includes(d.dispenserId))
     .reduce((sum, d) => sum + (parseFloat(payments[d.dispenserId]?.cash) || 0), 0);
-  const totalPosFromPayments = (station?.dispensers || [])
+  const totalPosFromPayments = pumpChoices
     .filter((d) => selectedDispensers.includes(d.dispenserId))
     .reduce((sum, d) => sum + (parseFloat(payments[d.dispenserId]?.pos) || 0), 0);
 
   // Existing data flags
   const hasExistingShift = !!existingData?.dayShift;
+  const historicalMappingChanged = hasExistingShift && (
+    selectedDispensers.length !== (existingData.dayShift.dispenserAssignments || []).length ||
+    selectedDispensers.some((id) => historicalTankMap[id] !==
+      existingData.dayShift.dispenserAssignments.find((a) => a.dispenserId === id)?.tankId)
+  );
+  const missingHistoricalMappings = selectedDispensers.some((id) => !historicalTankMap[id]);
   const hasExistingPumps = !!existingData?.meterReadings?.length;
   const hasExistingTanks = !!existingData?.tankStockEntries?.length;
   const hasExistingDeliveries = !!existingData?.stockMovements?.length;
@@ -1033,25 +1055,47 @@ export default function BackfillPage() {
           </div>
           {hasExistingShift && <ExistingNotice label="Existing day shift found — pre-filled. Saving will overwrite." />}
 
+          <p className="text-sm text-slate-600">Choose the tank each pump drew from on this date. Current station connections may differ from historical connections.</p>
+
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Active Pumps</p>
             <div className="space-y-1.5">
-              {(station?.dispensers || []).filter((d) => d.isActive !== false).map((d) => (
-                <label key={d.dispenserId} className="flex items-center gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedDispensers.includes(d.dispenserId)}
-                    onChange={(e) => {
-                      if (e.target.checked) setSelectedDispensers((p) => [...p, d.dispenserId]);
-                      else setSelectedDispensers((p) => p.filter((x) => x !== d.dispenserId));
-                    }}
-                    className="rounded border-gray-300 text-ecana-maroon h-4 w-4"
-                  />
-                  <span className="text-sm text-slate-700">{d.name} <span className="text-slate-400 text-xs">({d.fuelType})</span></span>
-                </label>
+              {pumpChoices.filter((d) => d.isActive !== false || selectedDispensers.includes(d.dispenserId)).map((d) => (
+                <div key={d.dispenserId} className="flex flex-wrap items-center gap-2.5">
+                  <label className="flex items-center gap-2.5 cursor-pointer min-w-44">
+                    <input
+                      type="checkbox"
+                      checked={selectedDispensers.includes(d.dispenserId)}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedDispensers((p) => [...p, d.dispenserId]);
+                        else setSelectedDispensers((p) => p.filter((x) => x !== d.dispenserId));
+                      }}
+                      className="rounded border-gray-300 text-ecana-maroon h-4 w-4"
+                    />
+                    <span className="text-sm text-slate-700">{d.name} <span className="text-slate-400 text-xs">({d.fuelType})</span></span>
+                  </label>
+                  {selectedDispensers.includes(d.dispenserId) && (
+                    <select
+                      aria-label={`Historical tank for ${d.name}`}
+                      value={historicalTankMap[d.dispenserId] || ''}
+                      onChange={(e) => setHistoricalTankMap((previous) => ({ ...previous, [d.dispenserId]: e.target.value }))}
+                      className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm text-slate-700"
+                    >
+                      <option value="">Select historical tank</option>
+                      {(station?.tanks || []).filter((tank) => tank.product === d.fuelType).map((tank) => (
+                        <option key={tank._id} value={tank._id}>{tank.label || tank._id}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               ))}
             </div>
           </div>
+
+          {historicalMappingChanged && (
+            <Field label="Reason for changing this shift's tank mapping" value={mappingChangeReason}
+              onChange={setMappingChangeReason} placeholder="Explain the correction for the audit log" />
+          )}
 
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Prices on This Day (₦/L)</p>
@@ -1086,7 +1130,7 @@ export default function BackfillPage() {
           <SavedBanner results={results} />
           <div className="flex gap-2">
             <button onClick={() => setStep('setup')} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-500 hover:border-slate-400">← Back</button>
-            <button onClick={saveShift} disabled={saving || !selectedDispensers.length} className="px-6 py-2.5 bg-ecana-maroon text-white text-sm font-semibold rounded-xl hover:opacity-90 disabled:opacity-40">
+            <button onClick={saveShift} disabled={saving || !selectedDispensers.length || missingHistoricalMappings || (historicalMappingChanged && mappingChangeReason.trim().length < 5)} className="px-6 py-2.5 bg-ecana-maroon text-white text-sm font-semibold rounded-xl hover:opacity-90 disabled:opacity-40">
               {saving ? 'Saving…' : 'Save Day Shift →'}
             </button>
           </div>
@@ -1104,7 +1148,7 @@ export default function BackfillPage() {
           )}
           <p className="text-xs text-slate-400">Leave Opening blank to skip a pump. RTT = test discharge litres.</p>
 
-          {(station?.dispensers || []).filter((d) => selectedDispensers.includes(d.dispenserId)).map((d) => {
+          {pumpChoices.filter((d) => selectedDispensers.includes(d.dispenserId)).map((d) => {
             const pr = pumpReadings[d.dispenserId] || {};
             const netSold = pr.opening !== '' && pr.closing !== ''
               ? Math.max(0, (parseFloat(pr.closing) || 0) - (parseFloat(pr.opening) || 0) - (parseFloat(pr.rtt) || 0))
@@ -1114,7 +1158,7 @@ export default function BackfillPage() {
                 <p className="text-sm font-semibold text-slate-800 mb-3">
                   {d.name}{' '}
                   <span className="text-xs text-slate-400 font-normal">
-                    ({d.fuelType}{d.tankId ? ' · ' + (tankLabelById[d.tankId] || d.tankId) : ''})
+                    ({d.fuelType}{historicalTankMap[d.dispenserId] ? ' · ' + (tankLabelById[historicalTankMap[d.dispenserId]] || historicalTankMap[d.dispenserId]) : ''})
                   </span>
                 </p>
                 <div className="grid grid-cols-3 gap-3">
@@ -1131,7 +1175,7 @@ export default function BackfillPage() {
                 {netSold != null && (
                   <p className="text-xs text-emerald-600 mt-2 font-medium">
                     Net sold: {fmtN(netSold)} L
-                    {d.tankId && <span className="text-slate-400 font-normal"> → {tankLabelById[d.tankId] || d.tankId}</span>}
+                    {historicalTankMap[d.dispenserId] && <span className="text-slate-400 font-normal"> → {tankLabelById[historicalTankMap[d.dispenserId]] || historicalTankMap[d.dispenserId]}</span>}
                   </p>
                 )}
               </div>
@@ -1160,8 +1204,8 @@ export default function BackfillPage() {
           )}
 
           {(station?.tanks || []).filter((t) => t.isActive !== false).map((t) => {
-            const pumpsSelling = (station?.dispensers || []).filter(
-              (d) => d.tankId === t._id && selectedDispensers.includes(d.dispenserId)
+            const pumpsSelling = pumpChoices.filter(
+              (d) => historicalTankMap[d.dispenserId] === t._id && selectedDispensers.includes(d.dispenserId)
             );
             const soldFromPumps = tankNetSold[t._id];
             const delivered = deliveredByTank[t._id] || 0;
@@ -1346,7 +1390,7 @@ export default function BackfillPage() {
           )}
           <p className="text-xs text-slate-400">Litres are auto-filled from pump meter net where available. Adjust if needed.</p>
 
-          {(station?.dispensers || []).filter((d) => selectedDispensers.includes(d.dispenserId)).map((d) => {
+          {pumpChoices.filter((d) => selectedDispensers.includes(d.dispenserId)).map((d) => {
             const pr = pumpReadings[d.dispenserId] || {};
             const pumpNet = pr.opening !== '' && pr.closing !== ''
               ? Math.max(0, (parseFloat(pr.closing) || 0) - (parseFloat(pr.opening) || 0) - (parseFloat(pr.rtt) || 0))
@@ -1407,7 +1451,7 @@ export default function BackfillPage() {
             <ExistingNotice label={`${existingData.paymentRecords.length} payment record(s) found — pre-filled. Saving will overwrite.`} />
           )}
 
-          {(station?.dispensers || []).filter((d) => selectedDispensers.includes(d.dispenserId)).map((d) => {
+          {pumpChoices.filter((d) => selectedDispensers.includes(d.dispenserId)).map((d) => {
             const price = parseFloat(shiftPrices[d.fuelType]) || 0;
             const liters = parseFloat(sales[d.dispenserId]?.liters) || 0;
             const expectedAmt = liters * price;

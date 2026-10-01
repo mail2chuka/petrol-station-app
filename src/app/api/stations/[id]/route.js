@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Station from '@/models/Station';
+import DayShift from '@/models/DayShift';
 import { requireAuth, requireAdmin, requireManagerOrAdmin } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
-import { ROLES } from '@/lib/constants';
+import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { getLiveCurrentStock, applyLiveStock } from '@/lib/liveStock';
 
 // GET /api/stations/[id] - Get station by ID
@@ -126,10 +127,16 @@ export async function PATCH(request, { params }) {
 
     const previousNumberOfTanks = station.numberOfTanks;
     const previousNumberOfPumps = station.numberOfPumps;
+    const previousPumpMapping = Object.fromEntries((station.dispensers || []).map((d) => [d.dispenserId, d.tankId || null]));
     const tankChange = numberOfTanks !== undefined && Number(numberOfTanks) !== previousNumberOfTanks;
     const pumpChange = numberOfPumps !== undefined && Number(numberOfPumps) !== previousNumberOfPumps;
+    const mappingChange = Array.isArray(dispensers) && (
+      dispensers.length !== (station.dispensers || []).length ||
+      dispensers.some((d) => previousPumpMapping[d.dispenserId] !== (d.tankId || null)));
+    const tankProductChange = Array.isArray(tanks) && tanks.some((t) =>
+      (station.tanks || []).some((old) => old._id === t._id && old.product !== t.product));
 
-    if ((tankChange || pumpChange) && (!editReason || String(editReason).trim().length < 5)) {
+    if ((tankChange || pumpChange || mappingChange || tankProductChange) && (!editReason || String(editReason).trim().length < 5)) {
       return NextResponse.json(
         { error: 'Edit reason is required for tank/pump changes (min 5 characters).' },
         { status: 400 }
@@ -184,7 +191,16 @@ export async function PATCH(request, { params }) {
             { status: 400 }
           );
         }
+        const tank = referenceTanks.find((candidate) => candidate._id === dispenser.tankId);
+        if (tank && tank.product !== dispenser.fuelType) {
+          return NextResponse.json({ error: `Pump ${dispenser.dispenserId} and ${tank.label || tank._id} have different products.` }, { status: 400 });
+        }
       }
+    }
+
+    if ((mappingChange || tankProductChange) &&
+        await DayShift.exists({ stationId: station._id, status: DAY_STATUS.IN_PROGRESS })) {
+      return NextResponse.json({ error: 'Close the active shift before changing pump-to-tank connections or tank products. Record a meter boundary first.' }, { status: 409 });
     }
 
     if (name) station.name = name;
@@ -242,6 +258,7 @@ export async function PATCH(request, { params }) {
           : undefined,
         tanksUpdated: tanks !== undefined ? station.tanks : undefined,
         dispensersUpdated: dispensers !== undefined ? station.dispensers : undefined,
+        previousPumpMapping: mappingChange ? previousPumpMapping : undefined,
         editReason: editReason || undefined,
       },
     });

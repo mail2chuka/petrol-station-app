@@ -139,7 +139,7 @@ export async function buildSummaryBookRows(stationId, from, to) {
 
     // A shift's saved mapping is the historical source of truth. Current
     // station settings may have changed since these sales were recorded.
-    const { salesByTank, salesByFuelFallback } = attributeShiftPumpSales(
+    const { salesByTank, salesByFuelFallback, estimatedSalesByTank, estimatedSalesByFuelFallback } = attributeShiftPumpSales(
       dayShift.dispenserAssignments,
       daySales,
       dayReadings,
@@ -163,7 +163,7 @@ export async function buildSummaryBookRows(stationId, from, to) {
       if (!entry) continue;
       const fuelType = entry.product;
       if (!productAgg[fuelType]) {
-        productAgg[fuelType] = { openingStock: 0, stockIn: 0, closingStock: 0, sales: 0 };
+        productAgg[fuelType] = { openingStock: 0, stockIn: 0, closingStock: 0, sales: 0, estimatedSales: 0 };
       }
       productAgg[fuelType].openingStock += entry.openingStock || 0;
       productAgg[fuelType].stockIn += dayStockIns
@@ -177,10 +177,14 @@ export async function buildSummaryBookRows(stationId, from, to) {
       }
       // Sales attributed via pump→tank mapping for this specific tank
       productAgg[fuelType].sales += salesByTank[tankId] || 0;
+      productAgg[fuelType].estimatedSales += estimatedSalesByTank[tankId] || 0;
     }
     // Add fallback sales for pumps not mapped to a specific tank
     for (const [ft, liters] of Object.entries(salesByFuelFallback)) {
-      if (productAgg[ft]) productAgg[ft].sales += liters;
+      if (productAgg[ft]) {
+        productAgg[ft].sales += liters;
+        productAgg[ft].estimatedSales += estimatedSalesByFuelFallback[ft] || 0;
+      }
     }
 
     // Per-shift tolerance snapshot (set at price time), else station's current value.
@@ -195,6 +199,7 @@ export async function buildSummaryBookRows(stationId, from, to) {
         opening: agg.openingStock,
         stockIn: agg.stockIn,
         sales: salesLitres,
+        estimatedSalesLitres: agg.estimatedSales,
         closing: agg.closingStock,
       });
       // expectedTolerance = sales × tolerance %

@@ -13,6 +13,7 @@ import { requireAuth } from '@/lib/auth';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { recalculateShiftSummary } from '@/lib/recalculateShiftSummary';
+import { buildHistoricalPumpAssignments } from '@/lib/historicalPumpAssignments.mjs';
 
 const BACKFILL_PIN = '@ghty^&AHATY';
 
@@ -144,28 +145,11 @@ export async function POST(request) {
 
     // ── DAY SHIFT ──────────────────────────────────────────────────────────────
     if (type === 'dayShift') {
-      const { dispenserIds, prices, tolerancePercent } = body;
+      const { dispenserIds, dispenserAssignments: requestedAssignments, mappingChangeReason, prices, tolerancePercent } = body;
       const toleranceVal =
         tolerancePercent !== undefined && tolerancePercent !== null && tolerancePercent !== ''
           ? Number(tolerancePercent)
           : null;
-      const dispensers = station.dispensers || [];
-      const selectedDispensers = dispenserIds
-        ? dispensers.filter((d) => dispenserIds.includes(d.dispenserId))
-        : dispensers;
-
-      const dispenserAssignments = selectedDispensers.map((d) => ({
-        dispenserId: d.dispenserId,
-        dispenserName: d.name,
-        fuelType: d.fuelType,
-        tankId: d.tankId || null,
-        tankLabel: '',
-        supervisorId: null,
-        supervisorName: '',
-        initialReading: 0,
-        totalLiters: 0,
-      }));
-
       const pricesAtStart = new Map();
       if (prices && typeof prices === 'object') {
         for (const [k, v] of Object.entries(prices)) {
@@ -180,7 +164,6 @@ export async function POST(request) {
 
       // Editable data only — never the shift's identity or lifecycle timestamps.
       const editableData = {
-        dispenserAssignments,
         pricesAtStart,
         ...(toleranceVal !== null && Number.isFinite(toleranceVal)
           ? { tolerancePercent: toleranceVal }
@@ -199,6 +182,27 @@ export async function POST(request) {
         return NextResponse.json({ error: 'Historical Data Entry is for closed shifts. Use the live role pages while a shift is open.' }, { status: 409 });
       }
 
+      if (!Array.isArray(dispenserIds) || !Array.isArray(requestedAssignments) ||
+          dispenserIds.length !== requestedAssignments.length ||
+          requestedAssignments.some((a) => !dispenserIds.includes(a.dispenserId))) {
+        return NextResponse.json({ error: 'Select each historical pump and its tank explicitly.' }, { status: 400 });
+      }
+      let mapping;
+      try {
+        mapping = buildHistoricalPumpAssignments({
+          stationDispensers: station.dispensers,
+          stationTanks: station.tanks,
+          existingAssignments: existing?.dispenserAssignments || [],
+          requestedAssignments,
+        });
+      } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      if (mapping.changed && String(mappingChangeReason || '').trim().length < 5) {
+        return NextResponse.json({ error: 'Explain why the historical pump-to-tank mapping is changing (at least 5 characters).' }, { status: 400 });
+      }
+      editableData.dispenserAssignments = mapping.assignments;
+
       if (existing) {
         // Day already has this shift: keep its _id, startTime, endTime, status and
         // started/ended-by. Only update the other data — do not re-stamp times.
@@ -213,6 +217,15 @@ export async function POST(request) {
           { stationId: stationObjId, date: { $gte: dateStart, $lte: dateEnd } },
           { $set: { totalShiftsPlanned: existingForDate.length } }
         );
+        if (mapping.changed) {
+          await createAuditLog({
+            userId: currentUser.id, userName: currentUser.name, userRole: currentUser.role,
+            action: AUDIT_ACTIONS.UPDATE, resource: AUDIT_RESOURCES.DAY_SHIFT,
+            resourceId: String(shift._id), stationId: stationObjId, stationName: station.name,
+            details: { date, shiftKey, oldMapping: mapping.oldMapping, newMapping: mapping.newMapping,
+              reason: String(mappingChangeReason).trim(), source: 'historical_entry' },
+          });
+        }
         return NextResponse.json({ shift, updated: true }, { status: 200 });
       }
 

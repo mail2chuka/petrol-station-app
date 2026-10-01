@@ -265,7 +265,11 @@ export default function AuditorTankStockPage() {
                             </td>
                             <td className="py-2.5 pr-4">{op ? fmt(op.openingStock) : '—'}</td>
                             <td className="py-2.5 pr-4">{stockIn ? fmt(stockIn) : '—'}</td>
-                            <td className="py-2.5 pr-4">{salesL ? fmt(salesL) : '—'}</td>
+                            <td className="py-2.5 pr-4">
+                              {salesL ? fmt(salesL) : '—'}
+                              {(cl ?? op)?.salesSource === 'includes_meter_fallback' && <span className="block text-xs text-amber-700">Includes meter estimate</span>}
+                              {(cl ?? op)?.salesSource === 'missing' && <span className="block text-xs text-red-700">No sales or meter closing</span>}
+                            </td>
 
                             {/* Closing measured — editable by admin */}
                             <td className="py-2.5 pr-4">

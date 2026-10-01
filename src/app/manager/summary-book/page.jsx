@@ -124,7 +124,10 @@ function SummaryBookContent() {
                           {overage > 0 ? `+${fmtNum(overage)}` : '—'}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.sales)}</td>
+                      <td className="px-3 py-2.5 text-gray-700">
+                        {fmtNum(r.sales)}
+                        {r.estimatedSalesLitres > 0 && <span className="block text-xs text-amber-700">{fmtNum(r.estimatedSalesLitres)} L from meter</span>}
+                      </td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum(r.priceForDay)}</td>
                       <td className="px-3 py-2.5 text-gray-700">{fmtNum((r.priceForDay ?? 0) * (r.sales ?? 0))}</td>
                       <td className={`px-3 py-2.5 ${r.shortage > 0 ? 'text-red-600 font-medium' : 'text-gray-700'}`}>{fmtNum(r.shortage)}</td>
