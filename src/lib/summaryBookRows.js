@@ -6,6 +6,7 @@ import MeterReading from '@/models/MeterReading';
 import TankStockEntry from '@/models/TankStockEntry';
 import Station from '@/models/Station';
 import { reconcile, expectedTolerance, resolveTolerancePercent } from '@/lib/reconciliation';
+import { attributeShiftPumpSales } from '@/lib/shiftTankAttribution.mjs';
 
 function buildDateRange(from, to) {
   const start = new Date(from + 'T00:00:00.000Z');
@@ -47,14 +48,6 @@ export async function buildSummaryBookRows(stationId, from, to) {
       { $match: { stationId: stationObjectId, date: { $gte: start, $lte: end } } },
     ]),
   ]);
-
-  // Build pump maps from station dispensers
-  const pumpFuelTypeMap = {};   // dispenserId → fuelType
-  const pumpTankMap = {};       // dispenserId → tankId  (for per-tank sales attribution)
-  for (const d of (station?.dispensers || [])) {
-    pumpFuelTypeMap[d.dispenserId] = d.fuelType;
-    if (d.tankId) pumpTankMap[d.dispenserId] = d.tankId;
-  }
 
   // Group shifts by calendar day, in shift order, so multi-shift days emit
   // one row per shift per product instead of collapsing to a single row.
@@ -144,33 +137,13 @@ export async function buildSummaryBookRows(stationId, from, to) {
     const dayStockIns = stockInsByShiftId[dayShift._id] || [];
     const deliveryByProduct = deliveryShortageByProduct(dayStockIns);
 
-    // Determine litres sold per pump. Prefer the supervisor's SalesEntry; when a
-    // pump has no sales entry, fall back to its meter reading net
-    // (closing − opening − rtt) so days with readings-but-no-sales-entry still
-    // reconcile correctly instead of flagging the whole dipstick drop as shortage.
-    const dispenserSales = {}; // dispenserId → liters
-    for (const sale of daySales) {
-      dispenserSales[sale.dispenserId] = (dispenserSales[sale.dispenserId] || 0) + sale.liters;
-    }
-    for (const r of dayReadings) {
-      if (dispenserSales[r.pumpId] == null && r.closing != null) {
-        dispenserSales[r.pumpId] = Math.max(0, (r.closing || 0) - (r.opening || 0) - (r.rtt || 0));
-      }
-    }
-
-    // Attribute per-pump sales to specific tanks using pump→tank mapping.
-    // For pumps not mapped to a tank, fall back to fuel-type grouping.
-    const salesByTank = {};        // tankId → liters
-    const salesByFuelFallback = {}; // fuelType → liters (for unmapped pumps)
-    for (const [dispenserId, liters] of Object.entries(dispenserSales)) {
-      const tankId = pumpTankMap[dispenserId];
-      if (tankId) {
-        salesByTank[tankId] = (salesByTank[tankId] || 0) + liters;
-      } else {
-        const ft = pumpFuelTypeMap[dispenserId];
-        if (ft) salesByFuelFallback[ft] = (salesByFuelFallback[ft] || 0) + liters;
-      }
-    }
+    // A shift's saved mapping is the historical source of truth. Current
+    // station settings may have changed since these sales were recorded.
+    const { salesByTank, salesByFuelFallback } = attributeShiftPumpSales(
+      dayShift.dispenserAssignments,
+      daySales,
+      dayReadings,
+    );
 
     // Aggregate opening stock, stock in, closing stock, and sales by product across all tanks.
     // Group by tankId+period first to avoid double-counting when both an opening and a closing

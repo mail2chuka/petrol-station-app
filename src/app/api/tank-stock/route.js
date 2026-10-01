@@ -11,6 +11,7 @@ import { requireAuth } from '@/lib/auth';
 import { ROLES } from '@/lib/constants';
 import { findOpenShiftForEntry, CLOSED_SHIFT_ENTRY_ERROR } from '@/lib/shiftEntry';
 import { reconcile, expectedTolerance, isOverTolerance, resolveTolerancePercent } from '@/lib/reconciliation';
+import { attributeShiftPumpSales } from '@/lib/shiftTankAttribution.mjs';
 
 const createSchema = z.object({
   stationId: z.string().min(1),
@@ -86,44 +87,54 @@ export async function GET(request) {
       const endDate = new Date(date + 'T23:59:59.999Z');
       const stationObjId = new mongoose.Types.ObjectId(stationId);
 
-      const [station, daySales, dayStockIns, dayShift] = await Promise.all([
+      const [station, daySales, dayStockIns, dayShifts] = await Promise.all([
         Station.findById(stationId).lean(),
         SalesEntry.find({ stationId: stationObjId, date: { $gte: startDate, $lte: endDate } }).lean(),
         StockMovement.find({ stationId: stationObjId, movementType: 'receipt', date: { $gte: startDate, $lte: endDate } }).lean(),
-        DayShift.findOne({ stationId: stationObjId, date: { $gte: startDate, $lte: endDate } }).lean(),
+        DayShift.find({ stationId: stationObjId, date: { $gte: startDate, $lte: endDate } })
+          .sort({ shiftOrder: 1, startTime: 1, _id: 1 }).lean(),
       ]);
 
-      // pump → tank map for attributing sales to a specific tank
-      const pumpTankMap = {};
-      for (const d of (station?.dispensers || [])) {
-        if (d.tankId) pumpTankMap[d.dispenserId] = d.tankId;
+      // Attribute sales using the tank mapping saved on each historical shift.
+      const earliestShiftId = dayShifts[0] ? String(dayShifts[0]._id) : null;
+      const shiftIdOf = (doc) => String(doc.dayShiftId || earliestShiftId || '');
+      const salesByShift = {};
+      for (const sale of daySales) (salesByShift[shiftIdOf(sale)] ||= []).push(sale);
+      const salesByShiftAndTank = {};
+      for (const shift of dayShifts) {
+        salesByShiftAndTank[String(shift._id)] = attributeShiftPumpSales(
+          shift.dispenserAssignments,
+          salesByShift[String(shift._id)] || [],
+          [],
+        ).salesByTank;
       }
-      const salesByTank = {};
-      for (const s of daySales) {
-        const tankId = pumpTankMap[s.dispenserId];
-        if (tankId) salesByTank[tankId] = (salesByTank[tankId] || 0) + (s.liters || 0);
-      }
-      const stockInByTank = {};
+      const stockInByShiftAndTank = {};
       for (const m of dayStockIns) {
         for (const d of (m.distribution || [])) {
-          if (d.tankId) stockInByTank[d.tankId] = (stockInByTank[d.tankId] || 0) + (d.litres || 0);
+          if (d.tankId) {
+            const key = `${shiftIdOf(m)}:${d.tankId}`;
+            stockInByShiftAndTank[key] = (stockInByShiftAndTank[key] || 0) + (d.litres || 0);
+          }
         }
       }
 
-      const tolerancePercent = resolveTolerancePercent(dayShift, station);
+      const shiftsById = Object.fromEntries(dayShifts.map((shift) => [String(shift._id), shift]));
 
-      // Group opening/closing per tank, compute once, attach to each entry.
+      // Group opening and closing by both shift and tank.
       const byTank = {};
       for (const e of entries) {
-        if (!byTank[e.tankId]) byTank[e.tankId] = {};
-        byTank[e.tankId][e.period] = e;
+        const key = `${shiftIdOf(e)}:${e.tankId}`;
+        if (!byTank[key]) byTank[key] = {};
+        byTank[key][e.period] = e;
       }
       for (const e of entries) {
-        const group = byTank[e.tankId] || {};
+        const shiftId = shiftIdOf(e);
+        const group = byTank[`${shiftId}:${e.tankId}`] || {};
         const closingEntry = group.closing;
         const opening = group.opening?.openingStock ?? closingEntry?.openingStock ?? 0;
-        const stockIn = stockInByTank[e.tankId] || 0;
-        const sales = salesByTank[e.tankId] || 0;
+        const stockIn = stockInByShiftAndTank[`${shiftId}:${e.tankId}`] || 0;
+        const sales = salesByShiftAndTank[shiftId]?.[e.tankId] || 0;
+        const tolerancePercent = resolveTolerancePercent(shiftsById[shiftId], station);
         e.stockIn = stockIn;
         e.salesLitres = sales;
         e.tolerancePercent = tolerancePercent;
