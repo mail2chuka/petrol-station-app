@@ -82,6 +82,11 @@ const stationSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // Set only at creation; existing stations default to requiring a reason.
+    initialConfigurationPending: {
+      type: Boolean,
+      default: false,
+    },
     dispensers: [
       {
         dispenserId: {

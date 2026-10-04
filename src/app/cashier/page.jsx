@@ -23,6 +23,8 @@ export default function CashierDashboard() {
   const [salesEntries, setSalesEntries] = useState([]);
   const [dailySalesEntries, setDailySalesEntries] = useState([]);
   const [deposits, setDeposits] = useState([]);
+  const [operatingDate, setOperatingDate] = useState(today());
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   const stationId = session?.user?.stationId;
@@ -30,43 +32,57 @@ export default function CashierDashboard() {
   const loadData = useCallback(async () => {
     if (!stationId) return;
     try {
+      setError('');
       const shiftRes = await fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`);
       if (!shiftRes.ok) throw new Error('Failed to load active shift');
       const shiftData = await shiftRes.json();
       const shift = (shiftData.dayShifts || [])[0] || null;
+      const calendarDate = today();
+      let displayedShift = shift;
+      if (!displayedShift) {
+        const recentRes = await fetch(`/api/day-shifts?stationId=${stationId}`);
+        if (!recentRes.ok) throw new Error('Failed to load recent shifts');
+        const recent = (await recentRes.json()).dayShifts?.[0];
+        const closedToday = recent?.endTime &&
+          new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date(recent.endTime)) === calendarDate;
+        if (recent && (new Date(recent.date).toISOString().slice(0, 10) === calendarDate || closedToday)) {
+          displayedShift = recent;
+        }
+      }
+      const date = displayedShift ? new Date(displayedShift.date).toISOString().slice(0, 10) : calendarDate;
 
-      // Payments are scoped to the active shift (not just today's date) so a
-      // pump reused across shifts doesn't show a prior shift's collection as
-      // "already collected" for the current shift, and the totals below don't
-      // double up an earlier ended shift's collections into today's figures.
+      // Keep pump collection status scoped to the open shift. After it closes,
+      // show the operating day's saved collections in the summary cards.
       const [paymentsRes, depositsRes, salesRes, dailySalesRes] = await Promise.all([
         shift
           ? fetch(`/api/payments?stationId=${stationId}&dayShiftId=${shift._id}`)
-          : Promise.resolve(null),
-        fetch(`/api/cash-deposits?stationId=${stationId}&date=${today()}`),
+          : fetch(`/api/payments?stationId=${stationId}&date=${date}&limit=1000`),
+        fetch(`/api/cash-deposits?stationId=${stationId}&forDate=${date}`),
         shift
           ? fetch(`/api/sales?stationId=${stationId}&dayShiftId=${shift._id}`)
           : Promise.resolve(null),
-        fetch(`/api/sales?stationId=${stationId}&date=${today()}`, { cache: 'no-store' }),
+        fetch(`/api/sales?stationId=${stationId}&date=${date}`, { cache: 'no-store' }),
       ]);
 
-      if (!depositsRes.ok || !dailySalesRes.ok || (paymentsRes && !paymentsRes.ok) || (salesRes && !salesRes.ok)) {
+      if (!depositsRes.ok || !dailySalesRes.ok || !paymentsRes.ok || (salesRes && !salesRes.ok)) {
         throw new Error('Failed to load cashier dashboard data');
       }
       const [paymentsData, depositsData, salesData, dailySalesData] = await Promise.all([
-        paymentsRes ? paymentsRes.json() : { paymentRecords: [] },
+        paymentsRes.json(),
         depositsRes.json(),
         salesRes ? salesRes.json() : { salesEntries: [] },
         dailySalesRes.json(),
       ]);
 
       setActiveDayShift(shift);
+      setOperatingDate(date);
       setPayments(paymentsData.paymentRecords || []);
       setSalesEntries(salesData.salesEntries || []);
       setDailySalesEntries(dailySalesData.salesEntries || []);
       setDeposits(depositsData.cashDeposits || []);
     } catch (err) {
       console.error('Error fetching data:', err);
+      setError('Dashboard entries could not be loaded. Please refresh.');
     } finally {
       setLoading(false);
     }
@@ -119,7 +135,7 @@ export default function CashierDashboard() {
     productTotals[sale.fuelType].expectedAmount += Number(sale.expectedAmount) || 0;
   }
 
-  const todayLabel = new Date(today() + 'T12:00:00').toLocaleDateString('en-NG', {
+  const todayLabel = new Date(operatingDate + 'T12:00:00').toLocaleDateString('en-NG', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
 
@@ -131,6 +147,8 @@ export default function CashierDashboard() {
           Welcome, <span className="font-medium text-gray-700">{session?.user?.name || 'Cashier'}</span>. {todayLabel}.
         </p>
       </div>
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
 
       {loading ? (
         <div className="flex justify-center py-16"><div className="spinner" /></div>
@@ -172,8 +190,24 @@ export default function CashierDashboard() {
             </div>
           </div>
 
+          {payments.length > 0 && (
+            <Card title="Recent Collections" subtitle="Cashier entries for the displayed shift or operating day.">
+              <div className="divide-y divide-gray-100">
+                {payments.slice(0, 5).map(payment => (
+                  <div key={payment._id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 text-sm">
+                    <div>
+                      <p className="font-medium text-gray-800">{payment.dispenserName}</p>
+                      <p className="text-gray-500">{payment.supervisorName || 'Supervisor'} · Cash ₦{fmt(payment.cashReceived)} · POS ₦{fmt(payment.posReceived)}</p>
+                    </div>
+                    <span className="font-semibold tabular-nums text-gray-800">₦{fmt(payment.totalReceived)}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {productTypes.length > 0 && (
-            <Card title="Fuel Sold Today" subtitle="Supervisor entries recorded for today at your station. Updates automatically.">
+            <Card title={`Fuel Sold — ${operatingDate}`} subtitle="Supervisor entries for the operating day at your station. Updates automatically.">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {productTypes.map(type => (
                   <div key={type} className="rounded-xl border border-gray-200 p-4">

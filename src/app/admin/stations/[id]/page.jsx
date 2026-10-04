@@ -718,19 +718,22 @@ function PricesSection({ station, onChanged, onError }) {
     }
     const tol = Number(tolerance);
     if (!Number.isFinite(tol) || tol < 0) { onError('Enter a valid tolerance %.'); return; }
+    if (reason.trim().length < 5) { onError('Provide a reason for the change (at least 5 characters).'); return; }
     setSaving(true);
     try {
-      const updates = products
+      if (tol !== Number(station.tolerancePercent ?? 2.5)) {
+        const toleranceRes = await fetch(`/api/stations/${station._id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tolerancePercent: tol, editReason: reason.trim() }),
+        });
+        if (!toleranceRes.ok) { const d = await toleranceRes.json().catch(() => ({})); onError(d.error || 'Failed to update tolerance'); return; }
+      }
+      const results = await Promise.all(products
         .filter((p) => Number(prices[p]) !== (station.currentPrices?.[p] || 0))
         .map((p) => fetch(`/api/stations/${station._id}/prices`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ stationId: station._id, fuelType: p, price: Number(prices[p]), reason: reason || 'Price update' }),
-        }));
-      await fetch(`/api/stations/${station._id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tolerancePercent: tol }),
-      });
-      const results = await Promise.all(updates);
+          body: JSON.stringify({ stationId: station._id, fuelType: p, price: Number(prices[p]), reason: reason.trim() }),
+        })));
       const failed = results.find((r) => !r.ok);
       if (failed) { const d = await failed.json().catch(() => ({})); onError(d.error || 'Failed to update prices'); return; }
       onChanged('Prices and tolerance saved.');
@@ -745,7 +748,7 @@ function PricesSection({ station, onChanged, onError }) {
         ))}
         <Input label="Tolerance (% of sales)" type="number" value={tolerance} onChange={(e) => setTolerance(e.target.value)} />
       </div>
-      <Input label="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why prices changed" />
+      <Input label="Reason for change" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why prices changed" />
       <Button variant="primary" disabled={saving} onClick={save}>{saving ? 'Saving...' : 'Save Prices & Tolerance'}</Button>
     </Card>
   );
@@ -753,15 +756,17 @@ function PricesSection({ station, onChanged, onError }) {
 
 function ProductsSection({ station, onChanged, onError }) {
   const [selected, setSelected] = useState(station.availableProducts ? [...station.availableProducts] : ['PMS', 'AGO']);
+  const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const toggle = (f) => setSelected((s) => s.includes(f) ? s.filter((x) => x !== f) : [...s, f]);
   const save = async () => {
     if (selected.length === 0) { onError('Select at least one product.'); return; }
+    if (reason.trim().length < 5) { onError('Provide a reason for the change (at least 5 characters).'); return; }
     setSaving(true);
     try {
       const res = await fetch(`/api/stations/${station._id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ availableProducts: selected }),
+        body: JSON.stringify({ availableProducts: selected, editReason: reason.trim() }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) { onError(d.error || 'Failed to update products'); return; }
@@ -778,6 +783,7 @@ function ProductsSection({ station, onChanged, onError }) {
           </button>
         ))}
       </div>
+      <Input label="Reason for change" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why available products are changing" />
       <Button variant="primary" disabled={saving} onClick={save}>{saving ? 'Saving...' : 'Save Products'}</Button>
     </Card>
   );
@@ -795,6 +801,7 @@ function DetailsSection({ station, onChanged, onError }) {
     if (String(form.confirmCode).trim().toUpperCase() !== String(station.code).toUpperCase()) {
       onError('Confirmation code must match the current station code.'); return;
     }
+    if (form.editReason.trim().length < 5) { onError('Provide a reason for the change (at least 5 characters).'); return; }
     setSaving(true);
     try {
       const res = await fetch(`/api/stations/${station._id}`, {
@@ -819,7 +826,7 @@ function DetailsSection({ station, onChanged, onError }) {
         <Input label="Number of Tanks" type="number" value={form.numberOfTanks} onChange={(e) => set('numberOfTanks', e.target.value)} />
         <Input label="Number of Pumps" type="number" value={form.numberOfPumps} onChange={(e) => set('numberOfPumps', e.target.value)} />
       </div>
-      <Input label="Edit Reason (required for tank/pump count changes)" value={form.editReason} onChange={(e) => set('editReason', e.target.value)} />
+      <Input label="Reason for change" value={form.editReason} onChange={(e) => set('editReason', e.target.value)} />
       <Input label={`Type station code "${station.code}" to confirm`} value={form.confirmCode} onChange={(e) => set('confirmCode', e.target.value)} />
       <Button variant="primary" disabled={saving} onClick={save}>{saving ? 'Saving...' : 'Save Details'}</Button>
     </Card>
@@ -832,12 +839,12 @@ function MappingSection({ station, onChanged, onError }) {
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const products = station.availableProducts || ['PMS', 'AGO'];
+  const isInitial = station.initialConfigurationPending === true;
 
   const updTank = (i, k, v) => setTanks((s) => s.map((t, j) => j === i ? { ...t, [k]: v } : t));
   const updDisp = (i, k, v) => setDispensers((s) => s.map((d, j) => j === i ? { ...d, [k]: v } : d));
 
   const save = async () => {
-    const isInitial = (station.dispensers || []).every((d) => !d.tankId);
     if (!isInitial && reason.trim().length < 5) { onError('Provide a reason (≥5 chars) for mapping changes.'); return; }
     setSaving(true);
     try {
@@ -885,7 +892,7 @@ function MappingSection({ station, onChanged, onError }) {
         <Button size="sm" variant="secondary" onClick={() => setDispensers((s) => [...s, { dispenserId: `PUMP-${Date.now()}`, name: '', fuelType: products[0] || 'PMS', tankId: '', isActive: true }])}>+ Add Pump</Button>
       </div>
 
-      <Input label="Reason for mapping change" value={reason} onChange={(e) => setReason(e.target.value)} />
+      <Input label={isInitial ? 'Reason (optional for initial setup)' : 'Reason for mapping change'} value={reason} onChange={(e) => setReason(e.target.value)} />
       <Button variant="primary" disabled={saving} onClick={save}>{saving ? 'Saving...' : 'Save Mapping'}</Button>
     </Card>
   );

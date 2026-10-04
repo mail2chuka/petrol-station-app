@@ -8,6 +8,7 @@ import { requireAuth, requireAdmin, requireManagerOrAdmin } from '@/lib/auth';
 import { createAuditLog, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/audit';
 import { ROLES, DAY_STATUS } from '@/lib/constants';
 import { getLiveCurrentStock, applyLiveStock } from '@/lib/liveStock';
+import { isInitialStationConfiguration, requiresStationEditReason } from '@/lib/stationConfigurationReason.mjs';
 
 // GET /api/stations/[id] - Get station by ID
 export async function GET(request, { params }) {
@@ -137,10 +138,11 @@ export async function PATCH(request, { params }) {
       dispensers.some((d) => previousPumpMapping[d.dispenserId] !== (d.tankId || null)));
     const tankProductChange = Array.isArray(tanks) && tanks.some((t) =>
       (station.tanks || []).some((old) => old._id === t._id && old.product !== t.product));
+    const isInitialConfiguration = isInitialStationConfiguration({ station, isAdmin, body });
 
-    if ((tankChange || pumpChange || mappingChange || tankProductChange) && (!editReason || String(editReason).trim().length < 5)) {
+    if (requiresStationEditReason({ station, isAdmin, body }) && String(editReason || '').trim().length < 5) {
       return NextResponse.json(
-        { error: 'Edit reason is required for tank/pump changes (min 5 characters).' },
+        { error: 'Provide a reason for the station change (at least 5 characters).' },
         { status: 400 }
       );
     }
@@ -237,6 +239,9 @@ export async function PATCH(request, { params }) {
         isActive: dispenser.isActive !== false,
       }));
     }
+    if (station.initialConfigurationPending && (tanks !== undefined || dispensers !== undefined)) {
+      station.initialConfigurationPending = false;
+    }
 
     const auditEvent = {
       userId: currentUser.id,
@@ -260,6 +265,7 @@ export async function PATCH(request, { params }) {
         dispensersUpdated: dispensers !== undefined ? station.dispensers : undefined,
         previousPumpMapping: mappingChange ? previousPumpMapping : undefined,
         editReason: editReason || undefined,
+        initialConfiguration: isInitialConfiguration || undefined,
       },
     };
     if (mappingChange || tankProductChange) {

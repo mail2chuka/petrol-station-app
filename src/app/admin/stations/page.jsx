@@ -20,6 +20,7 @@ export default function StationsPage() {
   const [priceForm, setPriceForm] = useState({ prices: {}, reason: '', tolerancePercent: '' });
   const [productsStation, setProductsStation] = useState(null);
   const [productsForm, setProductsForm] = useState([]);
+  const [productsReason, setProductsReason] = useState('');
   const [savingProducts, setSavingProducts] = useState(false);
   const [productsError, setProductsError] = useState('');
   const [seedStation, setSeedStation] = useState(null);
@@ -102,6 +103,7 @@ export default function StationsPage() {
     setProductsError('');
     setProductsStation(station);
     setProductsForm(station?.availableProducts ? [...station.availableProducts] : ['PMS', 'AGO']);
+    setProductsReason('');
   };
 
   const openSeedMeters = (station) => {
@@ -209,8 +211,7 @@ export default function StationsPage() {
     setError('');
     setSuccess('');
     setMappingError('');
-    // Initial setup = no pump has been assigned to a tank yet
-    const isInitial = (station?.dispensers || []).every((d) => !d.tankId);
+    const isInitial = station?.initialConfigurationPending === true;
     setMappingIsInitial(isInitial);
     setMappingStation(station);
     setMappingForm({
@@ -272,6 +273,10 @@ export default function StationsPage() {
 
   const savePrices = async () => {
     if (!selectedStation?._id) return;
+    if (priceForm.reason.trim().length < 5) {
+      setPriceError('Provide a reason for the change (at least 5 characters).');
+      return;
+    }
 
     const products = selectedStation?.availableProducts || ['PMS', 'AGO'];
     const tolerancePercent = Number(priceForm.tolerancePercent);
@@ -293,36 +298,43 @@ export default function StationsPage() {
     setPriceError('');
 
     try {
-      const updates = [];
+      const priceChanges = [];
       for (const p of products) {
         const price = Number(priceForm.prices[p]);
         if (price !== (selectedStation.currentPrices?.[p] || 0)) {
-          updates.push(
-            fetch(`/api/stations/${selectedStation._id}/prices`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                stationId: selectedStation._id,
-                fuelType: p,
-                price,
-                reason: priceForm.reason || 'Price update',
-              }),
-            })
-          );
+          priceChanges.push({ fuelType: p, price });
         }
       }
 
-      if (updates.length === 0) {
+      const toleranceChanged = tolerancePercent !== Number(selectedStation.tolerancePercent ?? 2.5);
+      if (priceChanges.length === 0 && !toleranceChanged) {
         setSuccess('No changes to save.');
         return;
       }
 
-      await fetch(`/api/stations/${selectedStation._id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tolerancePercent }),
-      });
+      if (toleranceChanged) {
+        const toleranceRes = await fetch(`/api/stations/${selectedStation._id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tolerancePercent, editReason: priceForm.reason.trim() }),
+        });
+        if (!toleranceRes.ok) {
+          const data = await toleranceRes.json().catch(() => ({}));
+          setPriceError(data.error || 'Failed to update tolerance');
+          return;
+        }
+      }
 
+      const updates = priceChanges.map(({ fuelType, price }) => fetch(`/api/stations/${selectedStation._id}/prices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stationId: selectedStation._id,
+          fuelType,
+          price,
+          reason: priceForm.reason.trim(),
+        }),
+      }));
       const results = await Promise.all(updates);
       const failed = results.find((r) => !r.ok);
       if (failed) {
@@ -343,6 +355,10 @@ export default function StationsPage() {
 
   const saveProducts = async () => {
     if (!productsStation?._id) return;
+    if (productsReason.trim().length < 5) {
+      setProductsError('Provide a reason for the change (at least 5 characters).');
+      return;
+    }
     if (productsForm.length === 0) {
       setProductsError('At least one product must be selected.');
       return;
@@ -353,7 +369,7 @@ export default function StationsPage() {
       const res = await fetch(`/api/stations/${productsStation._id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ availableProducts: productsForm }),
+        body: JSON.stringify({ availableProducts: productsForm, editReason: productsReason.trim() }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -518,12 +534,8 @@ export default function StationsPage() {
       return;
     }
 
-    if (
-      (Number(changes.numberOfTanks) !== Number(editingStation.numberOfTanks || 0) ||
-        Number(changes.numberOfPumps) !== Number(editingStation.numberOfPumps || 0)) &&
-      (!changes.editReason || changes.editReason.length < 5)
-    ) {
-      setEditError('Please provide a reason (at least 5 characters) for tank/pump changes.');
+    if (!changes.editReason || changes.editReason.length < 5) {
+      setEditError('Provide a reason for the change (at least 5 characters).');
       return;
     }
 
@@ -980,9 +992,8 @@ export default function StationsPage() {
                 </div>
               </Card>
 
-              {!mappingIsInitial && (
                 <Input
-                  label="Reason for changes"
+                  label={mappingIsInitial ? 'Reason (optional for initial setup)' : 'Reason for changes'}
                   value={mappingForm.editReason}
                   onChange={(e) => {
                     setMappingError('');
@@ -990,7 +1001,6 @@ export default function StationsPage() {
                   }}
                   placeholder="Explain why the tank/pump configuration is being changed"
                 />
-              )}
 
               {mappingError && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -1103,7 +1113,7 @@ export default function StationsPage() {
               </div>
 
               <Input
-                label="Reason (optional)"
+                label="Reason for change"
                 name="reason"
                 value={priceForm.reason}
                 onChange={(e) => setPriceForm((p) => ({ ...p, reason: e.target.value }))}
@@ -1198,7 +1208,7 @@ export default function StationsPage() {
 
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <p className="text-xs text-amber-800">
-                  Changes to tanks/pumps are audited and require a reason and confirmation.
+                  Station changes are audited and require a reason and confirmation.
                 </p>
               </div>
 
@@ -1376,6 +1386,12 @@ export default function StationsPage() {
                 </label>
               ))}
             </div>
+            <Input
+              label="Reason for change"
+              value={productsReason}
+              onChange={(e) => { setProductsReason(e.target.value); setProductsError(''); }}
+              placeholder="Explain why the available products are changing"
+            />
             {productsError && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 mb-3">
                 {productsError}

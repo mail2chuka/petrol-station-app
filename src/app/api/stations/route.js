@@ -101,6 +101,7 @@ export async function POST(request) {
       },
       tanks,
       dispensers,
+      initialConfigurationPending: true,
     });
 
     // Create audit log

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import Card, { StatCard } from '@/components/Card';
 import Loading from '@/components/Loading';
@@ -18,52 +18,55 @@ function formatLiters(liters) {
 export default function SupervisorDashboard() {
   const { data: session } = useSession();
   const [activeDayShift, setActiveDayShift] = useState(null);
-  const [todayReadings, setTodayReadings] = useState([]);
-  const [todayStock, setTodayStock] = useState([]);
   const [todaySales, setTodaySales] = useState([]);
+  const [operatingDate, setOperatingDate] = useState(null);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const stationId = session?.user?.stationId;
+  const supervisorId = session?.user?.id;
+
+  const fetchData = useCallback(async () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+    try {
+      setError('');
+      const shiftRes = await fetch(`/api/day-shifts?stationId=${stationId}&status=in_progress`);
+      if (!shiftRes.ok) throw new Error('Failed to load active shift');
+      const shiftData = await shiftRes.json();
+      const openShift = (shiftData.dayShifts || [])[0] || null;
+      let displayedShift = openShift;
+      if (!displayedShift) {
+        const recentRes = await fetch(`/api/day-shifts?stationId=${stationId}`);
+        if (!recentRes.ok) throw new Error('Failed to load recent shifts');
+        const recent = (await recentRes.json()).dayShifts?.[0];
+        const closedToday = recent?.endTime &&
+          new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date(recent.endTime)) === today;
+        if (recent && (new Date(recent.date).toISOString().slice(0, 10) === today || closedToday)) {
+          displayedShift = recent;
+        }
+      }
+      const date = displayedShift ? new Date(displayedShift.date).toISOString().slice(0, 10) : today;
+      setActiveDayShift(openShift);
+      setOperatingDate(date);
+
+      const salesRes = await fetch(`/api/sales?supervisorId=${supervisorId}&date=${date}`, { cache: 'no-store' });
+      if (!salesRes.ok) throw new Error('Failed to load supervisor entries');
+      const salesData = await salesRes.json();
+      setTodaySales(salesData.salesEntries || []);
+    } catch (err) {
+      console.error('Error fetching supervisor data:', err);
+      setError('Dashboard entries could not be loaded. Please refresh.');
+    } finally {
+      setLoading(false);
+    }
+  }, [stationId, supervisorId]);
 
   useEffect(() => {
-    if (session?.user?.stationId) {
+    if (stationId && supervisorId) {
       fetchData();
     } else if (session) {
       setLoading(false);
     }
-  }, [session]);
-
-  const fetchData = async () => {
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
-    try {
-      const shiftRes = await fetch(`/api/day-shifts?stationId=${session.user.stationId}&status=in_progress`);
-      const shiftData = await shiftRes.json();
-      const openShift = (shiftData.dayShifts || [])[0] || null;
-      const operatingDate = openShift ? new Date(openShift.date).toISOString().slice(0, 10) : today;
-      setActiveDayShift(openShift);
-
-      const [readingsRes, stockRes, salesRes] = await Promise.all([
-        fetch(`/api/meter-readings?stationId=${session.user.stationId}&date=${operatingDate}`),
-        fetch(`/api/tank-stock?stationId=${session.user.stationId}&date=${operatingDate}`),
-        fetch(`/api/sales?supervisorId=${session.user.id}&date=${operatingDate}`),
-      ]);
-      const readingsData = await readingsRes.json();
-      const stockData = await stockRes.json();
-      const salesData = await salesRes.json();
-
-      const belongsToShift = (entry) => !openShift || (
-        entry.dayShiftId
-          ? String(entry.dayShiftId) === String(openShift._id)
-          : (openShift.shiftOrder || 1) === 1
-      );
-      setTodayReadings((readingsData.readings || []).filter(belongsToShift));
-      setTodayStock((stockData.entries || []).filter(belongsToShift));
-      const todaysSales = (salesData.salesEntries || []).filter(belongsToShift);
-      setTodaySales(todaysSales);
-    } catch (err) {
-      console.error('Error fetching supervisor data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [stationId, supervisorId, session, fetchData]);
 
   if (loading) return <Loading />;
 
@@ -78,14 +81,13 @@ export default function SupervisorDashboard() {
     );
   }
 
-  const today = new Date(activeDayShift?.date || Date.now()).toLocaleDateString('en-NG', {
+  const today = new Date(`${operatingDate || new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date())}T12:00:00`).toLocaleDateString('en-NG', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Africa/Lagos',
   });
 
   const totalLitersToday = todaySales.reduce((sum, s) => sum + (Number(s.liters) || 0), 0);
-  const totalCashToday = todaySales.reduce((sum, s) => sum + (Number(s.cashAmount) || 0), 0);
-  const totalPosToday = todaySales.reduce((sum, s) => sum + (Number(s.posAmount) || 0), 0);
-  const totalAmountToday = totalCashToday + totalPosToday;
+  const totalExpectedToday = todaySales.reduce((sum, s) => sum + (Number(s.expectedAmount) || 0), 0);
+  const pumpCount = new Set(todaySales.map(s => s.dispenserId)).size;
 
   return (
     <div className="space-y-6">
@@ -100,6 +102,8 @@ export default function SupervisorDashboard() {
         </div>
       </div>
 
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
+
       {!activeDayShift && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl flex items-start gap-3">
           <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
@@ -113,11 +117,27 @@ export default function SupervisorDashboard() {
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard title={activeDayShift ? 'Liters This Shift' : 'Liters Today'} value={formatLiters(totalLitersToday)} color="blue" />
-        <StatCard title={activeDayShift ? 'Cash This Shift' : 'Cash Today'} value={formatCurrency(totalCashToday)} color="emerald" />
-        <StatCard title={activeDayShift ? 'POS This Shift' : 'POS Today'} value={formatCurrency(totalPosToday)} color="blue" />
-        <StatCard title={activeDayShift ? 'Total This Shift' : 'Total Today'} value={formatCurrency(totalAmountToday)} color="maroon" />
+        <StatCard title="Liters Recorded" value={formatLiters(totalLitersToday)} color="blue" />
+        <StatCard title="Expected Sales" value={formatCurrency(totalExpectedToday)} color="emerald" />
+        <StatCard title="Sales Entries" value={String(todaySales.length)} color="blue" />
+        <StatCard title="Pumps Recorded" value={String(pumpCount)} color="maroon" />
       </div>
+
+      {todaySales.length > 0 && (
+        <Card title="Recent Sales Entries">
+          <div className="divide-y divide-slate-100">
+            {todaySales.slice(0, 5).map(sale => (
+              <div key={sale._id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 text-sm">
+                <div>
+                  <p className="font-medium text-slate-800">{sale.dispenserName}</p>
+                  <p className="text-slate-500">{sale.fuelType} · {formatLiters(sale.liters)}</p>
+                </div>
+                <span className="font-semibold tabular-nums text-slate-800">{formatCurrency(sale.expectedAmount)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card title="Quick Actions">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -279,11 +279,10 @@ export async function GET(request) {
       const end = new Date(y, m, 0, 23, 59, 59, 999);
       query.date = { $gte: start, $lte: end };
     } else if (date) {
-      const start = new Date(date);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(date);
-      end.setHours(23, 59, 59, 999);
-      query.date = { $gte: start, $lte: end };
+      query.date = {
+        $gte: new Date(`${date}T00:00:00.000Z`),
+        $lte: new Date(`${date}T23:59:59.999Z`),
+      };
     }
 
     // Non-admin users without global access can only see their station
@@ -294,7 +293,7 @@ export async function GET(request) {
 
     const paymentRecords = await PaymentRecord.find(query)
       .sort({ createdAt: -1 })
-      .limit(limit);
+      .limit(dayShiftId || date ? 0 : limit);
 
     return NextResponse.json({ paymentRecords });
   } catch (error) {
